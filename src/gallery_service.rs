@@ -14,7 +14,7 @@ use std::io::BufWriter;
 use std::num::NonZeroU32;
 use std::{fs::create_dir, path::PathBuf};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Ok};
 use fr::CpuExtensions;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::PngEncoder;
@@ -22,53 +22,15 @@ use image::io::Reader as ImageReader;
 use image::{ColorType, ImageEncoder};
 
 use fast_image_resize as fr;
-use rayon::prelude::*;
 
-use crate::utils;
-
-static INSTANCE: Lazy<Arc<Mutex<GalleryService>>> = Lazy::new(|| {
-    Arc::new(Mutex::new(GalleryService {
-        thumbnail_cache: HashMap::new(),
-    }))
-});
+use crate::{utils, dependencies::{Dependency, UsingSingletonMut, UsingSingleton}, thumbnail_cache::ThumbnailCache};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
 pub struct GalleryService {
-    thumbnail_cache: HashMap<String, Vec<u8>>,
-}
+}    
 
 impl GalleryService {
-    
-    fn instance() -> Arc<Mutex<GalleryService>> {
-        INSTANCE.clone()
-    }
-
-    fn cache_thumbnail(path: &PathBuf, thumbnail: Vec<u8>) {
-        let instance = Self::instance();
-        let mut instance = instance.lock().unwrap();
-        instance
-            .thumbnail_cache
-            .insert(path.to_str().unwrap().to_string(), thumbnail);
-    }
-
-    pub fn thumbnail_path(path: &PathBuf) -> Option<PathBuf> {
-        let thumbnail_path = path.thumbnail_path().ok()?;
-        if thumbnail_path.exists() {
-            Some(thumbnail_path)
-        } else {
-            None
-        }
-    }
-
-    pub fn thumbnail(path: &PathBuf) -> Option<Vec<u8>> {
-        let instance = Self::instance();
-        let instance = instance.lock().unwrap();
-        instance
-            .thumbnail_cache
-            .get(path.to_str().unwrap())
-            .cloned()
-    }
 
     pub fn gen_thumbnails(dir: PathBuf) -> anyhow::Result<()> {
         let path: PathBuf = PathBuf::from(dir);
@@ -119,7 +81,12 @@ impl GalleryService {
 
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists: {:?}", &thumbnail_path);
-                    GalleryService::cache_thumbnail(&path, std::fs::read(&thumbnail_path)?);
+                    
+                    Dependency::<ThumbnailCache>::using_singleton_mut(|thumbnail_cache| {
+                        thumbnail_cache.put(&path, std::fs::read(&thumbnail_path)?);
+                        Ok(())
+                    })?;
+
                     return Ok(());
                 } else {
                     info!("Generating thumbnail: {:?}", &thumbnail_path);
@@ -221,7 +188,10 @@ impl GalleryService {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                GalleryService::cache_thumbnail(&path, buf);
+                Dependency::<ThumbnailCache>::using_singleton_mut(move |thumbnail_cache| {
+                    thumbnail_cache.put(&path, buf);
+                    Ok(())
+                })?;
 
                 let ctx = egui::Context::default();
                 ctx.request_repaint();
@@ -229,25 +199,5 @@ impl GalleryService {
         }
 
         Ok(())
-    }
-}
-
-trait AsThumbailPath {
-    fn thumbnail_path(&self) -> anyhow::Result<PathBuf>;
-}
-
-impl AsThumbailPath for PathBuf {
-    fn thumbnail_path(&self) -> anyhow::Result<PathBuf> {
-        let mut path = self.clone();
-        let file_name = path
-            .file_name()
-            .ok_or(anyhow!("Failed to get file name"))?
-            .to_str()
-            .ok_or(anyhow!("Failed to convert file name to str"))?
-            .to_string();
-        path.pop();
-        path.push(".thumb");
-        path.push(file_name);
-        Ok(path)
     }
 }

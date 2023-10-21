@@ -22,6 +22,8 @@ mod string_log;
 mod widget;
 mod utils;
 mod photo;
+mod dependencies;
+mod thumbnail_cache;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

@@ -9,6 +9,7 @@ use crate::{gallery_service::GalleryService, photo::Photo, widget::placeholder::
 
 pub struct GalleryImage {
     photo: Photo,
+    thumbnail_bytes: Option<Vec<u8>>,
 }
 
 impl GalleryImage {
@@ -19,7 +20,7 @@ impl GalleryImage {
     };
 
     pub fn new(photo: Photo) -> Self {
-        Self { photo }
+        Self { photo, thumbnail_bytes: None }
     }
 }
 
@@ -30,7 +31,7 @@ impl Widget for GalleryImage {
             ui.vertical(|ui| {
                 ui.set_min_size(Self::SIZE);
 
-                match GalleryService::thumbnail(&self.photo.path) {
+                match self.photo.thumbnail() {
                     Some(bytes) => {
                         ui.add(
                             Image::from_bytes(self.photo.string_path(), bytes)
