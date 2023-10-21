@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+
 
 use eframe::{
     egui::{Image, Response, Ui, Widget},
     epaint::{Color32, Vec2},
 };
 
-use crate::{gallery_service::GalleryService, photo::Photo, widget::placeholder::RectPlaceholder};
+use crate::{photo::Photo, widget::placeholder::RectPlaceholder};
 
 pub struct GalleryImage {
     photo: Photo,

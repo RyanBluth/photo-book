@@ -1,13 +1,8 @@
-use std::{
-    collections::HashMap,
-    fs::ReadDir,
-    io,
-    sync::{Arc, Mutex},
-};
+
 
 use eframe::egui;
 use log::info;
-use once_cell::sync::Lazy;
+
 
 use std::fs::DirEntry;
 use std::io::BufWriter;
@@ -23,7 +18,7 @@ use image::{ColorType, ImageEncoder};
 
 use fast_image_resize as fr;
 
-use crate::{utils, dependencies::{Dependency, UsingSingletonMut, UsingSingleton}, thumbnail_cache::ThumbnailCache};
+use crate::{utils, dependencies::{Dependency, UsingSingletonMut}, thumbnail_cache::ThumbnailCache};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
@@ -109,7 +104,7 @@ impl GalleryService {
                 alpha_mul_div.multiply_alpha_inplace(&mut src_image.view_mut())?;
 
                 let ratio = img.height() as f32 / img.width() as f32;
-                let dst_height: u32 = ((THUMBNAIL_SIZE * ratio) as u32);
+                let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
 
                 let dst_width =
                     NonZeroU32::new(THUMBNAIL_SIZE as u32).ok_or(anyhow!("Invalid destination image width"))?;

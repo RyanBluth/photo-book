@@ -1,10 +1,9 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{Arc, Mutex},
 };
 
-use once_cell::sync::Lazy;
+
 
 pub struct ThumbnailCache {
     cache: HashMap<String, Vec<u8>>,

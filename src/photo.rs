@@ -1,10 +1,9 @@
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, MutexGuard},
 };
 
 use crate::{
-    dependencies::{Dependency, UsingSingletonMut, UsingSingleton},
+    dependencies::{Dependency, UsingSingleton},
     thumbnail_cache::ThumbnailCache,
 };
 

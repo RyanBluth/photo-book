@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{Align2, Response, Sense, Ui, Vec2, Widget},
+    egui::{Response, Sense, Ui, Vec2, Widget},
     epaint::{Color32, Rect},
 };
 

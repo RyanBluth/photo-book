@@ -5,16 +5,15 @@ use std::{fs::read_dir, path::PathBuf, sync::Arc};
 use eframe::{
     egui::{self, Layout, ScrollArea},
     emath::Align,
-    epaint::Vec2,
 };
 use egui_extras::Column;
 use photo::Photo;
 use widget::{gallery_image::GalleryImage, spacer::Spacer};
 use gallery_service::GalleryService;
 use log::info;
-use rayon::{slice::ParallelSlice, string};
 
-use flexi_logger::{FileSpec, Logger, WriteMode};
+
+use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
 mod gallery_service;
