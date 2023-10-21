@@ -1,21 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{
-    fs::read_dir,
-    io::{BufReader, Read},
-    path::PathBuf,
-    sync::Arc, hash::Hash,
-};
+use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
-use async_retained_image::AsyncRetainedImage;
 use eframe::{
     egui::{self, Layout, ScrollArea},
     emath::Align,
-    epaint::{
-        Vec2,
-    },
+    epaint::Vec2,
 };
-use egui_extras::RetainedImage;
+use egui_extras::Column;
+use photo::Photo;
+use widget::{gallery_image::GalleryImage, spacer::Spacer};
 use gallery_service::GalleryService;
 use log::info;
 use rayon::{slice::ParallelSlice, string};
@@ -23,15 +17,20 @@ use rayon::{slice::ParallelSlice, string};
 use flexi_logger::{FileSpec, Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
-mod async_retained_image;
 mod gallery_service;
 mod string_log;
+mod widget;
+mod utils;
+mod photo;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let log: Arc<StringLog> = Arc::new(StringLog::new());
 
-    rayon::ThreadPoolBuilder::new().num_threads(4).build_global().unwrap();
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build_global()
+        .unwrap();
 
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .unwrap()
@@ -61,14 +60,12 @@ async fn main() -> anyhow::Result<()> {
 
 struct MyApp {
     current_dir: Option<PathBuf>,
-    images: Vec<PathBuf>,
+    images: Vec<Photo>,
     log: Arc<StringLog>,
 }
 
 impl eframe::App for MyApp {
-
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         egui_extras::install_image_loaders(&ctx);
 
         egui::TopBottomPanel::bottom("log")
@@ -98,7 +95,6 @@ impl eframe::App for MyApp {
                 let button = ui.button("Open Folder");
 
                 if button.clicked() {
-
                     self.current_dir = native_dialog::FileDialog::new()
                         .add_filter("Images", &["png", "jpg", "jpeg"])
                         .show_open_single_dir()
@@ -118,7 +114,7 @@ impl eframe::App for MyApp {
                         if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
                             continue;
                         }
-                        self.images.push(path);
+                        self.images.push(Photo::new(path));
                     }
 
                     GalleryService::gen_thumbnails(self.current_dir.as_ref().unwrap().clone());
@@ -128,21 +124,57 @@ impl eframe::App for MyApp {
                     Some(ref path) => {
                         ui.label(format!("Current Dir: {}", path.display()));
 
-                        egui::Grid::new("some_unique_id").show(ui, |ui| {
-                            let mut count = 0;
-                            for path in &self.images {
-                                // image.show_size(ui, Vec2::new(200.0, 200.0));
+                        let window_width = ui.available_width();
+                        let window_height = ui.available_height();
+                        let column_width = 256.0;
+                        let row_height = 256.0;
+                        let num_columns: usize = (window_width / column_width).floor() as usize;
 
-                                ui.add(AsyncRetainedImage::new(path.clone()));
+                        //let padding_size = num_columns as f32 * 10.0;
+                        let spacer_width = (window_width - (column_width * num_columns as f32) - 10.0).max(0.0);
+                            
+                        ui.spacing_mut().item_spacing.x = 0.0;
 
-                                count += 1;
+                        egui_extras::TableBuilder::new(ui)
+                            .min_scrolled_height(window_height)
+                            .columns(Column::exact(column_width), num_columns)
+                            .column(Column::exact(spacer_width))
+                            .body(|body| {
+                                body.rows(
+                                    row_height,
+                                    self.images.len() / num_columns,
+                                    |row_idx, mut row| {
+                                        let offest = row_idx * num_columns;
+                                        for i in 0..num_columns {
+                                            row.col(|ui| {
+                                                ui.add(GalleryImage::new(
+                                                    self.images[offest + i].clone(),
+                                                ));
+                                            });
+                                        }
 
-                                if count >= 11 {
-                                    ui.end_row();
-                                    count = 0;
-                                }
-                            }
-                        });
+                                        row.col(|ui| {
+                                            ui.add(Spacer::new(spacer_width, row_height));
+                                        });
+                                    },
+                                )
+                            })
+
+                        // egui::Grid::new("some_unique_id").show(ui, |ui| {
+                        //     let mut count = 0;
+                        //     for path in &self.images {
+                        //         // image.show_size(ui, Vec2::new(200.0, 200.0));
+
+                        //         ui.add(GalleryImage::new(path.clone()));
+
+                        //         count += 1;
+
+                        //         if count >= 11 {
+                        //             ui.end_row();
+                        //             count = 0;
+                        //         }
+                        //     }
+                        // });
                     }
                     None => {
                         ui.label("No folder selected");

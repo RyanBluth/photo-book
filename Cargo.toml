@@ -18,7 +18,7 @@ fast_image_resize = "2.7.3"
 anyhow = "1.0.72"
 flexi_logger = "0.25.6"
 log = "0.4"
-url = "2.4.1"
+kamadak-exif = "0.5.5"
 
 [profile.release]
-lto = "fat"
+# lto = "fat"
