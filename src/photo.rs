@@ -1,9 +1,7 @@
-use std::{
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use crate::{
-    dependencies::{Dependency, UsingSingleton},
+    dependencies::{Dependency, SingletonFor, SendableSingletonFor},
     thumbnail_cache::ThumbnailCache,
 };
 
@@ -44,7 +42,8 @@ impl Photo {
         Ok(path)
     }
 
-    pub fn thumbnail<'a>(&self) -> Option<Vec<u8>> {
-        Dependency::<ThumbnailCache>::using_singleton(|thumbnail_cache| thumbnail_cache.get(&self.path))
+    pub fn thumbnail<'a>(&self) -> anyhow::Result<Option<Vec<u8>>> {
+        Dependency::<ThumbnailCache>::get()
+            .with_lock(|thumbnail_cache| thumbnail_cache.get(&self.path))
     }
 }

@@ -18,16 +18,25 @@ use image::{ColorType, ImageEncoder};
 
 use fast_image_resize as fr;
 
-use crate::{utils, dependencies::{Dependency, UsingSingletonMut}, thumbnail_cache::ThumbnailCache};
+use crate::dependencies::{Singleton, DependencyFor, SingletonFor, SendableSingletonFor, SendableSingleton};
+use crate::thumbnail_cache;
+use crate::{utils, dependencies::Dependency, thumbnail_cache::ThumbnailCache};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
-pub struct GalleryService {
+pub struct ThumbnailService {
+    thumbnail_cache: SendableSingleton<ThumbnailCache>,
 }    
 
-impl GalleryService {
+impl ThumbnailService {
 
-    pub fn gen_thumbnails(dir: PathBuf) -> anyhow::Result<()> {
+    pub fn new() -> Self {
+        Self {
+            thumbnail_cache: Dependency::<ThumbnailCache>::get(),
+        }
+    }
+
+    pub fn gen_thumbnails(&self, dir: PathBuf) -> anyhow::Result<()> {
         let path: PathBuf = PathBuf::from(dir);
 
         if !path.exists() {
@@ -50,9 +59,10 @@ impl GalleryService {
 
         for partition in partitions {
             let thumbnail_dir_clone = thumbnail_dir.clone();
+            let thumbnail_cache_clone = self.thumbnail_cache.clone();
             tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
                 partition.into_iter().try_for_each(|entry| {
-                    Self::gen_thumbnail(entry, &thumbnail_dir_clone)
+                    Self::gen_thumbnail(entry, &thumbnail_dir_clone, &thumbnail_cache_clone)
                 })?;
                 Ok(())
             });
@@ -61,7 +71,7 @@ impl GalleryService {
         Ok(())
     }
 
-    fn gen_thumbnail(entry: DirEntry, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
+    fn gen_thumbnail(entry: DirEntry, thumbnail_dir: &PathBuf, thumbnail_cache: &SendableSingleton<ThumbnailCache>) -> anyhow::Result<()> {
         let path = entry.path();
 
         let file_name = path.file_name();
@@ -77,7 +87,7 @@ impl GalleryService {
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists: {:?}", &thumbnail_path);
                     
-                    Dependency::<ThumbnailCache>::using_singleton_mut(|thumbnail_cache| {
+                    thumbnail_cache.with_lock_mut(|thumbnail_cache| {
                         thumbnail_cache.put(&path, std::fs::read(&thumbnail_path)?);
                         Ok(())
                     })?;
@@ -183,7 +193,7 @@ impl GalleryService {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                Dependency::<ThumbnailCache>::using_singleton_mut(move |thumbnail_cache| {
+                thumbnail_cache.with_lock_mut(move |thumbnail_cache| {
                     thumbnail_cache.put(&path, buf);
                     Ok(())
                 })?;

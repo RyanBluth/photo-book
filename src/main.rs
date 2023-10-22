@@ -2,27 +2,29 @@
 
 use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
+use dependencies::{Dependency, DependencyFor, SingletonFor};
 use eframe::{
     egui::{self, Layout, ScrollArea},
     emath::Align,
 };
 use egui_extras::Column;
+use event_bus::{EventBus, GalleryImageEvent, EventBusId};
+use gallery_service::ThumbnailService;
+use log::info;
 use photo::Photo;
 use widget::{gallery_image::GalleryImage, spacer::Spacer};
-use gallery_service::GalleryService;
-use log::info;
-
 
 use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
-mod gallery_service;
-mod string_log;
-mod widget;
-mod utils;
-mod photo;
 mod dependencies;
+mod gallery_service;
+mod photo;
+mod string_log;
 mod thumbnail_cache;
+mod utils;
+mod widget;
+mod event_bus;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -53,21 +55,48 @@ async fn main() -> anyhow::Result<()> {
                 current_dir: None,
                 images: Vec::new(),
                 log: app_log,
+                thumbnail_service: Dependency::<ThumbnailService>::get(),
+                mode: AppMode::Gallery,
             })
         }),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
 }
 
+enum AppMode {
+    Gallery,
+    Viewer,
+}
+
 struct MyApp {
     current_dir: Option<PathBuf>,
     images: Vec<Photo>,
     log: Arc<StringLog>,
+    thumbnail_service: ThumbnailService,
+    mode: AppMode,
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(&ctx);
+
+        match self.mode {
+            AppMode::Gallery => self.gallery(ctx),
+            AppMode::Viewer => self.viewer(ctx),
+        }
+    }
+}
+
+impl MyApp {
+    fn gallery(&mut self, ctx: &egui::Context) {
+
+        Dependency::<EventBus<GalleryImageEvent>>::get().listen(EventBusId::App, |event| {
+            match event {
+                GalleryImageEvent::Selected(photo) => {
+                    info!("Selected {:?}", photo);
+                },
+            }
+        });
 
         egui::TopBottomPanel::bottom("log")
             .resizable(true)
@@ -118,7 +147,8 @@ impl eframe::App for MyApp {
                         self.images.push(Photo::new(path));
                     }
 
-                    GalleryService::gen_thumbnails(self.current_dir.as_ref().unwrap().clone());
+                    self.thumbnail_service
+                        .gen_thumbnails(self.current_dir.as_ref().unwrap().clone());
                 }
 
                 match self.current_dir {
@@ -132,8 +162,9 @@ impl eframe::App for MyApp {
                         let num_columns: usize = (window_width / column_width).floor() as usize;
 
                         //let padding_size = num_columns as f32 * 10.0;
-                        let spacer_width = (window_width - (column_width * num_columns as f32) - 10.0).max(0.0);
-                            
+                        let spacer_width =
+                            (window_width - (column_width * num_columns as f32) - 10.0).max(0.0);
+
                         ui.spacing_mut().item_spacing.x = 0.0;
 
                         egui_extras::TableBuilder::new(ui)
@@ -159,23 +190,7 @@ impl eframe::App for MyApp {
                                         });
                                     },
                                 )
-                            })
-
-                        // egui::Grid::new("some_unique_id").show(ui, |ui| {
-                        //     let mut count = 0;
-                        //     for path in &self.images {
-                        //         // image.show_size(ui, Vec2::new(200.0, 200.0));
-
-                        //         ui.add(GalleryImage::new(path.clone()));
-
-                        //         count += 1;
-
-                        //         if count >= 11 {
-                        //             ui.end_row();
-                        //             count = 0;
-                        //         }
-                        //     }
-                        // });
+                            });
                     }
                     None => {
                         ui.label("No folder selected");
@@ -184,4 +199,6 @@ impl eframe::App for MyApp {
             });
         });
     }
+
+    fn viewer(&mut self, ctx: &egui::Context) {}
 }

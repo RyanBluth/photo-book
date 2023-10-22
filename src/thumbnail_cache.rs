@@ -3,8 +3,6 @@ use std::{
     path::PathBuf,
 };
 
-
-
 pub struct ThumbnailCache {
     cache: HashMap<String, Vec<u8>>,
 }
