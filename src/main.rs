@@ -4,11 +4,12 @@ use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
 use dependencies::{Dependency, DependencyFor, SingletonFor};
 use eframe::{
-    egui::{self, Layout, ScrollArea},
+    egui::{self, CentralPanel, Image, Key, Layout, ScrollArea},
     emath::Align,
+    epaint::{Pos2, Rect, Vec2},
 };
 use egui_extras::Column;
-use event_bus::{EventBus, GalleryImageEvent, EventBusId};
+use event_bus::{EventBus, EventBusId, GalleryImageEvent};
 use gallery_service::ThumbnailService;
 use log::info;
 use photo::Photo;
@@ -18,13 +19,13 @@ use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
 mod dependencies;
+mod event_bus;
 mod gallery_service;
 mod photo;
 mod string_log;
 mod thumbnail_cache;
 mod utils;
 mod widget;
-mod event_bus;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -65,7 +66,11 @@ async fn main() -> anyhow::Result<()> {
 
 enum AppMode {
     Gallery,
-    Viewer,
+    Viewer {
+        photo: Photo,
+        index: usize,
+        scale: f32,
+    },
 }
 
 struct MyApp {
@@ -80,24 +85,19 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(&ctx);
 
-        match self.mode {
+        match &self.mode {
             AppMode::Gallery => self.gallery(ctx),
-            AppMode::Viewer => self.viewer(ctx),
+            AppMode::Viewer {
+                photo,
+                index,
+                scale,
+            } => self.viewer(ctx, photo.clone(), *index, *scale),
         }
     }
 }
 
 impl MyApp {
     fn gallery(&mut self, ctx: &egui::Context) {
-
-        Dependency::<EventBus<GalleryImageEvent>>::get().listen(EventBusId::App, |event| {
-            match event {
-                GalleryImageEvent::Selected(photo) => {
-                    info!("Selected {:?}", photo);
-                },
-            }
-        });
-
         egui::TopBottomPanel::bottom("log")
             .resizable(true)
             .show(ctx, |ui| {
@@ -179,9 +179,17 @@ impl MyApp {
                                         let offest = row_idx * num_columns;
                                         for i in 0..num_columns {
                                             row.col(|ui| {
-                                                ui.add(GalleryImage::new(
+                                                let image = GalleryImage::new(
                                                     self.images[offest + i].clone(),
-                                                ));
+                                                );
+
+                                                if ui.add(image).clicked() {
+                                                    self.mode = AppMode::Viewer {
+                                                        photo: self.images[offest + i].clone(),
+                                                        index: offest + i,
+                                                        scale: 1.0,
+                                                    };
+                                                }
                                             });
                                         }
 
@@ -200,5 +208,61 @@ impl MyApp {
         });
     }
 
-    fn viewer(&mut self, ctx: &egui::Context) {}
+    fn viewer(&mut self, ctx: &egui::Context, photo: Photo, index: usize, scale: f32) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical(|ui| {
+                let button = ui.button("Back");
+
+                if button.clicked() {
+                    self.mode = AppMode::Gallery;
+                }
+
+                let window_width = ui.available_width();
+                let window_height = ui.available_height();
+
+                ui.horizontal_centered(|ui| {
+                    ScrollArea::both().show(ui, |ui| {
+                        ui.add(
+                            Image::from_uri(photo.uri())
+                                .maintain_aspect_ratio(true)
+                                .fit_to_exact_size(Vec2::new(
+                                    window_width * scale,
+                                    window_height * scale,
+                                )),
+                        );
+                    });
+                });
+            });
+
+            if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                self.mode = AppMode::Viewer {
+                    photo: self.images[(index + 1) % self.images.len()].clone(),
+                    index: (index + 1) % self.images.len(),
+                    scale: scale,
+                };
+            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                self.mode = AppMode::Viewer {
+                    photo: self.images[(index + self.images.len() - 1) % self.images.len()].clone(),
+                    index: (index + self.images.len() - 1) % self.images.len(),
+                    scale: scale,
+                };
+            } else if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                self.mode = AppMode::Gallery;
+            }
+
+            if ui.input(|reader| reader.scroll_delta.y > 0.0) {
+                self.mode = AppMode::Viewer {
+                    photo: photo.clone(),
+                    index: index,
+                    scale: scale * 1.1,
+                };
+            } else if ui.input(|reader| reader.scroll_delta.y < 0.0) {
+                self.mode = AppMode::Viewer {
+                    photo: photo.clone(),
+                    index: index,
+                    scale: scale * 0.9,
+                };
+            }
+        });
+    }
 }

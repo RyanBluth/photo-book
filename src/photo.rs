@@ -28,6 +28,10 @@ impl Photo {
         self.path.display().to_string()
     }
 
+    pub fn uri(&self) -> String {
+        format!("file://{}", self.string_path())
+    }
+
     pub fn thumbnail_path(&self) -> anyhow::Result<PathBuf> {
         let mut path = self.path.clone();
         let file_name = path
