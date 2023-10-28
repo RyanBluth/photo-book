@@ -1508,6 +1508,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df19da1e92fbfec043ca97d622955381b1f3ee72a180ec999912df31b1ccd951"
 
 [[package]]
+name = "imagesize"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "029d73f573d8e8d63e6d5020011d3255b28c3ba85d6cf870a07184ed23de9284"
+
+[[package]]
 name = "indexmap"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2151,6 +2157,7 @@ dependencies = [
  "fast_image_resize",
  "flexi_logger",
  "image",
+ "imagesize 0.12.0",
  "kamadak-exif",
  "log",
  "native-dialog",
@@ -3031,7 +3038,7 @@ dependencies = [
  "base64 0.13.1",
  "data-url",
  "flate2",
- "imagesize",
+ "imagesize 0.10.1",
  "kurbo",
  "log",
  "rctree",
