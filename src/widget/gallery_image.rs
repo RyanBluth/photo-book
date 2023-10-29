@@ -32,10 +32,10 @@ impl Widget for GalleryImage {
                 ui.vertical(|ui| {
                     ui.set_min_size(Self::SIZE);
 
-                    match self.photo.thumbnail() {
-                        Ok(Some(bytes)) => {
+                    match self.photo.thumbnail_texture(&ui.ctx()) {
+                        Ok(Some(texture)) => {
                             ui.add(
-                                Image::from_bytes(self.photo.string_path(), bytes)
+                                Image::from_texture(texture)
                                     .fit_to_exact_size(Self::IMAGE_SIZE)
                             );
                         }

@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{thumbnail_cache::ThumbnailCache, gallery_service::ThumbnailService, event_bus::{EventBus, GalleryImageEvent, EventBusId}};
+use crate::{image_cache::ImageCache, gallery_service::ThumbnailService, event_bus::{EventBus, GalleryImageEvent, EventBusId}};
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
@@ -118,9 +118,9 @@ pub trait SendableSingletonFor<T> {
 pub struct Dependency<T>(PhantomData<T>);
 
 send_singleton!(
-    THUMBNAIL_CACHE_INSTANCE,
-    ThumbnailCache,
-    ThumbnailCache::new()
+    IMAGE_CACHE_INSTANCE,
+    ImageCache,
+    ImageCache::new()
 );
 
 singleton!(

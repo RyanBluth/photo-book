@@ -1,8 +1,7 @@
-
-
-use eframe::egui;
+use eframe::egui::SizeHint::Size;
+use eframe::egui::{self, Context, TextureOptions};
+use eframe::epaint::util::{FloatOrd, OrderedFloat};
 use log::info;
-
 
 use std::fs::DirEntry;
 use std::io::BufWriter;
@@ -18,25 +17,26 @@ use image::{ColorType, ImageEncoder};
 
 use fast_image_resize as fr;
 
-use crate::dependencies::{Singleton, DependencyFor, SingletonFor, SendableSingletonFor, SendableSingleton};
-use crate::thumbnail_cache;
-use crate::{utils, dependencies::Dependency, thumbnail_cache::ThumbnailCache};
+use crate::dependencies::{
+    DependencyFor, SendableSingleton, SendableSingletonFor, Singleton, SingletonFor,
+};
+use crate::image_cache;
+use crate::{dependencies::Dependency, image_cache::ImageCache, utils};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
 pub struct ThumbnailService {
-    thumbnail_cache: SendableSingleton<ThumbnailCache>,
-}    
+    image_cache: SendableSingleton<ImageCache>,
+}
 
 impl ThumbnailService {
-
     pub fn new() -> Self {
         Self {
-            thumbnail_cache: Dependency::<ThumbnailCache>::get(),
+            image_cache: Dependency::<ImageCache>::get(),
         }
     }
 
-    pub fn gen_thumbnails(&self, dir: PathBuf) -> anyhow::Result<()> {
+    pub fn gen_thumbnails(&self, dir: PathBuf, ctx: Context) -> anyhow::Result<()> {
         let path: PathBuf = PathBuf::from(dir);
 
         if !path.exists() {
@@ -58,11 +58,17 @@ impl ThumbnailService {
         let partitions = utils::partition_iterator(entries.into_iter(), 8);
 
         for partition in partitions {
-            let thumbnail_dir_clone = thumbnail_dir.clone();
-            let thumbnail_cache_clone = self.thumbnail_cache.clone();
+            let thumbnail_dir = thumbnail_dir.clone();
+            let image_cache = self.image_cache.clone();
+            let ctx = ctx.clone();
             tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
                 partition.into_iter().try_for_each(|entry| {
-                    Self::gen_thumbnail(entry, &thumbnail_dir_clone, &thumbnail_cache_clone)
+                    Self::gen_thumbnail(
+                        entry,
+                        &thumbnail_dir,
+                        &image_cache,
+                        &ctx,
+                    )
                 })?;
                 Ok(())
             });
@@ -71,7 +77,12 @@ impl ThumbnailService {
         Ok(())
     }
 
-    fn gen_thumbnail(entry: DirEntry, thumbnail_dir: &PathBuf, thumbnail_cache: &SendableSingleton<ThumbnailCache>) -> anyhow::Result<()> {
+    fn gen_thumbnail(
+        entry: DirEntry,
+        thumbnail_dir: &PathBuf,
+        image_cache: &SendableSingleton<ImageCache>,
+        ctx: &Context,
+    ) -> anyhow::Result<()> {
         let path = entry.path();
 
         let file_name = path.file_name();
@@ -86,11 +97,17 @@ impl ThumbnailService {
 
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists: {:?}", &thumbnail_path);
-                    
-                    thumbnail_cache.with_lock_mut(|thumbnail_cache| {
-                        thumbnail_cache.put(&path, std::fs::read(&thumbnail_path)?);
-                        Ok(())
-                    })?;
+
+                    let tex_result = ctx.try_load_texture(
+                        &format!("file://{}", thumbnail_path.to_str().unwrap()),
+                        TextureOptions {
+                            magnification: egui::TextureFilter::Linear,
+                            minification: egui::TextureFilter::Linear,
+                        },
+                        egui::SizeHint::Scale(1.0_f32.ord()),
+                    )?;
+
+                    ctx.request_repaint();
 
                     return Ok(());
                 } else {
@@ -116,8 +133,8 @@ impl ThumbnailService {
                 let ratio = img.height() as f32 / img.width() as f32;
                 let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
 
-                let dst_width =
-                    NonZeroU32::new(THUMBNAIL_SIZE as u32).ok_or(anyhow!("Invalid destination image width"))?;
+                let dst_width = NonZeroU32::new(THUMBNAIL_SIZE as u32)
+                    .ok_or(anyhow!("Invalid destination image width"))?;
                 let dst_height = NonZeroU32::new(dst_height)
                     .ok_or(anyhow!("Invalid destination image height"))?;
                 let mut dst_image = fr::Image::new(dst_width, dst_height, src_image.pixel_type());
@@ -193,12 +210,15 @@ impl ThumbnailService {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                thumbnail_cache.with_lock_mut(move |thumbnail_cache| {
-                    thumbnail_cache.put(&path, buf);
-                    Ok(())
-                })?;
+                let tex_result = ctx.try_load_texture(
+                    &format!("file://{}", thumbnail_path.to_str().unwrap()),
+                    TextureOptions {
+                        magnification: egui::TextureFilter::Linear,
+                        minification: egui::TextureFilter::Linear,
+                    },
+                    Size(u32::from(dst_width), u32::from(dst_height as NonZeroU32)),
+                )?;
 
-                let ctx = egui::Context::default();
                 ctx.request_repaint();
             }
         }

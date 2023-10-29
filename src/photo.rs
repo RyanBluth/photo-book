@@ -2,11 +2,15 @@ use std::path::PathBuf;
 
 use crate::{
     dependencies::{Dependency, SendableSingletonFor, SingletonFor},
-    thumbnail_cache::ThumbnailCache,
+    image_cache::ImageCache,
 };
 
 use anyhow::anyhow;
-use eframe::epaint::Vec2;
+use eframe::{
+    egui::{self, load::SizedTexture, Context, SizeHint, TextureOptions},
+    epaint::{util::FloatOrd, Vec2},
+};
+use log::error;
 
 pub enum PhotoDimension {
     Width(f32),
@@ -44,6 +48,10 @@ impl Photo {
         format!("file://{}", self.string_path())
     }
 
+    pub fn thumbnail_uri(&self) -> String {
+        format!("file://{}", self.thumbnail_path().unwrap().display())
+    }
+
     pub fn thumbnail_path(&self) -> anyhow::Result<PathBuf> {
         let mut path = self.path.clone();
         let file_name = path
@@ -58,9 +66,45 @@ impl Photo {
         Ok(path)
     }
 
-    pub fn thumbnail<'a>(&self) -> anyhow::Result<Option<Vec<u8>>> {
-        Dependency::<ThumbnailCache>::get()
-            .with_lock(|thumbnail_cache| thumbnail_cache.get(&self.path))
+    // pub fn thumbnail(&self) -> anyhow::Result<Option<Vec<u8>>> {
+    //     Dependency::<ImageCache>::get().with_lock(|image_cache| image_cache.get(&self.path))
+    // }
+
+    pub fn thumbnail_texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
+        match ctx.try_load_texture(
+            &self.thumbnail_uri(),
+            TextureOptions::LINEAR,
+            SizeHint::Scale(1.0_f32.ord()),
+        )? {
+            egui::load::TexturePoll::Pending { size: _ } => Ok(None),
+            egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
+        }
+    }
+
+    // pub fn bytes(&self) -> anyhow::Result<Option<Vec<u8>>> {
+    //     Dependency::<ImageCache>::get().with_lock_mut(|image_cache| {
+    //         match image_cache.get(&self.path) {
+    //             Some(bytes) => Some(bytes),
+    //             None => match std::fs::read(&self.path).ok() {
+    //                 Some(bytes) => {
+    //                     image_cache.put(&self.path, bytes.clone());
+    //                     Some(bytes)
+    //                 }
+    //                 None => None,
+    //             },
+    //         }
+    //     })
+    // }
+
+    pub fn texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
+        match ctx.try_load_texture(
+            &self.uri(),
+            TextureOptions::LINEAR,
+            SizeHint::Scale(1.0_f32.ord()),
+        )? {
+            egui::load::TexturePoll::Pending { size: _ } => Ok(None),
+            egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
+        }
     }
 
     pub fn max_dimension(&self) -> PhotoDimension {

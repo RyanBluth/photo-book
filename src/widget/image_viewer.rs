@@ -1,6 +1,9 @@
 use eframe::{
-    egui::{Context, Image, Key, Painter, Response, Sense, Widget},
-    epaint::{Color32, Pos2, Rect, Stroke, Vec2},
+    egui::{
+        self, load::TexturePoll, Context, Image, Key, Painter, Response, Sense, SizeHint,
+        TextureOptions, Widget,
+    },
+    epaint::{util::FloatOrd, Color32, Pos2, Rect, Stroke, Vec2},
 };
 use env_logger::fmt::Color;
 
@@ -9,9 +12,19 @@ use crate::photo::{
     PhotoDimension::{Height, Width},
 };
 
+#[derive(Debug, Clone)]
 pub struct ImageViewerState {
     pub scale: f32,
     pub offset: Vec2,
+}
+
+impl Default for ImageViewerState {
+    fn default() -> Self {
+        Self {
+            scale: 1.0,
+            offset: Vec2::ZERO,
+        }
+    }
 }
 
 pub enum Request {
@@ -26,12 +39,12 @@ pub struct ImageViewerResponse {
 }
 
 pub struct ImageViewer<'a> {
-    photo: Photo,
+    photo: &'a Photo,
     state: &'a mut ImageViewerState,
 }
 
 impl<'a> ImageViewer<'a> {
-    pub fn new(photo: Photo, state: &'a mut ImageViewerState) -> Self {
+    pub fn new(photo: &'a Photo, state: &'a mut ImageViewerState) -> Self {
         Self { photo, state }
     }
 
@@ -67,10 +80,10 @@ impl<'a> ImageViewer<'a> {
 }
 
 impl<'a> Widget for ImageViewer<'a> {
-    fn ui(mut self, ui: &mut eframe::egui::Ui) -> Response {
+    fn ui(self, ui: &mut eframe::egui::Ui) -> Response {
         let available_size = ui.available_size();
 
-        let (mut rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
+        let (rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
 
         response.request_focus();
 
@@ -124,7 +137,6 @@ impl<'a> Widget for ImageViewer<'a> {
 
         ui.input(|i| {
             if i.pointer.hover_pos().is_some() && i.scroll_delta.y != 0.0 {
-                
                 let mouse_pos = i.pointer.hover_pos().unwrap();
 
                 let rel_mouse_pos_before = image_rect.center() - mouse_pos;
@@ -146,7 +158,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 image_rect = image_rect
                     .expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5));
 
-                let rel_mouse_pos_after =  rel_mouse_pos_before * scale_delta;
+                let rel_mouse_pos_after = rel_mouse_pos_before * scale_delta;
 
                 self.state.offset += rel_mouse_pos_after - rel_mouse_pos_before;
             } else {
@@ -207,10 +219,32 @@ impl<'a> Widget for ImageViewer<'a> {
             image_rect.set_center(Pos2::new(image_rect.center().x, rect.center().y));
             self.state.offset.y = 0.0;
         }
-        
-        image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
-        Image::from_uri(self.photo.uri()).paint_at(ui, image_rect);
+        image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
+        match self.photo.texture(&ui.ctx()) {
+            Ok(Some(texture)) => {
+                Image::from_texture(texture).paint_at(ui, image_rect);
+            }
+            Ok(None) => match self.photo.thumbnail_texture(&ui.ctx()) {
+                Ok(Some(texture)) => {
+                    Image::from_texture(texture).paint_at(ui, image_rect);
+                }
+                Ok(None) | Err(_) => {
+                    ui.painter()
+                        .rect_filled(image_rect, 0.0, Color32::from_rgb(50, 50, 50));
+                }
+            },
+            Err(error) => {
+               ui.painter().text(
+                    image_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    &format!("Error: {}", error),
+                    egui::FontId::default(),
+                    Color32::from_rgb(255, 0, 0),
+                );
+
+            }
+        }
 
         response
     }
