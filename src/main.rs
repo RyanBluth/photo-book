@@ -2,9 +2,9 @@
 
 use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
-use dependencies::{Dependency, DependencyFor, SingletonFor};
+use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
-    egui::{self, CentralPanel, Image, Key, Layout, ScrollArea},
+    egui::{self, load::SizedTexture, CentralPanel, Image, Key, Layout, ScrollArea},
     emath::Align,
     epaint::{Pos2, Rect, Vec2},
 };
@@ -13,6 +13,7 @@ use event_bus::{EventBus, EventBusId, GalleryImageEvent};
 use gallery_service::ThumbnailService;
 use log::{error, info};
 use photo::Photo;
+use photo_manager::PhotoManager;
 use widget::{
     gallery_image::GalleryImage,
     image_viewer::{self, ImageViewer, ImageViewerState},
@@ -27,6 +28,7 @@ mod event_bus;
 mod gallery_service;
 mod image_cache;
 mod photo;
+mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
@@ -59,9 +61,8 @@ async fn main() -> anyhow::Result<()> {
         Box::new(|_cc| {
             Box::<MyApp>::new(MyApp {
                 current_dir: None,
-                images: Vec::new(),
+                photo_manager: Dependency::<PhotoManager>::get(),
                 log: app_log,
-                thumbnail_service: Dependency::<ThumbnailService>::get(),
                 mode: AppMode::Gallery,
             })
         }),
@@ -81,9 +82,8 @@ enum AppMode {
 
 struct MyApp {
     current_dir: Option<PathBuf>,
-    images: Vec<Photo>,
     log: Arc<StringLog>,
-    thumbnail_service: ThumbnailService,
+    photo_manager: Singleton<PhotoManager>,
     mode: AppMode,
 }
 
@@ -98,13 +98,14 @@ impl eframe::App for MyApp {
                 photo,
                 index,
                 state,
-                // } => self.viewer(ctx, photo.clone(), *index, *scale, *offset),
             } => {
                 let index = index;
                 CentralPanel::default().show(ctx, |ui| {
                     let mut state = state.clone();
 
-                    let viewer_response = ImageViewer::new(&photo, &mut state).show(ui);
+                    let viewer_response =
+                        ImageViewer::new(&photo, &mut state)
+                            .show(ui);
 
                     match viewer_response.request {
                         Some(request) => match request {
@@ -112,20 +113,29 @@ impl eframe::App for MyApp {
                                 self.mode = AppMode::Gallery;
                             }
                             image_viewer::Request::Previous => {
-                                self.mode = AppMode::Viewer {
-                                    photo: self.images
-                                        [(index + self.images.len() - 1) % self.images.len()]
-                                    .clone(),
-                                    index: (index + self.images.len() - 1) % self.images.len(),
-                                    state: ImageViewerState::default(),
-                                };
+                                self.photo_manager.with_lock_mut(|photo_manager| {
+                                    let (prev_photo, new_index) = photo_manager
+                                        .previous_photo(index, ctx)
+                                        .unwrap()
+                                        .unwrap();
+
+                                    self.mode = AppMode::Viewer {
+                                        photo: prev_photo,
+                                        index: new_index,
+                                        state: ImageViewerState::default(),
+                                    };
+                                });
                             }
                             image_viewer::Request::Next => {
-                                self.mode = AppMode::Viewer {
-                                    photo: self.images[(index + 1) % self.images.len()].clone(),
-                                    index: (index + 1) % self.images.len(),
-                                    state: ImageViewerState::default(),
-                                };
+                                self.photo_manager.with_lock_mut(|photo_manager| {
+                                    let (next_photo, new_index) = photo_manager.next_photo(index, ctx).unwrap().unwrap();
+
+                                    self.mode = AppMode::Viewer {
+                                        photo: next_photo,
+                                        index: new_index,
+                                        state: ImageViewerState::default(),
+                                    };
+                                });
                             }
                         },
                         None => {
@@ -178,31 +188,9 @@ impl MyApp {
 
                     info!("Opened {:?}", self.current_dir);
 
-                    let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
-                        read_dir(self.current_dir.as_ref().unwrap())
-                            .unwrap()
-                            .collect();
-
-                    for entry in entries {
-                        let entry = entry.as_ref().unwrap();
-                        let path = entry.path();
-
-                        if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
-                            continue;
-                        }
-                        self.images.push(Photo::new(path));
-                    }
-
-                    match self
-                        .thumbnail_service
-                        .gen_thumbnails(self.current_dir.as_ref().unwrap().clone(), ctx.clone())
-                    {
-                        Ok(_) => {}
-                        Err(error) => {
-                            println!("Failed to generate thumbnails {}", error);
-                            error!("Failed to generate thumbnails {}", error);
-                        }
-                    }
+                    self.photo_manager.with_lock_mut(|photo_manager| {
+                        photo_manager.load_directory(&self.current_dir.as_ref().unwrap(), ctx);
+                    });
                 }
 
                 match self.current_dir {
@@ -221,6 +209,10 @@ impl MyApp {
 
                         ui.spacing_mut().item_spacing.x = 0.0;
 
+                        let num_photos = self
+                            .photo_manager
+                            .with_lock(|photo_manager| photo_manager.photos.len());
+
                         egui_extras::TableBuilder::new(ui)
                             .min_scrolled_height(window_height)
                             .columns(Column::exact(column_width), num_columns)
@@ -228,22 +220,27 @@ impl MyApp {
                             .body(|body| {
                                 body.rows(
                                     row_height,
-                                    self.images.len() / num_columns,
+                                    num_photos / num_columns,
                                     |row_idx, mut row| {
                                         let offest = row_idx * num_columns;
                                         for i in 0..num_columns {
                                             row.col(|ui| {
-                                                let image = GalleryImage::new(
-                                                    self.images[offest + i].clone(),
-                                                );
+                                                self.photo_manager.with_lock_mut(|photo_manager| {
+                                                    let image = GalleryImage::new(
+                                                        photo_manager.photos[offest + i].clone(),
+                                                        photo_manager
+                                                            .tumbnail_texture_at(offest + i, ctx),
+                                                    );
 
-                                                if ui.add(image).clicked() {
-                                                    self.mode = AppMode::Viewer {
-                                                        photo: self.images[offest + i].clone(),
-                                                        index: offest + i,
-                                                        state: ImageViewerState::default(),
-                                                    };
-                                                }
+                                                    if ui.add(image).clicked() {
+                                                        self.mode = AppMode::Viewer {
+                                                            photo: photo_manager.photos[offest + i]
+                                                                .clone(),
+                                                            index: offest + i,
+                                                            state: ImageViewerState::default(),
+                                                        };
+                                                    }
+                                                });
                                             });
                                         }
 

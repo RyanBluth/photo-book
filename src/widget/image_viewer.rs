@@ -1,15 +1,20 @@
 use eframe::{
     egui::{
-        self, load::TexturePoll, Context, Image, Key, Painter, Response, Sense, SizeHint,
-        TextureOptions, Widget,
+        self,
+        load::{SizedTexture, TexturePoll},
+        Context, Image, Key, Painter, Response, Sense, SizeHint, TextureOptions, Widget,
     },
     epaint::{util::FloatOrd, Color32, Pos2, Rect, Stroke, Vec2},
 };
 use env_logger::fmt::Color;
 
-use crate::photo::{
-    Photo,
-    PhotoDimension::{Height, Width},
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    photo::{
+        Photo,
+        PhotoDimension::{Height, Width},
+    },
+    photo_manager::PhotoManager,
 };
 
 #[derive(Debug, Clone)]
@@ -41,11 +46,19 @@ pub struct ImageViewerResponse {
 pub struct ImageViewer<'a> {
     photo: &'a Photo,
     state: &'a mut ImageViewerState,
+    photo_manager: Singleton<PhotoManager>,
 }
 
 impl<'a> ImageViewer<'a> {
-    pub fn new(photo: &'a Photo, state: &'a mut ImageViewerState) -> Self {
-        Self { photo, state }
+    pub fn new(
+        photo: &'a Photo,
+        state: &'a mut ImageViewerState,
+    ) -> Self {
+        Self {
+            photo,
+            state,
+            photo_manager: Dependency::<PhotoManager>::get(),
+        }
     }
 
     pub fn show(mut self, ui: &mut eframe::egui::Ui) -> ImageViewerResponse {
@@ -221,11 +234,16 @@ impl<'a> Widget for ImageViewer<'a> {
         }
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
-        match self.photo.texture(&ui.ctx()) {
+        match self
+            .photo_manager
+            .with_lock_mut(|photo_manager| photo_manager.texture_for(&self.photo, &ui.ctx()))
+        {
             Ok(Some(texture)) => {
                 Image::from_texture(texture).paint_at(ui, image_rect);
             }
-            Ok(None) => match self.photo.thumbnail_texture(&ui.ctx()) {
+            Ok(None) => match self.photo_manager.with_lock_mut(|photo_manager| {
+                photo_manager.thumbnail_texture_for(&self.photo, &ui.ctx())
+            }) {
                 Ok(Some(texture)) => {
                     Image::from_texture(texture).paint_at(ui, image_rect);
                 }
@@ -235,14 +253,13 @@ impl<'a> Widget for ImageViewer<'a> {
                 }
             },
             Err(error) => {
-               ui.painter().text(
+                ui.painter().text(
                     image_rect.center(),
                     egui::Align2::CENTER_CENTER,
                     &format!("Error: {}", error),
                     egui::FontId::default(),
                     Color32::from_rgb(255, 0, 0),
                 );
-
             }
         }
 

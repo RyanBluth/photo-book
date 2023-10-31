@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{Image, Response, Sense, Ui, Widget},
+    egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
     epaint::{Color32, Rect, Vec2},
 };
 use log::info;
@@ -8,6 +8,7 @@ use crate::{photo::Photo, widget::placeholder::RectPlaceholder, dependencies::{D
 
 pub struct GalleryImage {
     photo: Photo,
+    texture: anyhow::Result<Option<SizedTexture>>,
 }
 
 impl GalleryImage {
@@ -17,8 +18,8 @@ impl GalleryImage {
         y: Self::SIZE.y * 0.75,
     };
 
-    pub fn new(photo: Photo) -> Self {
-        Self { photo }
+    pub fn new(photo: Photo, texture: anyhow::Result<Option<SizedTexture>>) -> Self {
+        Self { photo, texture }
     }
 }
 
@@ -32,7 +33,7 @@ impl Widget for GalleryImage {
                 ui.vertical(|ui| {
                     ui.set_min_size(Self::SIZE);
 
-                    match self.photo.thumbnail_texture(&ui.ctx()) {
+                    match self.texture {
                         Ok(Some(texture)) => {
                             ui.add(
                                 Image::from_texture(texture)

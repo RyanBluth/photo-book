@@ -36,6 +36,7 @@ impl LogWriter for ArcStringLog {
     
     fn write(&self, now: &mut flexi_logger::DeferredNow, record: &log::Record) -> std::io::Result<()> {
         let line = format!("{} - {}", now.now().format("%Y-%m-%d %H:%M:%S"), record.args());
+        println!("{}", line);
         self.log.logs.lock().unwrap().get_mut().push(line);
         Ok(())
     }

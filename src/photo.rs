@@ -70,16 +70,16 @@ impl Photo {
     //     Dependency::<ImageCache>::get().with_lock(|image_cache| image_cache.get(&self.path))
     // }
 
-    pub fn thumbnail_texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
-        match ctx.try_load_texture(
-            &self.thumbnail_uri(),
-            TextureOptions::LINEAR,
-            SizeHint::Scale(1.0_f32.ord()),
-        )? {
-            egui::load::TexturePoll::Pending { size: _ } => Ok(None),
-            egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
-        }
-    }
+    // pub fn thumbnail_texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
+    //     match ctx.try_load_texture(
+    //         &self.thumbnail_uri(),
+    //         TextureOptions::LINEAR,
+    //         SizeHint::Scale(1.0_f32.ord()),
+    //     )? {
+    //         egui::load::TexturePoll::Pending { size: _ } => Ok(None),
+    //         egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
+    //     }
+    // }
 
     // pub fn bytes(&self) -> anyhow::Result<Option<Vec<u8>>> {
     //     Dependency::<ImageCache>::get().with_lock_mut(|image_cache| {
@@ -96,16 +96,16 @@ impl Photo {
     //     })
     // }
 
-    pub fn texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
-        match ctx.try_load_texture(
-            &self.uri(),
-            TextureOptions::LINEAR,
-            SizeHint::Scale(1.0_f32.ord()),
-        )? {
-            egui::load::TexturePoll::Pending { size: _ } => Ok(None),
-            egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
-        }
-    }
+    // pub fn texture(&self, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
+    //     match ctx.try_load_texture(
+    //         &self.uri(),
+    //         TextureOptions::LINEAR,
+    //         SizeHint::Scale(1.0_f32.ord()),
+    //     )? {
+    //         egui::load::TexturePoll::Pending { size: _ } => Ok(None),
+    //         egui::load::TexturePoll::Ready { texture } => Ok(Some(texture)),
+    //     }
+    // }
 
     pub fn max_dimension(&self) -> PhotoDimension {
         if self.size.x > self.size.y {

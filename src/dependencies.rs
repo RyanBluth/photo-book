@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{image_cache::ImageCache, gallery_service::ThumbnailService, event_bus::{EventBus, GalleryImageEvent, EventBusId}};
+use crate::{image_cache::ImageCache, gallery_service::ThumbnailService, event_bus::{EventBus, GalleryImageEvent, EventBusId}, photo_manager::PhotoManager};
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
@@ -60,34 +60,22 @@ impl<T> Clone for SendableSingleton<T> {
 
 
 impl<T> Singleton<T> {
-    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> anyhow::Result<R> {
-        match self.0.lock() {
-            Ok(guard) => Ok(op(&guard)),
-            Err(e) => Err(anyhow::anyhow!("Failed to lock singleton: {}", e)),
-        }
+    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> R {
+        op(&self.0.lock().expect("Failed to lock singleton"))
     }
 
-    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> anyhow::Result<R> {
-        match self.0.lock() {
-            Ok(mut guard) => Ok(op(&mut guard)),
-            Err(e) => Err(anyhow::anyhow!("Failed to lock singleton: {}", e)),
-        }
+    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> R {
+        op(&mut self.0.lock().expect("Failed to lock singleton"))
     }
 }
 
 impl<T> SendableSingleton<T> {
-    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> anyhow::Result<R> {
-        match self.0.lock() {
-            Ok(guard) => Ok(op(&guard)),
-            Err(e) => Err(anyhow::anyhow!("Failed to lock singleton: {}", e)),
-        }
+    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> R {
+        op(&self.0.lock().expect("Failed to lock singleton"))
     }
 
-    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> anyhow::Result<R> {
-        match self.0.lock() {
-            Ok(mut guard) => Ok(op(&mut guard)),
-            Err(e) => Err(anyhow::anyhow!("Failed to lock singleton: {}", e)),
-        }
+    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> R {
+        op(&mut self.0.lock().expect("Failed to lock singleton"))
     }
 }
 
@@ -127,6 +115,12 @@ singleton!(
     GALLERY_IMAGE_EVENT_BUS_INSTANCE,
     EventBus<GalleryImageEvent>,
     EventBus::new()
+);
+
+singleton!(
+    PHOTO_MANAGER_INSTANCE,
+    PhotoManager,
+    PhotoManager::new()
 );
 
 dependency!(
