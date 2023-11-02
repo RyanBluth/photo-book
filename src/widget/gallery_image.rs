@@ -4,7 +4,7 @@ use eframe::{
 };
 use log::info;
 
-use crate::{photo::Photo, widget::placeholder::RectPlaceholder, dependencies::{Dependency, SingletonFor}, event_bus::{EventBus, GalleryImageEvent}};
+use crate::{photo::Photo, widget::placeholder::RectPlaceholder, dependencies::{Dependency, SingletonFor}};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -37,6 +37,7 @@ impl Widget for GalleryImage {
                         Ok(Some(texture)) => {
                             ui.add(
                                 Image::from_texture(texture)
+                                    .rotate(self.photo.metadata.rotation.radians(), Vec2::splat(0.5))
                                     .fit_to_exact_size(Self::IMAGE_SIZE)
                             );
                         }
@@ -58,11 +59,6 @@ impl Widget for GalleryImage {
             .response;
 
         response = response.interact(Sense::click());
-
-        if response.clicked() {
-            info!("Clicked on image: {:?}", self.photo);
-            Dependency::<EventBus<GalleryImageEvent>>::get().emit(GalleryImageEvent::Selected(self.photo.clone()));
-        }
 
         response
     }

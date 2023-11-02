@@ -8,22 +8,11 @@ use crate::{image_cache::ImageCache, gallery_service::ThumbnailService, event_bu
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
-        const $name: once_cell::unsync::Lazy<Singleton<$type>> = once_cell::unsync::Lazy::new(|| Singleton(Rc::new(Mutex::new($init))));
 
+        static $name: once_cell::sync::Lazy<Singleton<$type>> = once_cell::sync::Lazy::new(|| Singleton(Arc::new(Mutex::new($init))));
+        
         impl SingletonFor<$type> for Dependency<$type> {
             fn get() -> Singleton<$type> {
-                ($name).clone()
-            }
-        }
-    };
-}
-
-macro_rules! send_singleton {
-    ($name: ident, $type:ty, $init:expr) => {
-        static $name: once_cell::sync::Lazy<SendableSingleton<$type>> = once_cell::sync::Lazy::new(|| SendableSingleton(Arc::new(Mutex::new($init))));
-
-        impl SendableSingletonFor<$type> for Dependency<$type> {
-            fn get() -> SendableSingleton<$type> {
                 ($name).clone()
             }
         }
@@ -41,7 +30,7 @@ macro_rules! dependency {
     };
 }
 
-pub struct Singleton<T>(Rc<Mutex<T>>);
+pub struct Singleton<T>(Arc<Mutex<T>>);
 
 
 impl<T> Clone for Singleton<T> {
@@ -49,15 +38,6 @@ impl<T> Clone for Singleton<T> {
         Self(self.0.clone())
     }
 }
-
-pub struct SendableSingleton<T>(Arc<Mutex<T>>);
-
-impl<T> Clone for SendableSingleton<T> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
 
 impl<T> Singleton<T> {
     pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> R {
@@ -68,17 +48,6 @@ impl<T> Singleton<T> {
         op(&mut self.0.lock().expect("Failed to lock singleton"))
     }
 }
-
-impl<T> SendableSingleton<T> {
-    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> R {
-        op(&self.0.lock().expect("Failed to lock singleton"))
-    }
-
-    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> R {
-        op(&mut self.0.lock().expect("Failed to lock singleton"))
-    }
-}
-
 
 impl <E: Clone> Singleton<EventBus<E>> {
 
@@ -99,23 +68,20 @@ pub trait SingletonFor<T> {
     fn get() -> Singleton<T>;
 }
 
-pub trait SendableSingletonFor<T> {
-    fn get() -> SendableSingleton<T>;
-}
 
 pub struct Dependency<T>(PhantomData<T>);
 
-send_singleton!(
+singleton!(
     IMAGE_CACHE_INSTANCE,
     ImageCache,
     ImageCache::new()
 );
 
-singleton!(
-    GALLERY_IMAGE_EVENT_BUS_INSTANCE,
-    EventBus<GalleryImageEvent>,
-    EventBus::new()
-);
+// singleton!(
+//     GALLERY_IMAGE_EVENT_BUS_INSTANCE,
+//     EventBus<GalleryImageEvent>,
+//     EventBus::new()
+// );
 
 singleton!(
     PHOTO_MANAGER_INSTANCE,

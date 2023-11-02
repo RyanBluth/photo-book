@@ -18,7 +18,7 @@ use image::{ColorType, ImageEncoder};
 use fast_image_resize as fr;
 
 use crate::dependencies::{
-    DependencyFor, SendableSingleton, SendableSingletonFor, Singleton, SingletonFor,
+    DependencyFor, Singleton, SingletonFor,
 };
 use crate::image_cache;
 use crate::{dependencies::Dependency, image_cache::ImageCache, utils};
@@ -26,7 +26,7 @@ use crate::{dependencies::Dependency, image_cache::ImageCache, utils};
 const THUMBNAIL_SIZE: f32 = 256.0;
 
 pub struct ThumbnailService {
-    image_cache: SendableSingleton<ImageCache>,
+    image_cache: Singleton<ImageCache>,
 }
 
 impl ThumbnailService {
@@ -80,7 +80,7 @@ impl ThumbnailService {
     fn gen_thumbnail(
         entry: DirEntry,
         thumbnail_dir: &PathBuf,
-        image_cache: &SendableSingleton<ImageCache>,
+        image_cache: &Singleton<ImageCache>,
         ctx: &Context,
     ) -> anyhow::Result<()> {
         let path = entry.path();

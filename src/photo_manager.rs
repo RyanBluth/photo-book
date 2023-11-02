@@ -5,7 +5,7 @@ use std::{
 };
 
 use eframe::{
-    egui::{load::SizedTexture, Context},
+    egui::{load::{SizedTexture, TextureLoader}, Context},
     epaint::util::FloatOrd,
 };
 use log::info;
@@ -23,6 +23,7 @@ pub struct PhotoManager {
     thumbnail_service: ThumbnailService,
     pending_textures: HashSet<String>,
 }
+
 
 impl PhotoManager {
     pub fn new() -> Self {
@@ -122,16 +123,16 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let next_index = (current_index + 1) % self.photos.len();
         match self.photos.get(next_index) {
-            Some(photo) => {
+            Some(next_photo) => {
                 if let Some(current_photo) = self.photos.get(current_index) {
-                    println!("Cach = {:#?}", self.texture_cache);
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
+                        ctx.forget_image(&current_photo.uri());
                         ctx.tex_manager().write().free(texture.id);
                     }
                 }
 
-                Ok(Some((photo.clone(), next_index)))
+                Ok(Some((next_photo.clone(), next_index)))
             }
             None => Ok(None),
         }
@@ -144,15 +145,16 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let prev_index = (current_index + self.photos.len() - 1) % self.photos.len();
         match self.photos.get(prev_index) {
-            Some(photo) => {
+            Some(previous_photo) => {
                 if let Some(current_photo) = self.photos.get(current_index) {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
+                        ctx.forget_image(&current_photo.uri());
                         ctx.tex_manager().write().free(texture.id);
                     }
                 }
 
-                Ok(Some((photo.clone(), prev_index)))
+                Ok(Some((previous_photo.clone(), prev_index)))
             }
             None => Ok(None),
         }

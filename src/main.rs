@@ -169,7 +169,7 @@ impl MyApp {
                     |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
                             self.log.for_each(|line| {
-                                ui.label(line);
+                                //ui.label(line);
                             });
                         });
                     },
