@@ -169,8 +169,6 @@ impl PhotoManager {
         match texture_cache.get(uri) {
             Some(texture) => {
                 pending_textures.remove(uri);
-
-                info!("Found texture in cache: {:?}", uri);
                 Ok(Some(texture.clone()))
             }
             None => {
@@ -185,7 +183,6 @@ impl PhotoManager {
                         Ok(None)
                     }
                     eframe::egui::load::TexturePoll::Ready { texture } => {
-                        info!("Loaded texture: {:?}. Adding to cache", uri);
                         texture_cache.insert(uri.to_string(), texture.clone());
                         Ok(Some(texture))
                     }

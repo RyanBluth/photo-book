@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, fs::File, io::BufReader, path::PathBuf, f32::consts::PI};
+use std::{borrow::BorrowMut, f32::consts::PI, fs::File, io::BufReader, path::PathBuf};
 
 use crate::{
     dependencies::{Dependency, SingletonFor},
@@ -8,7 +8,8 @@ use crate::{
 use anyhow::anyhow;
 use eframe::{
     egui::{self, load::SizedTexture, Context, SizeHint, TextureOptions},
-    epaint::{util::FloatOrd, Vec2},
+    emath::Rot2,
+    epaint::{util::FloatOrd, Pos2, Rect, Vec2},
 };
 use log::error;
 
@@ -32,17 +33,16 @@ pub enum PhotoRotation {
 }
 
 impl PhotoRotation {
-
     pub fn radians(&self) -> f32 {
         match self {
-           Self::Normal => 0.0,
-           Self::MirrorHorizontal => todo!(),
-           Self::Rotate180 => todo!(),
-           Self::MirrorVertical => todo!(),
-           Self::MirrorHorizontalAndRotate270CW => todo!(),
-           Self::Rotate90CW => PI / 2.0,
-           Self::MirrorHorizontalAndRotate90CW => todo!(),
-           Self::Rotate270CW => (3.0 * PI) / 2.0,
+            Self::Normal => 0.0,
+            Self::MirrorHorizontal => 0.0,
+            Self::Rotate180 => PI,
+            Self::MirrorVertical => 0.0,
+            Self::MirrorHorizontalAndRotate270CW => (3.0 * PI) / 2.0,
+            Self::Rotate90CW => PI / 2.0,
+            Self::MirrorHorizontalAndRotate90CW => PI / 2.0,
+            Self::Rotate270CW => (3.0 * PI) / 2.0,
         }
     }
 }
@@ -52,6 +52,14 @@ pub struct PhotoMetadata {
     pub width: f32,
     pub height: f32,
     pub rotation: PhotoRotation,
+    pub rotated_width: f32,
+    pub rotated_height: f32,
+    pub camera: Option<String>,
+    pub date_time: Option<String>,
+    pub iso: Option<u32>,
+    pub shutter_speed: Option<String>,
+    pub aperture: Option<String>,
+    pub focal_length: Option<String>,
 }
 
 impl PhotoMetadata {
@@ -60,6 +68,16 @@ impl PhotoMetadata {
         let exif = Reader::new()
             .read_from_container(&mut BufReader::new(&file))
             .unwrap();
+
+        // for f in exif.fields() {
+        //     println!(
+        //         "  {}/{}: {}",
+        //         f.ifd_num.index(),
+        //         f.tag,
+        //         f.display_value().with_unit(&exif)
+        //     );
+        //     println!("      {:?}", f.value);
+        // }
 
         let mut width: Option<u32> = None;
         if let Some(field) = exif.get_field(Tag::PixelXDimension, In::PRIMARY) {
@@ -119,18 +137,114 @@ impl PhotoMetadata {
             }
         }
 
+        let mut camera: Option<String> = None;
+        if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
+            match field.value {
+                Value::Ascii(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        camera = Some(String::from_utf8_lossy(value).to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut date_time: Option<String> = None;
+        if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
+            match field.value {
+                Value::Ascii(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        date_time = Some(String::from_utf8_lossy(value).to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut iso: Option<u32> = None;
+        if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY) {
+            if let Some(value) = field.value.get_uint(0) {
+                iso = Some(value);
+            }
+        }
+
+        let mut shutter_speed: Option<String> = None;
+        if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
+            match field.value {
+                Value::Rational(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        shutter_speed = Some(value.to_string());
+                    }
+                }
+                Value::SRational(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        shutter_speed = Some(value.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut aperture: Option<String> = None;
+        if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
+            match field.value {
+                Value::Rational(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        aperture = Some(value.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        let mut focal_length: Option<String> = None;
+        if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
+            match field.value {
+                Value::Rational(ref vec) => {
+                    if let Some(value) = vec.get(0) {
+                        focal_length = Some(value.to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+
         match (width, height) {
-            (Some(width), Some(height)) => Self {
-                width: width as f32,
-                height: height as f32,
-                rotation,
-            },
+            (Some(width), Some(height)) => {
+                let rect = Rect::from_min_size(
+                    Pos2::new(0.0, 0.0),
+                    Vec2::new(width as f32, height as f32),
+                );
+                let rotated_size = rect.rotate_bb(Rot2::from_angle(rotation.radians())).size();
+
+                Self {
+                    width: width as f32,
+                    height: height as f32,
+                    rotation,
+                    rotated_width: rotated_size.x,
+                    rotated_height: rotated_size.y,
+                    camera,
+                    date_time,
+                    iso,
+                    shutter_speed,
+                    aperture,
+                    focal_length,
+                }
+            }
             _ => {
                 let size = imagesize::size(path.clone()).unwrap();
                 Self {
                     width: size.width as f32,
                     height: size.height as f32,
                     rotation,
+                    rotated_width: size.width as f32,
+                    rotated_height: size.height as f32,
+                    camera,
+                    date_time,
+                    iso,
+                    shutter_speed,
+                    aperture,
+                    focal_length,
                 }
             }
         }
@@ -184,7 +298,15 @@ impl Photo {
     }
 
     pub fn max_dimension(&self) -> MaxPhotoDimension {
-        if self.metadata.width > self.metadata.height {
+        // let rect = Rect::from_min_size(
+        //     Pos2::new(0.0, 0.0),
+        //     Vec2::new(self.metadata.width, self.metadata.height),
+        // );
+        // let rotated_size = rect
+        //     .rotate_bb(Rot2::from_angle(self.metadata.rotation.radians()))
+        //     .size();
+
+        if self.metadata.width >= self.metadata.height {
             MaxPhotoDimension::Width(self.metadata.width)
         } else {
             MaxPhotoDimension::Height(self.metadata.height)

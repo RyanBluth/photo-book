@@ -4,7 +4,7 @@ use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
-    egui::{self, load::SizedTexture, CentralPanel, Image, Key, Layout, ScrollArea},
+    egui::{self, load::SizedTexture, CentralPanel, Image, Key, Layout, ScrollArea, Widget},
     emath::Align,
     epaint::{Pos2, Rect, Vec2},
 };
@@ -17,7 +17,7 @@ use photo_manager::PhotoManager;
 use widget::{
     gallery_image::GalleryImage,
     image_viewer::{self, ImageViewer, ImageViewerState},
-    spacer::Spacer,
+    spacer::Spacer, photo_info::PhotoInfo,
 };
 
 use flexi_logger::{Logger, WriteMode};
@@ -100,6 +100,11 @@ impl eframe::App for MyApp {
                 state,
             } => {
                 let index = index;
+
+                egui::SidePanel::right("viewer_info_panel").resizable(true).show(ctx, |ui| {
+                    PhotoInfo::new(&photo).ui(ui);
+                });
+
                 CentralPanel::default().show(ctx, |ui| {
                     let mut state = state.clone();
 
@@ -255,41 +260,6 @@ impl MyApp {
                         ui.label("No folder selected");
                     }
                 }
-            });
-        });
-    }
-
-    fn viewer(
-        &mut self,
-        ctx: &egui::Context,
-        photo: Photo,
-        index: usize,
-        scale: f32,
-        offset: Vec2,
-    ) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical(|ui| {
-                let button = ui.button("Back");
-
-                if button.clicked() {
-                    self.mode = AppMode::Gallery;
-                }
-
-                let window_width = ui.available_width();
-                let window_height = ui.available_height();
-
-                ui.horizontal_centered(|ui| {
-                    let scroll_area = ScrollArea::both().scroll_offset(offset).show(ui, |ui| {
-                        ui.add(
-                            Image::from_uri(photo.uri())
-                                .maintain_aspect_ratio(true)
-                                .fit_to_exact_size(Vec2::new(
-                                    window_width * scale,
-                                    window_height * scale,
-                                )),
-                        );
-                    });
-                });
             });
         });
     }

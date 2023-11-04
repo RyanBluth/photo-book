@@ -6,7 +6,8 @@ use eframe::{
         load::{SizedTexture, TexturePoll},
         Context, Image, Key, Painter, Response, Sense, SizeHint, TextureOptions, Widget,
     },
-    epaint::{util::FloatOrd, Color32, Pos2, Rect, Stroke, Vec2},
+    emath::Rot2,
+    epaint::{util::FloatOrd, Color32, Mesh, Pos2, Rect, Shape, Stroke, TextureId, Vec2},
 };
 use env_logger::fmt::Color;
 
@@ -104,11 +105,12 @@ impl<'a> Widget for ImageViewer<'a> {
         // Adjust the rect aspect ratio
         match self.photo.max_dimension() {
             Width(_) => {
-                let aspect_ratio = self.photo.metadata.height / self.photo.metadata.width;
+                let aspect_ratio =
+                    self.photo.metadata.rotated_height / self.photo.metadata.rotated_width;
                 if image_rect.width() > image_rect.height() {
                     let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width =
-                        desired_height * (self.photo.metadata.width / self.photo.metadata.height);
+                    let adjusted_width = desired_height
+                        * (self.photo.metadata.rotated_width / self.photo.metadata.rotated_height);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -116,8 +118,8 @@ impl<'a> Widget for ImageViewer<'a> {
                     );
                 } else {
                     let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height =
-                        desired_width * (self.photo.metadata.height / self.photo.metadata.width);
+                    let adjusted_height = desired_width
+                        * (self.photo.metadata.rotated_height / self.photo.metadata.rotated_width);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -126,11 +128,12 @@ impl<'a> Widget for ImageViewer<'a> {
                 }
             }
             Height(_) => {
-                let aspect_ratio = self.photo.metadata.width / self.photo.metadata.height;
+                let aspect_ratio =
+                    self.photo.metadata.rotated_width / self.photo.metadata.rotated_height;
                 if image_rect.width() > image_rect.height() {
                     let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width =
-                        desired_height * (self.photo.metadata.width / self.photo.metadata.height);
+                    let adjusted_width = desired_height
+                        * (self.photo.metadata.rotated_width / self.photo.metadata.rotated_height);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -138,8 +141,8 @@ impl<'a> Widget for ImageViewer<'a> {
                     );
                 } else {
                     let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height =
-                        desired_width * (self.photo.metadata.height / self.photo.metadata.width);
+                    let adjusted_height = desired_width
+                        * (self.photo.metadata.rotated_height / self.photo.metadata.rotated_width);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -237,14 +240,31 @@ impl<'a> Widget for ImageViewer<'a> {
         }
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
+
+        // If the image is rotated then swap the dimensions because we want egui to rotate the image when drawing
+        if self.photo.metadata.width != self.photo.metadata.rotated_width {
+            image_rect = Rect::from_center_size(
+                image_rect.center(),
+                Vec2::new(image_rect.height(), image_rect.width()),
+            );
+        }
+
         match self
             .photo_manager
             .with_lock_mut(|photo_manager| photo_manager.texture_for(&self.photo, &ui.ctx()))
         {
             Ok(Some(texture)) => {
-                Image::from_texture(texture)
-                    .rotate(self.photo.metadata.rotation.radians(), Vec2::splat(0.5))
-                    .paint_at(ui, image_rect);
+
+                let uv = Rect::from_min_max(
+                    Pos2::new(0.0, 0.0),
+                    Pos2 { x: 1.0, y: 1.0 }
+                );
+
+                let painter = ui.painter().with_clip_rect(rect);
+                let mut mesh = Mesh::with_texture(texture.id);
+                mesh.add_rect_with_uv(image_rect, uv, Color32::WHITE);
+                mesh.rotate(Rot2::from_angle(self.photo.metadata.rotation.radians()), image_rect.min + Vec2::splat(0.5) * image_rect.size());
+                painter.add(Shape::mesh(mesh));
             }
             Ok(None) => match self.photo_manager.with_lock_mut(|photo_manager| {
                 photo_manager.thumbnail_texture_for(&self.photo, &ui.ctx())
