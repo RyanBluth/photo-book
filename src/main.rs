@@ -4,7 +4,7 @@ use std::{fs::read_dir, path::PathBuf, sync::Arc};
 
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
-    egui::{self, load::SizedTexture, CentralPanel, Image, Key, Layout, ScrollArea, Widget},
+    egui::{self, load::SizedTexture, menu, CentralPanel, Image, Key, Layout, ScrollArea, Widget},
     emath::Align,
     epaint::{Pos2, Rect, Vec2},
 };
@@ -17,7 +17,8 @@ use photo_manager::PhotoManager;
 use widget::{
     gallery_image::GalleryImage,
     image_viewer::{self, ImageViewer, ImageViewerState},
-    spacer::Spacer, photo_info::PhotoInfo,
+    photo_info::PhotoInfo,
+    spacer::Spacer,
 };
 
 use flexi_logger::{Logger, WriteMode};
@@ -101,16 +102,16 @@ impl eframe::App for MyApp {
             } => {
                 let index = index;
 
-                egui::SidePanel::right("viewer_info_panel").resizable(true).show(ctx, |ui| {
-                    PhotoInfo::new(&photo).ui(ui);
-                });
+                egui::SidePanel::right("viewer_info_panel")
+                    .resizable(true)
+                    .show(ctx, |ui| {
+                        PhotoInfo::new(&photo).ui(ui);
+                    });
 
                 CentralPanel::default().show(ctx, |ui| {
                     let mut state = state.clone();
 
-                    let viewer_response =
-                        ImageViewer::new(&photo, &mut state)
-                            .show(ui);
+                    let viewer_response = ImageViewer::new(&photo, &mut state).show(ui);
 
                     match viewer_response.request {
                         Some(request) => match request {
@@ -119,10 +120,8 @@ impl eframe::App for MyApp {
                             }
                             image_viewer::Request::Previous => {
                                 self.photo_manager.with_lock_mut(|photo_manager| {
-                                    let (prev_photo, new_index) = photo_manager
-                                        .previous_photo(index, ctx)
-                                        .unwrap()
-                                        .unwrap();
+                                    let (prev_photo, new_index) =
+                                        photo_manager.previous_photo(index, ctx).unwrap().unwrap();
 
                                     self.mode = AppMode::Viewer {
                                         photo: prev_photo,
@@ -133,7 +132,8 @@ impl eframe::App for MyApp {
                             }
                             image_viewer::Request::Next => {
                                 self.photo_manager.with_lock_mut(|photo_manager| {
-                                    let (next_photo, new_index) = photo_manager.next_photo(index, ctx).unwrap().unwrap();
+                                    let (next_photo, new_index) =
+                                        photo_manager.next_photo(index, ctx).unwrap().unwrap();
 
                                     self.mode = AppMode::Viewer {
                                         photo: next_photo,
@@ -182,85 +182,89 @@ impl MyApp {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ScrollArea::both().show(ui, |ui| {
-                let button = ui.button("Open Folder");
+            menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Open").clicked() {
+                        self.current_dir = native_dialog::FileDialog::new()
+                            .add_filter("Images", &["png", "jpg", "jpeg"])
+                            .show_open_single_dir()
+                            .unwrap();
 
-                if button.clicked() {
-                    self.current_dir = native_dialog::FileDialog::new()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
-                        .show_open_single_dir()
-                        .unwrap();
+                        info!("Opened {:?}", self.current_dir);
 
-                    info!("Opened {:?}", self.current_dir);
-
-                    self.photo_manager.with_lock_mut(|photo_manager| {
-                        photo_manager.load_directory(&self.current_dir.as_ref().unwrap(), ctx);
-                    });
-                }
-
-                match self.current_dir {
-                    Some(ref path) => {
-                        ui.label(format!("Current Dir: {}", path.display()));
-
-                        let window_width = ui.available_width();
-                        let window_height = ui.available_height();
-                        let column_width = 256.0;
-                        let row_height = 256.0;
-                        let num_columns: usize = (window_width / column_width).floor() as usize;
-
-                        //let padding_size = num_columns as f32 * 10.0;
-                        let spacer_width =
-                            (window_width - (column_width * num_columns as f32) - 10.0).max(0.0);
-
-                        ui.spacing_mut().item_spacing.x = 0.0;
-
-                        let num_photos = self
-                            .photo_manager
-                            .with_lock(|photo_manager| photo_manager.photos.len());
-
-                        egui_extras::TableBuilder::new(ui)
-                            .min_scrolled_height(window_height)
-                            .columns(Column::exact(column_width), num_columns)
-                            .column(Column::exact(spacer_width))
-                            .body(|body| {
-                                body.rows(
-                                    row_height,
-                                    num_photos / num_columns,
-                                    |row_idx, mut row| {
-                                        let offest = row_idx * num_columns;
-                                        for i in 0..num_columns {
-                                            row.col(|ui| {
-                                                self.photo_manager.with_lock_mut(|photo_manager| {
-                                                    let image = GalleryImage::new(
-                                                        photo_manager.photos[offest + i].clone(),
-                                                        photo_manager
-                                                            .tumbnail_texture_at(offest + i, ctx),
-                                                    );
-
-                                                    if ui.add(image).clicked() {
-                                                        self.mode = AppMode::Viewer {
-                                                            photo: photo_manager.photos[offest + i]
-                                                                .clone(),
-                                                            index: offest + i,
-                                                            state: ImageViewerState::default(),
-                                                        };
-                                                    }
-                                                });
-                                            });
-                                        }
-
-                                        row.col(|ui| {
-                                            ui.add(Spacer::new(spacer_width, row_height));
-                                        });
-                                    },
-                                )
-                            });
+                        self.photo_manager.with_lock_mut(|photo_manager| {
+                            photo_manager.load_directory(&self.current_dir.as_ref().unwrap(), ctx);
+                        });
                     }
-                    None => {
-                        ui.label("No folder selected");
-                    }
-                }
+                });
             });
+
+            match self.current_dir {
+                Some(ref path) => {
+                    ui.label(format!("Current Dir: {}", path.display()));
+
+                    ui.spacing_mut().item_spacing = Vec2::splat(10.0);
+
+                    let window_width = ui.available_width();
+                    let window_height = ui.available_height();
+                    let column_width = 256.0;
+                    let row_height = 256.0;
+                    let num_columns: usize = (window_width / column_width).floor() as usize;
+
+                    //let padding_size = num_columns as f32 * 10.0;
+                    let spacer_width = (window_width
+                        - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
+                        - 10.0
+                        - ui.spacing().item_spacing.x)
+                        .max(0.0);
+
+                    let num_photos = self
+                        .photo_manager
+                        .with_lock(|photo_manager| photo_manager.photos.len());
+
+                    let num_rows = num_photos.div_ceil(num_columns);
+
+                    egui_extras::TableBuilder::new(ui)
+                        .min_scrolled_height(window_height)
+                        .columns(Column::exact(column_width), num_columns)
+                        .column(Column::exact(spacer_width))
+                        .body(|body| {
+                            body.rows(row_height, num_rows, |row_idx, mut row| {
+                                let offest = row_idx * num_columns;
+                                for i in 0..num_columns {
+
+                                    if offest + i >= num_photos {
+                                        break;
+                                    }
+
+                                    row.col(|ui| {
+                                        self.photo_manager.with_lock_mut(|photo_manager| {
+                                            let image = GalleryImage::new(
+                                                photo_manager.photos[offest + i].clone(),
+                                                photo_manager.tumbnail_texture_at(offest + i, ctx),
+                                            );
+
+                                            if ui.add(image).clicked() {
+                                                self.mode = AppMode::Viewer {
+                                                    photo: photo_manager.photos[offest + i].clone(),
+                                                    index: offest + i,
+                                                    state: ImageViewerState::default(),
+                                                };
+                                            }
+                                        });
+                                    });
+                                }
+
+                                row.col(|ui| {
+                                    ui.add(Spacer::new(spacer_width, row_height));
+                                });
+                            })
+                        });
+                }
+                None => {
+                    ui.label("No folder selected");
+                }
+            }
         });
     }
 }

@@ -25,12 +25,23 @@ pub enum PhotoRotation {
     Normal,
     MirrorHorizontal,
     Rotate180,
-    MirrorVertical,
-    MirrorHorizontalAndRotate270CW,
-    Rotate90CW,
+    MirrorVerticalAndRotate180,
     MirrorHorizontalAndRotate90CW,
+    Rotate90CW,
+    MirrorHorizontalAndRotate270CW,
     Rotate270CW,
 }
+
+
+// = 0 degrees: the correct orientation, no adjustment is required.
+// = 0 degrees, mirrored: image has been flipped back-to-front.
+// = 180 degrees: image is upside down.
+// = 180 degrees, mirrored: image has been flipped back-to-front and is upside down.
+// = 90 degrees: image has been flipped back-to-front and is on its side.
+// = 90 degrees, mirrored: image is on its side.
+// = 270 degrees: image has been flipped back-to-front and is on its far side.
+// = 270 degrees, mirrored: image is on its far side.
+
 
 impl PhotoRotation {
     pub fn radians(&self) -> f32 {
@@ -38,14 +49,15 @@ impl PhotoRotation {
             Self::Normal => 0.0,
             Self::MirrorHorizontal => 0.0,
             Self::Rotate180 => PI,
-            Self::MirrorVertical => 0.0,
-            Self::MirrorHorizontalAndRotate270CW => (3.0 * PI) / 2.0,
-            Self::Rotate90CW => PI / 2.0,
+            Self::MirrorVerticalAndRotate180 => PI,
             Self::MirrorHorizontalAndRotate90CW => PI / 2.0,
+            Self::Rotate90CW => PI / 2.0,
+            Self::MirrorHorizontalAndRotate270CW => (3.0 * PI) / 2.0,
             Self::Rotate270CW => (3.0 * PI) / 2.0,
         }
     }
 }
+
 
 #[derive(Debug, Clone)]
 pub struct PhotoMetadata {
@@ -69,38 +81,19 @@ impl PhotoMetadata {
             .read_from_container(&mut BufReader::new(&file))
             .unwrap();
 
-        // for f in exif.fields() {
-        //     println!(
-        //         "  {}/{}: {}",
-        //         f.ifd_num.index(),
-        //         f.tag,
-        //         f.display_value().with_unit(&exif)
-        //     );
-        //     println!("      {:?}", f.value);
-        // }
-
-        let mut width: Option<u32> = None;
-        if let Some(field) = exif.get_field(Tag::PixelXDimension, In::PRIMARY) {
-            if let Some(value) = field.value.get_uint(0) {
-                width = Some(value);
-            }
-        }
-
-        let mut height: Option<u32> = None;
-        if let Some(field) = exif.get_field(Tag::PixelYDimension, In::PRIMARY) {
-            if let Some(value) = field.value.get_uint(0) {
-                height = Some(value);
-            }
-        }
+        let size = imagesize::size(path.clone()).unwrap();
+        let width = Some(size.width);
+        let height = Some(size.height);
 
         let mut rotation = PhotoRotation::Normal;
         if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
-            if let (Some(value), Some(width_val), Some(height_val)) =
+            if let (Some(value), Some(_), Some(_)) =
                 (field.value.get_uint(0), width, height)
             {
                 match value {
                     1 => {
                         // Normal
+                        rotation = PhotoRotation::Normal;
                     }
                     2 => {
                         // Mirror horizontal
@@ -112,7 +105,7 @@ impl PhotoMetadata {
                     }
                     4 => {
                         // Mirror vertical
-                        rotation = PhotoRotation::MirrorVertical;
+                        rotation = PhotoRotation::MirrorVerticalAndRotate180;
                     }
                     5 => {
                         // Mirror horizontal and rotate 270 CW
@@ -136,6 +129,7 @@ impl PhotoMetadata {
                 }
             }
         }
+        
 
         let mut camera: Option<String> = None;
         if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
@@ -307,9 +301,9 @@ impl Photo {
         //     .size();
 
         if self.metadata.width >= self.metadata.height {
-            MaxPhotoDimension::Width(self.metadata.width)
+            MaxPhotoDimension::Width(self.metadata.rotated_width)
         } else {
-            MaxPhotoDimension::Height(self.metadata.height)
+            MaxPhotoDimension::Height(self.metadata.rotated_height)
         }
     }
 }

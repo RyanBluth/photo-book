@@ -21,18 +21,19 @@ use crate::dependencies::{
     DependencyFor, Singleton, SingletonFor,
 };
 use crate::image_cache;
+use crate::photo_manager::PhotoManager;
 use crate::{dependencies::Dependency, image_cache::ImageCache, utils};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
 pub struct ThumbnailService {
-    image_cache: Singleton<ImageCache>,
+    photo_manager: Singleton<PhotoManager>,
 }
 
 impl ThumbnailService {
     pub fn new() -> Self {
         Self {
-            image_cache: Dependency::<ImageCache>::get(),
+            photo_manager: Dependency::<PhotoManager>::get(),
         }
     }
 
@@ -40,7 +41,7 @@ impl ThumbnailService {
         let path: PathBuf = PathBuf::from(dir);
 
         if !path.exists() {
-            return Err(anyhow::anyhow!("Path does not exist"));
+            return Err(anyhow::anyhow!("Path 33 not exist"));
         }
 
         if !path.is_dir() {
@@ -59,14 +60,14 @@ impl ThumbnailService {
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
-            let image_cache = self.image_cache.clone();
+            let photo_manager = self.photo_manager.clone();
             let ctx = ctx.clone();
             tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
                 partition.into_iter().try_for_each(|entry| {
                     Self::gen_thumbnail(
                         entry,
                         &thumbnail_dir,
-                        &image_cache,
+                        &photo_manager,
                         &ctx,
                     )
                 })?;
@@ -80,7 +81,7 @@ impl ThumbnailService {
     fn gen_thumbnail(
         entry: DirEntry,
         thumbnail_dir: &PathBuf,
-        image_cache: &Singleton<ImageCache>,
+        photo_manager: &Singleton<PhotoManager>,
         ctx: &Context,
     ) -> anyhow::Result<()> {
         let path = entry.path();

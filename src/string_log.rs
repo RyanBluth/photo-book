@@ -35,8 +35,15 @@ impl StringLog {
 impl LogWriter for ArcStringLog {
     
     fn write(&self, now: &mut flexi_logger::DeferredNow, record: &log::Record) -> std::io::Result<()> {
-        let line = format!("{} - {}", now.now().format("%Y-%m-%d %H:%M:%S"), record.args());
-        println!("{}", line);
+        let line = format!("[{}] {} - {}", record.level().as_str().to_uppercase(), now.now().format("%Y-%m-%d %H:%M:%S"), record.args());
+        match record.level() {
+            log::Level::Error => {
+                eprintln!("{}", line);
+            }
+            _ => {
+                // println!("{}", line);
+            }
+        }
         self.log.logs.lock().unwrap().get_mut().push(line);
         Ok(())
     }

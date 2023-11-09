@@ -242,7 +242,7 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         // If the image is rotated then swap the dimensions because we want egui to rotate the image when drawing
-        if self.photo.metadata.width != self.photo.metadata.rotated_width {
+        if self.photo.metadata.width as u32 != self.photo.metadata.rotated_width as u32 {
             image_rect = Rect::from_center_size(
                 image_rect.center(),
                 Vec2::new(image_rect.height(), image_rect.width()),
