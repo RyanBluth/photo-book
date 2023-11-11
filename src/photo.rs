@@ -1,4 +1,7 @@
-use std::{borrow::BorrowMut, f32::consts::PI, fs::File, io::BufReader, path::PathBuf};
+use std::{
+    borrow::BorrowMut, collections::HashMap, f32::consts::PI, fmt::Display, fs::File,
+    io::BufReader, path::PathBuf,
+};
 
 use crate::{
     dependencies::{Dependency, SingletonFor},
@@ -13,11 +16,32 @@ use eframe::{
 };
 use log::error;
 
-use exif::{DateTime, In, Reader, Tag, Value};
+use exif::{DateTime, In, Rational, Reader, SRational, Tag, Value};
 
+macro_rules! metadata_fields {
+    ($(($name:ident, $type:ty)),*) => {
+        #[derive(Debug, Clone)]
+        pub enum PhotoMetadataField {
+            $( $name($type), )*
+        }
+
+        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        pub enum PhotoMetadataFieldLabel {
+            $( $name, )*
+        }
+
+        impl PhotoMetadataField {
+            pub fn label(&self) -> PhotoMetadataFieldLabel {
+                match self {
+                    $( Self::$name(_) => PhotoMetadataFieldLabel::$name, )*
+                }
+            }
+        }
+    }
+}
 pub enum MaxPhotoDimension {
-    Width(f32),
-    Height(f32),
+    Width,
+    Height,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +56,6 @@ pub enum PhotoRotation {
     Rotate270CW,
 }
 
-
 // = 0 degrees: the correct orientation, no adjustment is required.
 // = 0 degrees, mirrored: image has been flipped back-to-front.
 // = 180 degrees: image is upside down.
@@ -41,7 +64,6 @@ pub enum PhotoRotation {
 // = 90 degrees, mirrored: image is on its side.
 // = 270 degrees: image has been flipped back-to-front and is on its far side.
 // = 270 degrees, mirrored: image is on its far side.
-
 
 impl PhotoRotation {
     pub fn radians(&self) -> f32 {
@@ -58,38 +80,139 @@ impl PhotoRotation {
     }
 }
 
+impl Display for PhotoRotation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Normal => f.write_str("Normal"),
+            Self::MirrorHorizontal => f.write_str("Mirror Horizontal"),
+            Self::Rotate180 => f.write_str("Rotate 180"),
+            Self::MirrorVerticalAndRotate180 => f.write_str("Mirror Vertical and Rotate 180"),
+            Self::MirrorHorizontalAndRotate90CW => {
+                f.write_str("Mirror Horizontal and Rotate 90 CW")
+            }
+            Self::Rotate90CW => f.write_str("Rotate 90 CW"),
+            Self::MirrorHorizontalAndRotate270CW => {
+                f.write_str("Mirror Horizontal and Rotate 270 CW")
+            }
+            Self::Rotate270CW => f.write_str("Rotate 270 CW"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MetadataCollection {
+    fields: HashMap<PhotoMetadataFieldLabel, PhotoMetadataField>,
+}
+
+impl MetadataCollection {
+    pub fn new() -> Self {
+        Self {
+            fields: HashMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, field: PhotoMetadataField) {
+        self.fields.insert(field.label(), field);
+    }
+
+    pub fn get(&self, label: PhotoMetadataFieldLabel) -> Option<&PhotoMetadataField> {
+        self.fields.get(&label)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&PhotoMetadataFieldLabel, &PhotoMetadataField)> {
+        self.fields.iter()
+    }
+}
+
+
+metadata_fields!(
+    (Path, PathBuf),
+    (Width, usize),
+    (Height, usize),
+    (Rotation, PhotoRotation),
+    (RotatedWidth, usize),
+    (RotatedHeight, usize),
+    (Camera, String),
+    (DateTime, String),
+    (ISO, u32),
+    (ShutterSpeed, SRational),
+    (Aperture, SRational),
+    (FocalLength, SRational)
+);
+
+impl Display for PhotoMetadataField {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhotoMetadataField::Path(path) => f.write_str(&path.display().to_string()),
+            PhotoMetadataField::Width(width) => write!(f, "{}px", width),
+            PhotoMetadataField::Height(height) => write!(f, "{}px", height),
+            PhotoMetadataField::Rotation(rotation) => write!(f, "{}", rotation),
+            PhotoMetadataField::RotatedWidth(rotated_width) => {
+                write!(f, "{}px", rotated_width)
+            }
+            PhotoMetadataField::RotatedHeight(rotated_height) => {
+                write!(f, "{}px", rotated_height)
+            }
+            PhotoMetadataField::Camera(camera) => write!(f, "{}", camera),
+            PhotoMetadataField::DateTime(date_time) => write!(f, "{}", date_time),
+            PhotoMetadataField::ISO(iso) => write!(f, "ISO: {}", iso),
+            PhotoMetadataField::ShutterSpeed(shutter_speed) => {
+                write!(f, "{}/{} sec.", shutter_speed.num, shutter_speed.denom)
+            }
+            PhotoMetadataField::Aperture(aperture) => {
+                write!(f, "f/{}", aperture.num / aperture.denom)
+            }
+            PhotoMetadataField::FocalLength(focal_length) => {
+                write!(f, "{}mm", focal_length.num / focal_length.denom)
+            }
+        }
+    }
+}
+
+impl Display for PhotoMetadataFieldLabel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhotoMetadataFieldLabel::Path => f.write_str("Path"),
+            PhotoMetadataFieldLabel::Width => f.write_str("Width"),
+            PhotoMetadataFieldLabel::Height => f.write_str("Height"),
+            PhotoMetadataFieldLabel::Rotation => f.write_str("Rotation"),
+            PhotoMetadataFieldLabel::RotatedWidth => f.write_str("Rotated Width"),
+            PhotoMetadataFieldLabel::RotatedHeight => f.write_str("Rotated Height"),
+            PhotoMetadataFieldLabel::Camera => f.write_str("Camera"),
+            PhotoMetadataFieldLabel::DateTime => f.write_str("Date/Time"),
+            PhotoMetadataFieldLabel::ISO => f.write_str("ISO"),
+            PhotoMetadataFieldLabel::ShutterSpeed => f.write_str("Shutter Speed"),
+            PhotoMetadataFieldLabel::Aperture => f.write_str("Aperture"),
+            PhotoMetadataFieldLabel::FocalLength => f.write_str("Focal Length"),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PhotoMetadata {
-    pub width: f32,
-    pub height: f32,
-    pub rotation: PhotoRotation,
-    pub rotated_width: f32,
-    pub rotated_height: f32,
-    pub camera: Option<String>,
-    pub date_time: Option<String>,
-    pub iso: Option<u32>,
-    pub shutter_speed: Option<String>,
-    pub aperture: Option<String>,
-    pub focal_length: Option<String>,
+    pub fields: MetadataCollection,
 }
 
 impl PhotoMetadata {
     pub fn from_path(path: &PathBuf) -> Self {
+        let mut fields = MetadataCollection::new();
+        fields.insert(PhotoMetadataField::Path(path.clone()));
+
         let file = File::open(&path).unwrap();
         let exif = Reader::new()
             .read_from_container(&mut BufReader::new(&file))
             .unwrap();
 
         let size = imagesize::size(path.clone()).unwrap();
-        let width = Some(size.width);
-        let height = Some(size.height);
+        let width = size.width;
+        let height = size.height;
 
-        let mut rotation = PhotoRotation::Normal;
+        fields.insert(PhotoMetadataField::Width(width));
+        fields.insert(PhotoMetadataField::Height(height));
+
         if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
-            if let (Some(value), Some(_), Some(_)) =
-                (field.value.get_uint(0), width, height)
-            {
+            let mut rotation = PhotoRotation::Normal;
+            if let Some(value) = field.value.get_uint(0) {
                 match value {
                     1 => {
                         // Normal
@@ -128,120 +251,138 @@ impl PhotoMetadata {
                     }
                 }
             }
-        }
-        
+            fields.insert(PhotoMetadataField::Rotation(rotation));
 
-        let mut camera: Option<String> = None;
+            let rect =
+                Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(width as f32, height as f32));
+            let rotated_size = rect.rotate_bb(Rot2::from_angle(rotation.radians())).size();
+
+            fields.insert(PhotoMetadataField::RotatedWidth(rotated_size.x as usize));
+            fields.insert(PhotoMetadataField::RotatedHeight(rotated_size.y as usize));
+        } else {
+            fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
+            fields.insert(PhotoMetadataField::RotatedWidth(width));
+            fields.insert(PhotoMetadataField::RotatedHeight(height));
+        }
+
         if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
             match field.value {
                 Value::Ascii(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        camera = Some(String::from_utf8_lossy(value).to_string());
+                        fields.insert(PhotoMetadataField::Camera(
+                            String::from_utf8_lossy(value).to_string(),
+                        ));
                     }
                 }
                 _ => {}
             }
-        }
-
-        let mut date_time: Option<String> = None;
+        };
         if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
             match field.value {
                 Value::Ascii(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        date_time = Some(String::from_utf8_lossy(value).to_string());
+                        fields.insert(PhotoMetadataField::DateTime(
+                            String::from_utf8_lossy(value).to_string(),
+                        ));
                     }
                 }
                 _ => {}
             }
         }
 
-        let mut iso: Option<u32> = None;
         if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY) {
             if let Some(value) = field.value.get_uint(0) {
-                iso = Some(value);
+                fields.insert(PhotoMetadataField::ISO(value));
             }
         }
 
-        let mut shutter_speed: Option<String> = None;
         if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
             match field.value {
                 Value::Rational(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        shutter_speed = Some(value.to_string());
+                        fields.insert(PhotoMetadataField::ShutterSpeed(SRational {
+                            num: value.num as i32,
+                            denom: value.denom as i32,
+                        }));
                     }
                 }
                 Value::SRational(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        shutter_speed = Some(value.to_string());
+                        fields.insert(PhotoMetadataField::ShutterSpeed(value.clone()));
                     }
                 }
                 _ => {}
             }
         }
 
-        let mut aperture: Option<String> = None;
         if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
             match field.value {
                 Value::Rational(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        aperture = Some(value.to_string());
+                        fields.insert(PhotoMetadataField::Aperture(SRational {
+                            num: value.num as i32,
+                            denom: value.denom as i32,
+                        }));
                     }
                 }
                 _ => {}
             }
         }
 
-        let mut focal_length: Option<String> = None;
         if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
             match field.value {
                 Value::Rational(ref vec) => {
                     if let Some(value) = vec.get(0) {
-                        focal_length = Some(value.to_string());
+                        fields.insert(PhotoMetadataField::FocalLength(SRational {
+                            num: value.num as i32,
+                            denom: value.denom as i32,
+                        }));
                     }
                 }
                 _ => {}
             }
         }
 
-        match (width, height) {
-            (Some(width), Some(height)) => {
-                let rect = Rect::from_min_size(
-                    Pos2::new(0.0, 0.0),
-                    Vec2::new(width as f32, height as f32),
-                );
-                let rotated_size = rect.rotate_bb(Rot2::from_angle(rotation.radians())).size();
+        Self { fields }
+    }
 
-                Self {
-                    width: width as f32,
-                    height: height as f32,
-                    rotation,
-                    rotated_width: rotated_size.x,
-                    rotated_height: rotated_size.y,
-                    camera,
-                    date_time,
-                    iso,
-                    shutter_speed,
-                    aperture,
-                    focal_length,
-                }
-            }
-            _ => {
-                let size = imagesize::size(path.clone()).unwrap();
-                Self {
-                    width: size.width as f32,
-                    height: size.height as f32,
-                    rotation,
-                    rotated_width: size.width as f32,
-                    rotated_height: size.height as f32,
-                    camera,
-                    date_time,
-                    iso,
-                    shutter_speed,
-                    aperture,
-                    focal_length,
-                }
-            }
+    pub fn width(&self) -> usize {
+        match self.fields.get(PhotoMetadataFieldLabel::Width) {
+            Some(PhotoMetadataField::Width(width)) => *width,
+            _ => 0,
         }
+    }
+
+    pub fn height(&self) -> usize {
+        match self.fields.get(PhotoMetadataFieldLabel::Height) {
+            Some(PhotoMetadataField::Height(height)) => *height,
+            _ => 0,
+        }
+    }
+
+    pub fn rotation(&self) -> PhotoRotation {
+        match self.fields.get(PhotoMetadataFieldLabel::Rotation) {
+            Some(PhotoMetadataField::Rotation(rotation)) => *rotation,
+            _ => PhotoRotation::Normal,
+        }
+    }
+
+    pub fn rotated_width(&self) -> usize {
+        match self.fields.get(PhotoMetadataFieldLabel::RotatedWidth) {
+            Some(PhotoMetadataField::RotatedWidth(rotated_width)) => *rotated_width,
+            _ => 0,
+        }
+    }
+
+    pub fn rotated_height(&self) -> usize {
+        match self.fields.get(PhotoMetadataFieldLabel::RotatedHeight) {
+            Some(PhotoMetadataField::RotatedHeight(rotated_height)) => *rotated_height,
+            _ => 0,
+        }
+    }
+
+    pub fn get(&self, label: PhotoMetadataFieldLabel) -> Option<&PhotoMetadataField> {
+        self.fields.get(label)
     }
 }
 
@@ -292,18 +433,10 @@ impl Photo {
     }
 
     pub fn max_dimension(&self) -> MaxPhotoDimension {
-        // let rect = Rect::from_min_size(
-        //     Pos2::new(0.0, 0.0),
-        //     Vec2::new(self.metadata.width, self.metadata.height),
-        // );
-        // let rotated_size = rect
-        //     .rotate_bb(Rot2::from_angle(self.metadata.rotation.radians()))
-        //     .size();
-
-        if self.metadata.width >= self.metadata.height {
-            MaxPhotoDimension::Width(self.metadata.rotated_width)
+        if self.metadata.width() >= self.metadata.height() {
+            MaxPhotoDimension::Width
         } else {
-            MaxPhotoDimension::Height(self.metadata.rotated_height)
+            MaxPhotoDimension::Height
         }
     }
 }

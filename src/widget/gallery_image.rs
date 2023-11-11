@@ -28,14 +28,14 @@ impl Widget for GalleryImage {
         ui.spacing_mut().item_spacing = Vec2 { x: 10.0, y: 10.0 };
 
         let image_size = match self.photo.max_dimension() {
-            crate::photo::MaxPhotoDimension::Width(_) => Vec2::new(
-                Self::SIZE.x * 0.8,
-                self.photo.metadata.rotated_height / self.photo.metadata.rotated_width
+            crate::photo::MaxPhotoDimension::Width => Vec2::new(
+                Self::SIZE.x * 0.9,
+                self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32
                     * Self::SIZE.x
-                    * 0.8,
+                    * 0.9,
             ),
-            crate::photo::MaxPhotoDimension::Height(_) => Vec2::new(
-                self.photo.metadata.rotated_width / self.photo.metadata.rotated_height
+            crate::photo::MaxPhotoDimension::Height => Vec2::new(
+                self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32
                     * Self::SIZE.y
                     * 0.8,
                 Self::SIZE.y * 0.8,
@@ -66,7 +66,7 @@ impl Widget for GalleryImage {
                                 ui.add(
                                     Image::from_texture(texture)
                                         .rotate(
-                                            self.photo.metadata.rotation.radians(),
+                                            self.photo.metadata.rotation().radians(),
                                             Vec2::splat(0.5),
                                         )
                                         .fit_to_exact_size(image_size),
