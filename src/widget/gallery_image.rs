@@ -13,13 +13,14 @@ use crate::{
 pub struct GalleryImage {
     photo: Photo,
     texture: anyhow::Result<Option<SizedTexture>>,
+    selected: bool
 }
 
 impl GalleryImage {
     pub const SIZE: Vec2 = Vec2 { x: 256.0, y: 256.0 };
 
-    pub fn new(photo: Photo, texture: anyhow::Result<Option<SizedTexture>>) -> Self {
-        Self { photo, texture }
+    pub fn new(photo: Photo, texture: anyhow::Result<Option<SizedTexture>>, selected: bool) -> Self {
+        Self { photo, texture, selected }
     }
 }
 
@@ -46,8 +47,13 @@ impl Widget for GalleryImage {
             .allocate_ui(Self::SIZE, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::splat(10.0);
 
-                ui.painter()
+                if self.selected {
+                    ui.painter()
+                    .rect_filled(ui.max_rect(), 6.0, Color32::from_rgb(15, 15, 180));
+                } else {
+                    ui.painter()
                     .rect_filled(ui.max_rect(), 6.0, Color32::from_rgb(15, 15, 15));
+                }
 
                 ui.vertical(|ui| {
                     ui.set_max_size(Self::SIZE);

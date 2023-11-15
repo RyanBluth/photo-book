@@ -98,6 +98,8 @@ impl<'a> Widget for ImageViewer<'a> {
 
         let (rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
 
+        ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+
         response.request_focus();
 
         let mut image_rect = rect;

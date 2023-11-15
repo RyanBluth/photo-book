@@ -25,7 +25,7 @@ macro_rules! metadata_fields {
             $( $name($type), )*
         }
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
         pub enum PhotoMetadataFieldLabel {
             $( $name, )*
         }
@@ -118,12 +118,7 @@ impl MetadataCollection {
     pub fn get(&self, label: PhotoMetadataFieldLabel) -> Option<&PhotoMetadataField> {
         self.fields.get(&label)
     }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&PhotoMetadataFieldLabel, &PhotoMetadataField)> {
-        self.fields.iter()
-    }
 }
-
 
 metadata_fields!(
     (Path, PathBuf),
@@ -155,7 +150,7 @@ impl Display for PhotoMetadataField {
             }
             PhotoMetadataField::Camera(camera) => write!(f, "{}", camera),
             PhotoMetadataField::DateTime(date_time) => write!(f, "{}", date_time),
-            PhotoMetadataField::ISO(iso) => write!(f, "ISO: {}", iso),
+            PhotoMetadataField::ISO(iso) => write!(f, "{}", iso),
             PhotoMetadataField::ShutterSpeed(shutter_speed) => {
                 write!(f, "{}/{} sec.", shutter_speed.num, shutter_speed.denom)
             }
@@ -384,6 +379,31 @@ impl PhotoMetadata {
     pub fn get(&self, label: PhotoMetadataFieldLabel) -> Option<&PhotoMetadataField> {
         self.fields.get(label)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (PhotoMetadataFieldLabel, &PhotoMetadataField)> {
+        vec![
+            PhotoMetadataFieldLabel::Path,
+            PhotoMetadataFieldLabel::Width,
+            PhotoMetadataFieldLabel::Height,
+            PhotoMetadataFieldLabel::Rotation,
+            PhotoMetadataFieldLabel::RotatedWidth,
+            PhotoMetadataFieldLabel::RotatedHeight,
+            PhotoMetadataFieldLabel::Camera,
+            PhotoMetadataFieldLabel::DateTime,
+            PhotoMetadataFieldLabel::ISO,
+            PhotoMetadataFieldLabel::ShutterSpeed,
+            PhotoMetadataFieldLabel::Aperture,
+            PhotoMetadataFieldLabel::FocalLength,
+        ]
+        .into_iter()
+        .filter_map(|label| {
+            match self.fields.get(label) {
+                Some(value) => Some((label, value)),
+                None => None,
+            }
+        })
+        
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -438,5 +458,11 @@ impl Photo {
         } else {
             MaxPhotoDimension::Height
         }
+    }
+}
+
+impl PartialEq for Photo {
+    fn eq(&self, other: &Self) -> bool {
+        self.path == other.path
     }
 }

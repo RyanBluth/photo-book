@@ -24,7 +24,8 @@ backtrace = "0.3"
 open = "5.0.0"
 strum = "0.25"
 strum_macros = "0.25"
-
+sqlx = { version = "0.7", features = [ "runtime-tokio", "sqlite" ] }
+chrono = "0.4.31"
 
 [profile.release]
 # lto = "fat"

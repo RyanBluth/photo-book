@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{fs::read_dir, path::PathBuf, sync::Arc};
+use std::{fs::read_dir, path::PathBuf, sync::Arc, collections::HashSet};
 
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
@@ -10,7 +10,6 @@ use eframe::{
 };
 use egui_extras::Column;
 use event_bus::{EventBus, EventBusId, GalleryImageEvent};
-use gallery_service::ThumbnailService;
 use log::{error, info};
 use photo::Photo;
 use photo_manager::PhotoManager;
@@ -26,13 +25,13 @@ use string_log::{ArcStringLog, StringLog};
 
 mod dependencies;
 mod event_bus;
-mod gallery_service;
 mod image_cache;
 mod photo;
 mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
+mod persistence;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -64,7 +63,9 @@ async fn main() -> anyhow::Result<()> {
                 current_dir: None,
                 photo_manager: Dependency::<PhotoManager>::get(),
                 log: app_log,
-                mode: AppMode::Gallery,
+                mode: AppMode::Gallery {
+                    selected_images: HashSet::new(),
+                },
             })
         }),
     )
@@ -73,7 +74,9 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Debug, Clone)]
 enum AppMode {
-    Gallery,
+    Gallery {
+        selected_images: HashSet<String>,
+    },
     Viewer {
         photo: Photo,
         index: usize,
@@ -94,7 +97,14 @@ impl eframe::App for MyApp {
 
         // TODO: Don't clone if possible
         match self.mode.clone() {
-            AppMode::Gallery => self.gallery(ctx),
+            AppMode::Gallery {
+                mut selected_images,
+            } => { 
+                self.gallery(ctx, &mut selected_images);
+                self.mode = AppMode::Gallery {
+                    selected_images,
+                };
+            },
             AppMode::Viewer {
                 photo,
                 index,
@@ -104,6 +114,7 @@ impl eframe::App for MyApp {
 
                 egui::SidePanel::right("viewer_info_panel")
                     .resizable(true)
+                    .default_width(100.0)
                     .show(ctx, |ui| {
                         PhotoInfo::new(&photo).ui(ui);
                     });
@@ -116,7 +127,9 @@ impl eframe::App for MyApp {
                     match viewer_response.request {
                         Some(request) => match request {
                             image_viewer::Request::Exit => {
-                                self.mode = AppMode::Gallery;
+                                self.mode = AppMode::Gallery {
+                                    selected_images: HashSet::new(),
+                                };
                             }
                             image_viewer::Request::Previous => {
                                 self.photo_manager.with_lock_mut(|photo_manager| {
@@ -158,7 +171,7 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
-    fn gallery(&mut self, ctx: &egui::Context) {
+    fn gallery(&mut self, ctx: &egui::Context, selected_images: &mut HashSet<String>) {
         egui::TopBottomPanel::bottom("log")
             .resizable(true)
             .show(ctx, |ui| {
@@ -203,6 +216,10 @@ impl MyApp {
                 Some(ref path) => {
                     ui.label(format!("Current Dir: {}", path.display()));
 
+                    if ui.input(|input| input.key_down(Key::Escape)) {
+                        selected_images.clear();
+                    }
+
                     ui.spacing_mut().item_spacing = Vec2::splat(10.0);
 
                     let window_width = ui.available_width();
@@ -239,12 +256,32 @@ impl MyApp {
 
                                     row.col(|ui| {
                                         self.photo_manager.with_lock_mut(|photo_manager| {
+
+                                            let photo = photo_manager.photos[offest + i].clone();
+                                            
                                             let image = GalleryImage::new(
-                                                photo_manager.photos[offest + i].clone(),
+                                                photo.clone(),
                                                 photo_manager.tumbnail_texture_at(offest + i, ctx),
+                                                selected_images.iter().filter(|path| path == &&photo.path.display().to_string()).count() > 0,
                                             );
 
-                                            if ui.add(image).clicked() {
+                                            let image_response = ui.add(image);
+
+                                            if image_response.clicked() {
+                                                let ctrl_held = ui.input(|input| input.modifiers.ctrl);
+                                                if ctrl_held {
+                                                    if selected_images.iter().filter(|path| path == &&photo.path.display().to_string()).count() > 0 {
+                                                        selected_images.remove(&photo.path.display().to_string());
+                                                    } else {
+                                                        selected_images.insert(photo.path.display().to_string());
+                                                    }
+                                                } else {
+                                                    selected_images.clear();
+                                                    selected_images.insert(photo.path.display().to_string());
+                                                }
+                                            }
+
+                                            if image_response.double_clicked() {
                                                 self.mode = AppMode::Viewer {
                                                     photo: photo_manager.photos[offest + i].clone(),
                                                     index: offest + i,

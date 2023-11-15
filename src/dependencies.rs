@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{image_cache::ImageCache, gallery_service::ThumbnailService, event_bus::{EventBus, GalleryImageEvent, EventBusId}, photo_manager::PhotoManager};
+use crate::{image_cache::ImageCache, event_bus::{EventBus, GalleryImageEvent, EventBusId}, photo_manager::PhotoManager};
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
@@ -87,9 +87,4 @@ singleton!(
     PHOTO_MANAGER_INSTANCE,
     PhotoManager,
     PhotoManager::new()
-);
-
-dependency!(
-    ThumbnailService,
-    ThumbnailService::new()
 );

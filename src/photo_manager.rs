@@ -22,7 +22,6 @@ use rayon::prelude::{ParallelBridge, ParallelIterator};
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
-    gallery_service::ThumbnailService,
     photo::Photo,
 };
 
@@ -193,43 +192,27 @@ impl PhotoManager {
         texture_cache: &mut HashMap<String, SizedTexture>,
         pending_textures: &mut HashSet<String>,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        // match texture_cache.get(uri) {
-        //     Some(texture) => {
-        //         pending_textures.remove(uri);
-        //         Ok(Some(texture.clone()))
-        //     }
-        //     None => {
-        //         let texture = ctx.try_load_texture(
-        //             uri,
-        //             eframe::egui::TextureOptions::default(),
-        //             eframe::egui::SizeHint::Scale(1.0_f32.ord()),
-        //         )?;
-        //         match texture {
-        //             eframe::egui::load::TexturePoll::Pending { size: _ } => {
-        //                 pending_textures.insert(uri.to_string());
-        //                 Ok(None)
-        //             }
-        //             eframe::egui::load::TexturePoll::Ready { texture } => {
-        //                 texture_cache.insert(uri.to_string(), texture.clone());
-        //                 Ok(Some(texture))
-        //             }
-        //         }
-        //     }
-        // }
-
-        let texture = ctx.try_load_texture(
-            uri,
-            eframe::egui::TextureOptions::default(),
-            eframe::egui::SizeHint::Scale(1.0_f32.ord()),
-        )?;
-        match texture {
-            eframe::egui::load::TexturePoll::Pending { size: _ } => {
-                pending_textures.insert(uri.to_string());
-                Ok(None)
+        match texture_cache.get(uri) {
+            Some(texture) => {
+                pending_textures.remove(uri);
+                Ok(Some(texture.clone()))
             }
-            eframe::egui::load::TexturePoll::Ready { texture } => {
-                texture_cache.insert(uri.to_string(), texture.clone());
-                Ok(Some(texture))
+            None => {
+                let texture = ctx.try_load_texture(
+                    uri,
+                    eframe::egui::TextureOptions::default(),
+                    eframe::egui::SizeHint::Scale(1.0_f32.ord()),
+                )?;
+                match texture {
+                    eframe::egui::load::TexturePoll::Pending { size: _ } => {
+                        pending_textures.insert(uri.to_string());
+                        Ok(None)
+                    }
+                    eframe::egui::load::TexturePoll::Ready { texture } => {
+                        texture_cache.insert(uri.to_string(), texture.clone());
+                        Ok(Some(texture))
+                    }
+                }
             }
         }
     }
