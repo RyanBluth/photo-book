@@ -1,11 +1,10 @@
 use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
-    epaint::{Color32, Rect, Vec2},
+    epaint::{Color32, Vec2},
 };
-use log::{error, info};
+use log::{error};
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
     photo::Photo,
     widget::placeholder::RectPlaceholder, utils::Truncate,
 };

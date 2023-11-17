@@ -1,10 +1,9 @@
 use std::{
     marker::PhantomData,
     sync::{Arc, Mutex, MutexGuard},
-    rc::Rc,
 };
 
-use crate::{image_cache::ImageCache, event_bus::{EventBus, GalleryImageEvent, EventBusId}, photo_manager::PhotoManager};
+use crate::{image_cache::ImageCache, event_bus::{EventBus, EventBusId}, photo_manager::PhotoManager};
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {

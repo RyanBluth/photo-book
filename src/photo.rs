@@ -1,22 +1,20 @@
 use std::{
-    borrow::BorrowMut, collections::HashMap, f32::consts::PI, fmt::Display, fs::File,
-    io::BufReader, path::PathBuf,
+    collections::HashMap, f32::consts::PI, fmt::Display, fs::File,
+    io::BufReader, path::PathBuf, hash::Hasher, hash::Hash
 };
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
-    image_cache::ImageCache,
+    dependencies::{SingletonFor},
 };
 
 use anyhow::anyhow;
 use eframe::{
-    egui::{self, load::SizedTexture, Context, SizeHint, TextureOptions},
     emath::Rot2,
-    epaint::{util::FloatOrd, Pos2, Rect, Vec2},
+    epaint::{Pos2, Rect, Vec2},
 };
-use log::error;
 
-use exif::{DateTime, In, Rational, Reader, SRational, Tag, Value};
+
+use exif::{In, Reader, SRational, Tag, Value};
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
@@ -464,5 +462,13 @@ impl Photo {
 impl PartialEq for Photo {
     fn eq(&self, other: &Self) -> bool {
         self.path == other.path
+    }
+}
+
+impl Eq for Photo {}
+
+impl Hash for Photo {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.path.hash(state);
     }
 }

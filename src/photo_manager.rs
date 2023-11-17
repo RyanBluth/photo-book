@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use backtrace::Backtrace;
+
 use eframe::{
     egui::{
         load::{SizedTexture, TextureLoader},
@@ -18,10 +18,10 @@ use image::{
     ColorType,
 };
 use log::{error, info};
-use rayon::prelude::{ParallelBridge, ParallelIterator};
+use rayon::prelude::{ParallelIterator};
 
 use crate::{
-    dependencies::{Dependency, DependencyFor},
+    dependencies::{DependencyFor},
     photo::Photo,
 };
 
@@ -29,7 +29,7 @@ use eframe::egui::SizeHint::Size;
 use eframe::egui::{self, TextureOptions};
 
 use std::fs::create_dir;
-use std::fs::DirEntry;
+
 use std::num::NonZeroU32;
 
 use anyhow::{anyhow, Ok};
@@ -39,10 +39,10 @@ use image::ImageEncoder;
 
 use fast_image_resize as fr;
 
-use crate::dependencies::{Singleton, SingletonFor};
-use crate::image_cache;
+use crate::dependencies::{SingletonFor};
 
-use crate::{image_cache::ImageCache, utils};
+
+use crate::{utils};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
@@ -269,7 +269,7 @@ impl PhotoManager {
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists: {:?}", &thumbnail_path);
 
-                    let tex_result = ctx.try_load_texture(
+                    let _tex_result = ctx.try_load_texture(
                         &format!("file://{}", thumbnail_path.to_str().unwrap()),
                         TextureOptions {
                             magnification: egui::TextureFilter::Linear,
@@ -381,7 +381,7 @@ impl PhotoManager {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                let tex_result = ctx.try_load_texture(
+                let _tex_result = ctx.try_load_texture(
                     &format!("file://{}", thumbnail_path.to_str().unwrap()),
                     TextureOptions {
                         magnification: egui::TextureFilter::Linear,

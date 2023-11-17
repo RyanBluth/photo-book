@@ -20,7 +20,7 @@ use crate::{
     photo_manager::PhotoManager,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ImageViewerState {
     pub scale: f32,
     pub offset: Vec2,

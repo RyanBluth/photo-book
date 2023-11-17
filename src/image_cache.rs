@@ -1,6 +1,6 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use eframe::egui::load::{SizedTexture, TextureLoadResult, TexturePoll};
+use eframe::egui::load::{SizedTexture, TexturePoll};
 
 pub struct ImageCache {
     cache: HashMap<String, TexturePoll>,
@@ -22,7 +22,7 @@ impl ImageCache {
         
         match self.cache.get(path.display().to_string().as_str()) {
             Some(texture_poll) => match texture_poll {
-                TexturePoll::Pending { size } => None,
+                TexturePoll::Pending { size: _ } => None,
                 TexturePoll::Ready { texture } => Some(texture.clone()),
             },
             None => None,
