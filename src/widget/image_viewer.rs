@@ -1,15 +1,13 @@
-use std::f32::consts::PI;
+
 
 use eframe::{
     egui::{
-        self,
-        load::{SizedTexture, TexturePoll},
-        Context, Image, Key, Painter, Response, Sense, SizeHint, TextureOptions, Widget,
+        self, Image, Key, Response, Sense, Widget,
     },
     emath::Rot2,
-    epaint::{util::FloatOrd, Color32, Mesh, Pos2, Rect, Shape, Stroke, TextureId, Vec2},
+    epaint::{Color32, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use env_logger::fmt::Color;
+
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -61,7 +59,7 @@ impl<'a> ImageViewer<'a> {
         }
     }
 
-    pub fn show(mut self, ui: &mut eframe::egui::Ui) -> ImageViewerResponse {
+    pub fn show(self, ui: &mut eframe::egui::Ui) -> ImageViewerResponse {
         let response = self.ui(ui);
 
         let mut viewer_response = ImageViewerResponse {
@@ -110,7 +108,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 let aspect_ratio =
                     self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32;
                 if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() as f32 * aspect_ratio).min(available_size.y);
+                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
                     let adjusted_width = desired_height
                         * (self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32);
 
@@ -119,7 +117,7 @@ impl<'a> Widget for ImageViewer<'a> {
                         Vec2::new(adjusted_width, desired_height),
                     );
                 } else {
-                    let desired_width = (image_rect.height() as f32 / aspect_ratio).min(available_size.x);
+                    let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
                     let adjusted_height = desired_width
                         * (self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32);
 
@@ -133,7 +131,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 let aspect_ratio =
                     self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32;
                 if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() as f32 * aspect_ratio).min(available_size.y);
+                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
                     let adjusted_width = desired_height
                         * (self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32);
 
@@ -253,7 +251,7 @@ impl<'a> Widget for ImageViewer<'a> {
 
         match self
             .photo_manager
-            .with_lock_mut(|photo_manager| photo_manager.texture_for(&self.photo, &ui.ctx()))
+            .with_lock_mut(|photo_manager| photo_manager.texture_for(self.photo, ui.ctx()))
         {
             Ok(Some(texture)) => {
 
@@ -269,7 +267,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 painter.add(Shape::mesh(mesh));
             }
             Ok(None) => match self.photo_manager.with_lock_mut(|photo_manager| {
-                photo_manager.thumbnail_texture_for(&self.photo, &ui.ctx())
+                photo_manager.thumbnail_texture_for(self.photo, ui.ctx())
             }) {
                 Ok(Some(texture)) => {
                     Image::from_texture(texture)
@@ -285,7 +283,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 ui.painter().text(
                     image_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    &format!("Error: {}", error),
+                    format!("Error: {}", error),
                     egui::FontId::default(),
                     Color32::from_rgb(255, 0, 0),
                 );

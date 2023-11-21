@@ -23,7 +23,7 @@ impl ImageCache {
         match self.cache.get(path.display().to_string().as_str()) {
             Some(texture_poll) => match texture_poll {
                 TexturePoll::Pending { size: _ } => None,
-                TexturePoll::Ready { texture } => Some(texture.clone()),
+                TexturePoll::Ready { texture } => Some(*texture),
             },
             None => None,
         }

@@ -1,18 +1,15 @@
 use std::{
-    collections::HashMap, f32::consts::PI, fmt::Display, fs::File,
-    io::BufReader, path::PathBuf, hash::Hasher, hash::Hash
+    collections::HashMap, f32::consts::PI, fmt::Display, fs::File, hash::Hash, hash::Hasher,
+    io::BufReader, path::PathBuf,
 };
 
-use crate::{
-    dependencies::{SingletonFor},
-};
+use crate::dependencies::SingletonFor;
 
 use anyhow::anyhow;
 use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-
 
 use exif::{In, Reader, SRational, Tag, Value};
 
@@ -191,10 +188,8 @@ impl PhotoMetadata {
         let mut fields = MetadataCollection::new();
         fields.insert(PhotoMetadataField::Path(path.clone()));
 
-        let file = File::open(&path).unwrap();
-        let exif = Reader::new()
-            .read_from_container(&mut BufReader::new(&file))
-            .unwrap();
+        let file = File::open(path).unwrap();
+        let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
 
         let size = imagesize::size(path.clone()).unwrap();
         let width = size.width;
@@ -203,137 +198,145 @@ impl PhotoMetadata {
         fields.insert(PhotoMetadataField::Width(width));
         fields.insert(PhotoMetadataField::Height(height));
 
-        if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
-            let mut rotation = PhotoRotation::Normal;
-            if let Some(value) = field.value.get_uint(0) {
-                match value {
-                    1 => {
-                        // Normal
-                        rotation = PhotoRotation::Normal;
-                    }
-                    2 => {
-                        // Mirror horizontal
-                        rotation = PhotoRotation::MirrorHorizontal;
-                    }
-                    3 => {
-                        // Rotate 180
-                        rotation = PhotoRotation::Rotate180;
-                    }
-                    4 => {
-                        // Mirror vertical
-                        rotation = PhotoRotation::MirrorVerticalAndRotate180;
-                    }
-                    5 => {
-                        // Mirror horizontal and rotate 270 CW
-                        rotation = PhotoRotation::MirrorHorizontalAndRotate270CW;
-                    }
-                    6 => {
-                        // Rotate 90 CW
-                        rotation = PhotoRotation::Rotate90CW;
-                    }
-                    7 => {
-                        // Mirror horizontal and rotate 90 CW
-                        rotation = PhotoRotation::MirrorHorizontalAndRotate90CW;
-                    }
-                    8 => {
-                        // Rotate 270 CW
-                        rotation = PhotoRotation::Rotate270CW;
-                    }
-                    _ => {
-                        // Unknown
+        if let Ok(exif) = exif {
+            if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
+                let mut rotation = PhotoRotation::Normal;
+                if let Some(value) = field.value.get_uint(0) {
+                    match value {
+                        1 => {
+                            // Normal
+                            rotation = PhotoRotation::Normal;
+                        }
+                        2 => {
+                            // Mirror horizontal
+                            rotation = PhotoRotation::MirrorHorizontal;
+                        }
+                        3 => {
+                            // Rotate 180
+                            rotation = PhotoRotation::Rotate180;
+                        }
+                        4 => {
+                            // Mirror vertical
+                            rotation = PhotoRotation::MirrorVerticalAndRotate180;
+                        }
+                        5 => {
+                            // Mirror horizontal and rotate 270 CW
+                            rotation = PhotoRotation::MirrorHorizontalAndRotate270CW;
+                        }
+                        6 => {
+                            // Rotate 90 CW
+                            rotation = PhotoRotation::Rotate90CW;
+                        }
+                        7 => {
+                            // Mirror horizontal and rotate 90 CW
+                            rotation = PhotoRotation::MirrorHorizontalAndRotate90CW;
+                        }
+                        8 => {
+                            // Rotate 270 CW
+                            rotation = PhotoRotation::Rotate270CW;
+                        }
+                        _ => {
+                            // Unknown
+                        }
                     }
                 }
+                fields.insert(PhotoMetadataField::Rotation(rotation));
+
+                let rect = Rect::from_min_size(
+                    Pos2::new(0.0, 0.0),
+                    Vec2::new(width as f32, height as f32),
+                );
+                let rotated_size = rect.rotate_bb(Rot2::from_angle(rotation.radians())).size();
+
+                fields.insert(PhotoMetadataField::RotatedWidth(rotated_size.x as usize));
+                fields.insert(PhotoMetadataField::RotatedHeight(rotated_size.y as usize));
+            } else {
+                fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
+                fields.insert(PhotoMetadataField::RotatedWidth(width));
+                fields.insert(PhotoMetadataField::RotatedHeight(height));
             }
-            fields.insert(PhotoMetadataField::Rotation(rotation));
 
-            let rect =
-                Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(width as f32, height as f32));
-            let rotated_size = rect.rotate_bb(Rot2::from_angle(rotation.radians())).size();
+            if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
+                match field.value {
+                    Value::Ascii(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::Camera(
+                                String::from_utf8_lossy(value).to_string(),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            };
+            if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
+                match field.value {
+                    Value::Ascii(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::DateTime(
+                                String::from_utf8_lossy(value).to_string(),
+                            ));
+                        }
+                    }
+                    _ => {}
+                }
+            }
 
-            fields.insert(PhotoMetadataField::RotatedWidth(rotated_size.x as usize));
-            fields.insert(PhotoMetadataField::RotatedHeight(rotated_size.y as usize));
+            if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY) {
+                if let Some(value) = field.value.get_uint(0) {
+                    fields.insert(PhotoMetadataField::ISO(value));
+                }
+            }
+
+            if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
+                match field.value {
+                    Value::Rational(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::ShutterSpeed(SRational {
+                                num: value.num as i32,
+                                denom: value.denom as i32,
+                            }));
+                        }
+                    }
+                    Value::SRational(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::ShutterSpeed(*value));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
+                match field.value {
+                    Value::Rational(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::Aperture(SRational {
+                                num: value.num as i32,
+                                denom: value.denom as i32,
+                            }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
+                match field.value {
+                    Value::Rational(ref vec) => {
+                        if let Some(value) = vec.get(0) {
+                            fields.insert(PhotoMetadataField::FocalLength(SRational {
+                                num: value.num as i32,
+                                denom: value.denom as i32,
+                            }));
+                        }
+                    }
+                    _ => {}
+                }
+            }
         } else {
             fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
             fields.insert(PhotoMetadataField::RotatedWidth(width));
             fields.insert(PhotoMetadataField::RotatedHeight(height));
-        }
-
-        if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
-            match field.value {
-                Value::Ascii(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::Camera(
-                            String::from_utf8_lossy(value).to_string(),
-                        ));
-                    }
-                }
-                _ => {}
-            }
-        };
-        if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
-            match field.value {
-                Value::Ascii(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::DateTime(
-                            String::from_utf8_lossy(value).to_string(),
-                        ));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY) {
-            if let Some(value) = field.value.get_uint(0) {
-                fields.insert(PhotoMetadataField::ISO(value));
-            }
-        }
-
-        if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
-            match field.value {
-                Value::Rational(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::ShutterSpeed(SRational {
-                            num: value.num as i32,
-                            denom: value.denom as i32,
-                        }));
-                    }
-                }
-                Value::SRational(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::ShutterSpeed(value.clone()));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
-            match field.value {
-                Value::Rational(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::Aperture(SRational {
-                            num: value.num as i32,
-                            denom: value.denom as i32,
-                        }));
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
-            match field.value {
-                Value::Rational(ref vec) => {
-                    if let Some(value) = vec.get(0) {
-                        fields.insert(PhotoMetadataField::FocalLength(SRational {
-                            num: value.num as i32,
-                            denom: value.denom as i32,
-                        }));
-                    }
-                }
-                _ => {}
-            }
         }
 
         Self { fields }
@@ -394,13 +397,7 @@ impl PhotoMetadata {
             PhotoMetadataFieldLabel::FocalLength,
         ]
         .into_iter()
-        .filter_map(|label| {
-            match self.fields.get(label) {
-                Some(value) => Some((label, value)),
-                None => None,
-            }
-        })
-        
+        .filter_map(|label| self.fields.get(label).map(|value| (label, value)))
     }
 }
 

@@ -11,7 +11,7 @@ pub struct ArcStringLog {
 impl ArcStringLog {
     pub fn new(log: Arc<StringLog>) -> Self {
         Self {
-            log: log,
+            log,
         }
     }
 }
@@ -27,7 +27,7 @@ impl StringLog {
         }
     }
 
-    pub fn for_each<F>(&self, func: F) -> () where F: FnMut(&String) {
+    pub fn for_each<F>(&self, func: F) where F: FnMut(&String) {
         self.logs.lock().unwrap().get_mut().iter().for_each(func);
     }
 }

@@ -54,7 +54,7 @@ impl <E: Clone> Singleton<EventBus<E>> {
         self.with_lock_mut(|event_bus| event_bus.emit(event));
     }
 
-    pub fn listen(&self, id: EventBusId, listener: impl Fn(E) -> () + 'static) {
+    pub fn listen(&self, id: EventBusId, listener: impl Fn(E) + 'static) {
         self.with_lock_mut(|event_bus| event_bus.listen(id, Box::new(listener)));
     }
 }

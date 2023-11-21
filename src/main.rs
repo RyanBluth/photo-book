@@ -1,24 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{cell::RefCell, collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
-use eframe::{
-    egui::{self, menu, CentralPanel, Key, Layout, Widget},
-    emath::Align,
-    epaint::Vec2,
-};
-use egui_extras::Column;
+use eframe::egui::{self, CentralPanel, Widget};
 
-use log::info;
 use photo::Photo;
-use photo_manager::PhotoManager;
+use photo_manager::{PhotoManager, PhotoLoadResult};
 use widget::{
-    gallery_image::GalleryImage,
     image_gallery::{ImageGallery, ImageGalleryResponse},
     image_viewer::{self, ImageViewer, ImageViewerState},
     photo_info::PhotoInfo,
-    spacer::Spacer,
 };
 
 use flexi_logger::{Logger, WriteMode};
@@ -77,7 +69,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Debug, Clone, PartialEq)]
 enum AppMode {
     Gallery {
-        selected_images: HashSet<Photo>,
+        selected_images: HashSet<PathBuf>,
         current_dir: Option<PathBuf>,
     },
     Viewer {
@@ -100,7 +92,7 @@ enum NavAction {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui_extras::install_image_loaders(&ctx);
+        egui_extras::install_image_loaders(ctx);
 
         let mut nav_action = None;
 
@@ -109,17 +101,23 @@ impl eframe::App for MyApp {
                 selected_images,
                 current_dir,
             } => {
-                if let Some(response) = ImageGallery::show(&ctx, current_dir, selected_images) {
-                    match response {
+                let mut gallery_response = None;
+                egui::CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
+                    gallery_response = ImageGallery::show(ui, current_dir, selected_images);
+                });
+
+                if let Some(gallery_response) = gallery_response {
+                    match gallery_response {
                         ImageGalleryResponse::ViewPhotoAt(index) => {
                             self.photo_manager.with_lock_mut(|photo_manager| {
-                                let photo = photo_manager.photos[index].clone();
-
-                                self.nav_stack.push(AppMode::Viewer {
-                                    photo,
-                                    index,
-                                    state: ImageViewerState::default(),
-                                });
+                                // TODO: Allow clicking on a pending photo
+                                if let PhotoLoadResult::Ready(photo) = photo_manager.photos[index].clone() {
+                                    self.nav_stack.push(AppMode::Viewer {
+                                        photo,
+                                        index,
+                                        state: ImageViewerState::default(),
+                                    });
+                                }
                             });
                         }
                     }
@@ -136,11 +134,11 @@ impl eframe::App for MyApp {
                     .resizable(true)
                     .default_width(100.0)
                     .show(ctx, |ui| {
-                        PhotoInfo::new(&photo).ui(ui);
+                        PhotoInfo::new(photo).ui(ui);
                     });
 
                 CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
-                    let viewer_response = ImageViewer::new(&photo, state).show(ui);
+                    let viewer_response = ImageViewer::new(photo, state).show(ui);
 
                     match viewer_response.request {
                         Some(request) => match request {

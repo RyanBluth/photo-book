@@ -2,9 +2,8 @@ use std::{
     collections::{HashMap, HashSet},
     fs::read_dir,
     io::BufWriter,
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
-
 
 use eframe::{
     egui::{
@@ -17,11 +16,12 @@ use image::{
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
     ColorType,
 };
+use indexmap::IndexMap;
 use log::{error, info};
-use rayon::prelude::{ParallelIterator};
+use rayon::prelude::ParallelIterator;
 
 use crate::{
-    dependencies::{DependencyFor},
+    dependencies::{Dependency, DependencyFor},
     photo::Photo,
 };
 
@@ -39,15 +39,29 @@ use image::ImageEncoder;
 
 use fast_image_resize as fr;
 
-use crate::dependencies::{SingletonFor};
+use crate::dependencies::SingletonFor;
 
-
-use crate::{utils};
+use crate::utils;
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
+#[derive(Clone, Debug)]
+pub enum PhotoLoadResult {
+    Pending(PathBuf),
+    Ready(Photo),
+}
+
+impl PhotoLoadResult {
+    pub fn path(&self) -> &PathBuf {
+        match self {
+            PhotoLoadResult::Pending(path) => path,
+            PhotoLoadResult::Ready(photo) => &photo.path,
+        }
+    }
+}
+
 pub struct PhotoManager {
-    pub photos: Vec<Photo>,
+    pub photos: IndexMap<PathBuf, PhotoLoadResult>,
 
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
@@ -56,27 +70,57 @@ pub struct PhotoManager {
 impl PhotoManager {
     pub fn new() -> Self {
         Self {
-            photos: Vec::new(),
+            photos: IndexMap::new(),
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
         }
     }
 
-    pub fn load_directory(&mut self, path: &PathBuf, ctx: &Context) -> anyhow::Result<()> {
+    pub fn load_directory(&mut self, path: PathBuf, ctx: Context) -> anyhow::Result<()> {
         let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
-            read_dir(path).unwrap().collect();
+            read_dir(&path).unwrap().collect();
 
-        for entry in entries {
+        for entry in &entries {
             let entry = entry.as_ref().unwrap();
             let path = entry.path();
 
             if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
                 continue;
             }
-            self.photos.push(Photo::new(path));
+
+            self.photos
+                .insert(path.clone(), PhotoLoadResult::Pending(path.clone()));
         }
 
-        self.gen_thumbnails(path.clone(), ctx.clone())
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            for entry in entries {
+                let entry = entry.as_ref().unwrap();
+                let path = entry.path();
+
+                if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
+                    continue;
+                }
+
+                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    photo_manager.photos.insert(
+                        path.clone(),
+                        PhotoLoadResult::Ready(Photo::new(path.clone())),
+                    );
+                });
+
+                ctx.request_repaint();
+            }
+
+            Dependency::<PhotoManager>::get().with_lock(
+                |photo_manager: &std::sync::MutexGuard<'_, PhotoManager>| {
+                    photo_manager.gen_thumbnails(path.clone(), ctx.clone());
+                },
+            );
+
+            Ok(())
+        });
+
+        Ok(())
     }
 
     pub fn thumbnail_texture_for(
@@ -90,7 +134,7 @@ impl PhotoManager {
 
         Self::load_texture(
             &photo.thumbnail_uri(),
-            &ctx,
+            ctx,
             &mut self.texture_cache,
             &mut self.pending_textures,
         )
@@ -101,19 +145,19 @@ impl PhotoManager {
         at: usize,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        match self.photos.get(at) {
-            Some(photo) => {
+        match self.photos.get_index(at) {
+            Some((_, PhotoLoadResult::Ready(photo))) => {
                 if !photo.thumbnail_path()?.exists() {
                     return Ok(None);
                 }
                 Self::load_texture(
                     &photo.thumbnail_uri(),
-                    &ctx,
+                    ctx,
                     &mut self.texture_cache,
                     &mut self.pending_textures,
                 )
             }
-            None => Ok(None),
+            _ => Ok(None),
         }
     }
 
@@ -124,21 +168,21 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         Self::load_texture(
             &photo.uri(),
-            &ctx,
+            ctx,
             &mut self.texture_cache,
             &mut self.pending_textures,
         )
     }
 
     pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
-        match self.photos.get(at) {
-            Some(photo) => Self::load_texture(
+        match self.photos.get_index(at) {
+            Some((_, PhotoLoadResult::Ready(photo))) => Self::load_texture(
                 &photo.uri(),
-                &ctx,
+                ctx,
                 &mut self.texture_cache,
                 &mut self.pending_textures,
             ),
-            None => Ok(None),
+            _ => Ok(None),
         }
     }
 
@@ -148,9 +192,11 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let next_index = (current_index + 1) % self.photos.len();
-        match self.photos.get(next_index) {
-            Some(next_photo) => {
-                if let Some(current_photo) = self.photos.get(current_index) {
+        match self.photos.get_index(next_index) {
+            Some((_, PhotoLoadResult::Ready(next_photo))) => {
+                if let Some((_, PhotoLoadResult::Ready(current_photo))) =
+                    self.photos.get_index(current_index)
+                {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
                         ctx.forget_image(&current_photo.uri());
@@ -160,7 +206,7 @@ impl PhotoManager {
 
                 Ok(Some((next_photo.clone(), next_index)))
             }
-            None => Ok(None),
+            _ => Ok(None),
         }
     }
 
@@ -170,9 +216,11 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let prev_index = (current_index + self.photos.len() - 1) % self.photos.len();
-        match self.photos.get(prev_index) {
-            Some(previous_photo) => {
-                if let Some(current_photo) = self.photos.get(current_index) {
+        match self.photos.get_index(prev_index) {
+            Some((_, PhotoLoadResult::Ready(previous_photo))) => {
+                if let Some((_, PhotoLoadResult::Ready(current_photo))) =
+                    self.photos.get_index(current_index)
+                {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
                         ctx.forget_image(&current_photo.uri());
@@ -182,7 +230,7 @@ impl PhotoManager {
 
                 Ok(Some((previous_photo.clone(), prev_index)))
             }
-            None => Ok(None),
+            _ => Ok(None),
         }
     }
 
@@ -195,7 +243,7 @@ impl PhotoManager {
         match texture_cache.get(uri) {
             Some(texture) => {
                 pending_textures.remove(uri);
-                Ok(Some(texture.clone()))
+                Ok(Some(*texture))
             }
             None => {
                 let texture = ctx.try_load_texture(
@@ -209,7 +257,7 @@ impl PhotoManager {
                         Ok(None)
                     }
                     eframe::egui::load::TexturePoll::Ready { texture } => {
-                        texture_cache.insert(uri.to_string(), texture.clone());
+                        texture_cache.insert(uri.to_string(), texture);
                         Ok(Some(texture))
                     }
                 }
@@ -218,7 +266,7 @@ impl PhotoManager {
     }
 
     fn gen_thumbnails(&self, dir: PathBuf, ctx: Context) -> anyhow::Result<()> {
-        let path: PathBuf = PathBuf::from(dir);
+        let path: PathBuf = dir;
 
         if !path.exists() {
             return Err(anyhow::anyhow!("Path does not exist"));
@@ -235,14 +283,14 @@ impl PhotoManager {
             create_dir(&thumbnail_dir)?;
         }
 
-        let partitions = utils::partition_iterator(self.photos.clone().into_iter(), 8);
+        let partitions = utils::partition_iterator(self.photos.clone().into_keys().into_iter(), 8);
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
             let ctx = ctx.clone();
             tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
                 partition.into_iter().for_each(|photo| {
-                    let res = Self::gen_thumbnail(photo, &thumbnail_dir, &ctx);
+                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir, &ctx);
                     if res.is_err() {
                         error!("{:?}", res);
                     }
@@ -255,9 +303,13 @@ impl PhotoManager {
         Ok(())
     }
 
-    fn gen_thumbnail(photo: Photo, thumbnail_dir: &PathBuf, ctx: &Context) -> anyhow::Result<()> {
-        let file_name = photo.path.file_name();
-        let extension = photo.path.extension();
+    fn gen_thumbnail(
+        photo_path: &PathBuf,
+        thumbnail_dir: &PathBuf,
+        ctx: &Context,
+    ) -> anyhow::Result<()> {
+        let file_name = photo_path.file_name();
+        let extension = photo_path.extension();
 
         if let (Some(file_name), Some(extension)) = (file_name, extension) {
             if extension.to_ascii_lowercase() == "jpg"
@@ -285,7 +337,7 @@ impl PhotoManager {
                     info!("Generating thumbnail: {:?}", &thumbnail_path);
                 }
 
-                let img = ImageReader::open(&photo.path)?.decode()?;
+                let img = ImageReader::open(photo_path)?.decode()?;
                 let width = NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
                 let height =
                     NonZeroU32::new(img.height()).ok_or(anyhow!("Invalid image height"))?;
@@ -377,7 +429,7 @@ impl PhotoManager {
                 }
 
                 let buf = result_buf.into_inner()?;
-                std::fs::write(&thumbnail_path, &buf)?;
+                std::fs::write(&thumbnail_path, buf)?;
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 

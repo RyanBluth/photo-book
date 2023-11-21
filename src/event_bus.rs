@@ -16,7 +16,7 @@ pub enum GalleryImageEvent {
 }
 
 pub struct EventBus<T> {
-    listeners: HashMap<EventBusId, Box<dyn Fn(T) -> ()>>
+    listeners: HashMap<EventBusId, Box<dyn Fn(T)>>
 }
 
 impl<T: Clone> EventBus<T> {
@@ -26,7 +26,7 @@ impl<T: Clone> EventBus<T> {
         }
     }
 
-    pub fn listen(&mut self, id: EventBusId, listener: Box<dyn Fn(T) -> ()>) {
+    pub fn listen(&mut self, id: EventBusId, listener: Box<dyn Fn(T)>) {
         self.listeners.insert(id, listener);
     }
 
