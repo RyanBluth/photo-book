@@ -51,9 +51,7 @@ impl<'a> ImageGallery<'a> {
 
                     info!("Opened {:?}", current_dir);
 
-                    photo_manager.with_lock_mut(|photo_manager| {
-                        photo_manager.load_directory(current_dir.clone().unwrap(), ui.ctx().clone());
-                    });
+                    PhotoManager::load_directory(current_dir.clone().unwrap(), ui.ctx().clone());
                 }
             });
         });

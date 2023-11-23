@@ -6,7 +6,8 @@ use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, CentralPanel, Widget};
 
 use photo::Photo;
-use photo_manager::{PhotoManager, PhotoLoadResult};
+use photo_manager::{PhotoLoadResult, PhotoManager};
+use tokio::runtime;
 use widget::{
     image_gallery::{ImageGallery, ImageGalleryResponse},
     image_viewer::{self, ImageViewer, ImageViewerState},
@@ -35,6 +36,15 @@ async fn main() -> anyhow::Result<()> {
         .num_threads(4)
         .build_global()
         .unwrap();
+
+    let rt = runtime::Builder::new_multi_thread()
+        .enable_all()
+        .max_blocking_threads(4)
+        .build()
+        .unwrap();
+
+    // Enter the runtime so that `tokio::spawn` is available immediately.
+    let _enter = rt.enter();
 
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .unwrap()
@@ -109,9 +119,11 @@ impl eframe::App for MyApp {
                 if let Some(gallery_response) = gallery_response {
                     match gallery_response {
                         ImageGalleryResponse::ViewPhotoAt(index) => {
-                            self.photo_manager.with_lock_mut(|photo_manager| {
+                            self.photo_manager.with_lock(|photo_manager| {
                                 // TODO: Allow clicking on a pending photo
-                                if let PhotoLoadResult::Ready(photo) = photo_manager.photos[index].clone() {
+                                if let PhotoLoadResult::Ready(photo) =
+                                    photo_manager.photos[index].clone()
+                                {
                                     self.nav_stack.push(AppMode::Viewer {
                                         photo,
                                         index,

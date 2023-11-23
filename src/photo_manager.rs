@@ -3,6 +3,7 @@ use std::{
     fs::read_dir,
     io::BufWriter,
     path::{Path, PathBuf},
+    thread,
 };
 
 use eframe::{
@@ -18,7 +19,7 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
-use rayon::prelude::ParallelIterator;
+use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
@@ -65,6 +66,7 @@ pub struct PhotoManager {
 
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
+    thumbnail_existance_cache: HashSet<PathBuf>,
 }
 
 impl PhotoManager {
@@ -73,26 +75,48 @@ impl PhotoManager {
             photos: IndexMap::new(),
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
+            thumbnail_existance_cache: HashSet::new(),
         }
     }
 
-    pub fn load_directory(&mut self, path: PathBuf, ctx: Context) -> anyhow::Result<()> {
-        let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
-            read_dir(&path).unwrap().collect();
+    pub fn load_directory(path: PathBuf, ctx: Context) -> anyhow::Result<()> {
+        tokio::task::spawn_blocking(move || {
+            let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
+                read_dir(&path).unwrap().collect();
 
-        for entry in &entries {
-            let entry = entry.as_ref().unwrap();
-            let path = entry.path();
+            let mut pending_photos = Vec::new();
+            for entry in &entries {
+                let entry = entry.as_ref().unwrap();
+                let path = entry.path();
 
-            if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
-                continue;
+                if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
+                    continue;
+                }
+
+                pending_photos.push(path.clone());
             }
 
-            self.photos
-                .insert(path.clone(), PhotoLoadResult::Pending(path.clone()));
-        }
+            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                for photo in pending_photos {
+                    photo_manager
+                        .photos
+                        .insert(photo.clone(), PhotoLoadResult::Pending(photo.clone()));
+                }
+            });
 
-        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            //ctx.request_repaint();
+
+            let photo_paths: Vec<PathBuf> =
+                Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+                    photo_manager
+                        .photos
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<PathBuf>>()
+                });
+
+            let mut ready_photos = Vec::new();
+
             for entry in entries {
                 let entry = entry.as_ref().unwrap();
                 let path = entry.path();
@@ -101,21 +125,20 @@ impl PhotoManager {
                     continue;
                 }
 
-                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                    photo_manager.photos.insert(
-                        path.clone(),
-                        PhotoLoadResult::Ready(Photo::new(path.clone())),
-                    );
-                });
+                ready_photos.push(Photo::new(path.clone()));
 
-                ctx.request_repaint();
+                // ctx.request_repaint();
             }
 
-            Dependency::<PhotoManager>::get().with_lock(
-                |photo_manager: &std::sync::MutexGuard<'_, PhotoManager>| {
-                    photo_manager.gen_thumbnails(path.clone(), ctx.clone());
-                },
-            );
+            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                for photo in ready_photos {
+                    photo_manager
+                        .photos
+                        .insert(photo.path.clone(), PhotoLoadResult::Ready(photo.clone()));
+                }
+            });
+
+            Self::gen_thumbnails(path.clone(), ctx.clone(), photo_paths);
 
             Ok(())
         });
@@ -128,7 +151,7 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if !photo.thumbnail_path()?.exists() {
+        if !self.thumbnail_existance_cache.contains(&photo.path) {
             return Ok(None);
         }
 
@@ -147,7 +170,7 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
             Some((_, PhotoLoadResult::Ready(photo))) => {
-                if !photo.thumbnail_path()?.exists() {
+                if !self.thumbnail_existance_cache.contains(&photo.path) {
                     return Ok(None);
                 }
                 Self::load_texture(
@@ -265,7 +288,7 @@ impl PhotoManager {
         }
     }
 
-    fn gen_thumbnails(&self, dir: PathBuf, ctx: Context) -> anyhow::Result<()> {
+    fn gen_thumbnails(dir: PathBuf, ctx: Context, photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
         let path: PathBuf = dir;
 
         if !path.exists() {
@@ -283,23 +306,24 @@ impl PhotoManager {
             create_dir(&thumbnail_dir)?;
         }
 
-        let partitions = utils::partition_iterator(self.photos.clone().into_keys().into_iter(), 8);
+        let partitions = utils::partition_iterator(photo_paths.into_iter(), 4);
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
             let ctx = ctx.clone();
-            tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+           // thread::spawn(move || {
                 partition.into_iter().for_each(|photo| {
                     let res = Self::gen_thumbnail(&photo, &thumbnail_dir, &ctx);
                     if res.is_err() {
                         error!("{:?}", res);
                     }
                 });
+           // });
 
-                Ok(())
-            });
+            //Ok(())
+            //});
         }
-
         Ok(())
     }
 
@@ -321,16 +345,21 @@ impl PhotoManager {
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists: {:?}", &thumbnail_path);
 
-                    let _tex_result = ctx.try_load_texture(
-                        &format!("file://{}", thumbnail_path.to_str().unwrap()),
-                        TextureOptions {
-                            magnification: egui::TextureFilter::Linear,
-                            minification: egui::TextureFilter::Linear,
-                        },
-                        egui::SizeHint::Scale(1.0_f32.ord()),
-                    )?;
+                    // let _tex_result = ctx.try_load_texture(
+                    //     &format!("file://{}", thumbnail_path.to_str().unwrap()),
+                    //     TextureOptions {
+                    //         magnification: egui::TextureFilter::Linear,
+                    //         minification: egui::TextureFilter::Linear,
+                    //     },
+                    //     egui::SizeHint::Scale(1.0_f32.ord()),
+                    // )?;
 
-                    ctx.request_repaint();
+                    Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                        photo_manager
+                            .thumbnail_existance_cache
+                            .insert(photo_path.clone());
+                    });
+                    
 
                     return Ok(());
                 } else {
@@ -433,16 +462,23 @@ impl PhotoManager {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                let _tex_result = ctx.try_load_texture(
-                    &format!("file://{}", thumbnail_path.to_str().unwrap()),
-                    TextureOptions {
-                        magnification: egui::TextureFilter::Linear,
-                        minification: egui::TextureFilter::Linear,
-                    },
-                    Size(u32::from(dst_width), u32::from(dst_height as NonZeroU32)),
-                )?;
+                
+                // let _tex_result = ctx.try_load_texture(
+                //     &format!("file://{}", thumbnail_path.to_str().unwrap()),
+                //     TextureOptions {
+                //         magnification: egui::TextureFilter::Linear,
+                //         minification: egui::TextureFilter::Linear,
+                //     },
+                //     Size(u32::from(dst_width), u32::from(dst_height as NonZeroU32)),
+                // )?;
 
-                ctx.request_repaint();
+                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    photo_manager
+                        .thumbnail_existance_cache
+                        .insert(photo_path.clone());
+                });
+
+                //ctx.request_repaint();
             }
         }
 

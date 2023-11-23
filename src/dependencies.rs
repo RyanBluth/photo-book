@@ -1,6 +1,6 @@
 use std::{
     marker::PhantomData,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, RwLockReadGuard},
 };
 
 use crate::{image_cache::ImageCache, event_bus::{EventBus, EventBusId}, photo_manager::PhotoManager};
@@ -8,7 +8,7 @@ use crate::{image_cache::ImageCache, event_bus::{EventBus, EventBusId}, photo_ma
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
 
-        static $name: once_cell::sync::Lazy<Singleton<$type>> = once_cell::sync::Lazy::new(|| Singleton(Arc::new(Mutex::new($init))));
+        static $name: once_cell::sync::Lazy<Singleton<$type>> = once_cell::sync::Lazy::new(|| Singleton(Arc::new(RwLock::new($init))));
         
         impl SingletonFor<$type> for Dependency<$type> {
             fn get() -> Singleton<$type> {
@@ -29,7 +29,7 @@ macro_rules! dependency {
     };
 }
 
-pub struct Singleton<T>(Arc<Mutex<T>>);
+pub struct Singleton<T>(Arc<RwLock<T>>);
 
 
 impl<T> Clone for Singleton<T> {
@@ -39,12 +39,12 @@ impl<T> Clone for Singleton<T> {
 }
 
 impl<T> Singleton<T> {
-    pub fn with_lock<R>(&self, op: impl FnOnce(&MutexGuard<'_, T>) -> R) -> R {
-        op(&self.0.lock().expect("Failed to lock singleton"))
+    pub fn with_lock<R>(&self, op: impl FnOnce(&RwLockReadGuard<'_, T>) -> R) -> R {
+        op(&self.0.read().expect("Failed to lock singleton"))
     }
 
-    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut MutexGuard<'_, T>) -> R) -> R {
-        op(&mut self.0.lock().expect("Failed to lock singleton"))
+    pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut RwLockWriteGuard<'_, T>) -> R) -> R {
+        op(&mut self.0.write().expect("Failed to lock singleton"))
     }
 }
 
