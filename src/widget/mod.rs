@@ -4,3 +4,4 @@ pub mod spacer;
 pub mod image_viewer;
 pub mod photo_info;
 pub mod image_gallery;
+pub mod page_canvas;

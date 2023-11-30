@@ -3,7 +3,7 @@
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
-use eframe::egui::{self, CentralPanel, Widget};
+use eframe::egui::{self, CentralPanel, Context, ViewportBuilder, Widget};
 
 use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
@@ -11,7 +11,7 @@ use tokio::runtime;
 use widget::{
     image_gallery::{ImageGallery, ImageGalleryResponse},
     image_viewer::{self, ImageViewer, ImageViewerState},
-    photo_info::PhotoInfo,
+    photo_info::PhotoInfo, page_canvas::{CanvasState, Canvas},
 };
 
 use flexi_logger::{Logger, WriteMode};
@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
-        .max_blocking_threads(4)
+        .max_blocking_threads(16)
         .build()
         .unwrap();
 
@@ -53,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .start()?;
 
     let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(900.0, 900.0)),
+        viewport: ViewportBuilder::default().with_maximized(true),
         ..Default::default()
     };
 
@@ -87,6 +87,9 @@ enum AppMode {
         index: usize,
         state: ImageViewerState,
     },
+    Canvas {
+        state: CanvasState,
+    }
 }
 
 struct MyApp {
@@ -124,10 +127,14 @@ impl eframe::App for MyApp {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    self.nav_stack.push(AppMode::Viewer {
-                                        photo,
-                                        index,
-                                        state: ImageViewerState::default(),
+                                    // self.nav_stack.push(AppMode::Viewer {
+                                    //     photo,
+                                    //     index,
+                                    //     state: ImageViewerState::default(),
+                                    // });
+
+                                    self.nav_stack.push(AppMode::Canvas {
+                                        state: CanvasState::with_photo(photo),
                                     });
                                 }
                             });
@@ -180,6 +187,11 @@ impl eframe::App for MyApp {
                         },
                         None => {}
                     }
+                });
+            },
+            AppMode::Canvas { state } => {
+                CentralPanel::default().show(ctx, |ui: &mut egui::Ui| {
+                    Canvas::new(state).show(ui);
                 });
             }
         };

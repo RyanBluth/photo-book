@@ -15,7 +15,7 @@ use crate::{
     photo_manager::PhotoManager,
 };
 
-use super::{gallery_image::GalleryImage, spacer::Spacer};
+use super::{gallery_image::GalleryImage, page_canvas::TransformableWidget, spacer::Spacer};
 
 pub struct ImageGallery<'a> {
     current_dir: Option<std::path::PathBuf>,
@@ -51,7 +51,7 @@ impl<'a> ImageGallery<'a> {
 
                     info!("Opened {:?}", current_dir);
 
-                    PhotoManager::load_directory(current_dir.clone().unwrap(), ui.ctx().clone());
+                    PhotoManager::load_directory(current_dir.clone().unwrap());
                 }
             });
         });

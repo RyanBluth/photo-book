@@ -79,7 +79,7 @@ impl PhotoManager {
         }
     }
 
-    pub fn load_directory(path: PathBuf, ctx: Context) -> anyhow::Result<()> {
+    pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || {
             let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
                 read_dir(&path).unwrap().collect();
@@ -138,7 +138,7 @@ impl PhotoManager {
                 }
             });
 
-            Self::gen_thumbnails(path.clone(), ctx.clone(), photo_paths);
+            Self::gen_thumbnails(path.clone(), photo_paths);
 
             Ok(())
         });
@@ -288,7 +288,7 @@ impl PhotoManager {
         }
     }
 
-    fn gen_thumbnails(dir: PathBuf, ctx: Context, photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
+    fn gen_thumbnails(dir: PathBuf, photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
         let path: PathBuf = dir;
 
         if !path.exists() {
@@ -306,32 +306,27 @@ impl PhotoManager {
             create_dir(&thumbnail_dir)?;
         }
 
-        let partitions = utils::partition_iterator(photo_paths.into_iter(), 4);
+        let partitions = utils::partition_iterator(photo_paths.into_iter(), 8);
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
-            let ctx = ctx.clone();
-            // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-           // thread::spawn(move || {
+           // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                //thread::spawn(move || {
                 partition.into_iter().for_each(|photo| {
-                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir, &ctx);
+                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
                     if res.is_err() {
                         error!("{:?}", res);
                     }
                 });
-           // });
+                //});
 
-            //Ok(())
+                //Ok(())
             //});
         }
         Ok(())
     }
 
-    fn gen_thumbnail(
-        photo_path: &PathBuf,
-        thumbnail_dir: &PathBuf,
-        ctx: &Context,
-    ) -> anyhow::Result<()> {
+    fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
         let extension = photo_path.extension();
 
@@ -359,7 +354,6 @@ impl PhotoManager {
                             .thumbnail_existance_cache
                             .insert(photo_path.clone());
                     });
-                    
 
                     return Ok(());
                 } else {
@@ -462,7 +456,6 @@ impl PhotoManager {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                
                 // let _tex_result = ctx.try_load_texture(
                 //     &format!("file://{}", thumbnail_path.to_str().unwrap()),
                 //     TextureOptions {
