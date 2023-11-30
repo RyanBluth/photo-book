@@ -448,11 +448,15 @@ impl Photo {
     }
 
     pub fn max_dimension(&self) -> MaxPhotoDimension {
-        if self.metadata.width() >= self.metadata.height() {
+        if self.metadata.rotated_width() >= self.metadata.rotated_height() {
             MaxPhotoDimension::Width
         } else {
             MaxPhotoDimension::Height
         }
+    }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        self.metadata.rotated_width() as f32 / self.metadata.rotated_height() as f32
     }
 }
 

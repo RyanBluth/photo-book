@@ -16,6 +16,10 @@ use crate::{
     widget::placeholder::RectPlaceholder,
 };
 
+pub enum CanvasResponse {
+    Exit,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
     pub photo: Photo,
@@ -33,11 +37,21 @@ impl CanvasState {
     }
 
     pub fn with_photo(photo: Photo) -> Self {
+
+        let initial_rect = match photo.max_dimension() {
+            crate::photo::MaxPhotoDimension::Width => {
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
+            },
+            crate::photo::MaxPhotoDimension::Height => {
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0 * photo.aspect_ratio(), 1000.0))
+            },
+        };
+
         Self {
             photos: vec![CanvasPhoto {
                 photo,
                 transform_state: TransformableState {
-                    rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(256.0, 256.0)),
+                    rect: initial_rect,
                     active_handle: None,
                 },
             }],
@@ -58,8 +72,8 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    pub fn show(&mut self, ui: &mut Ui) -> Response {
-        let (rect, response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+    pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
+        let (rect, _response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
 
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
 
@@ -71,14 +85,32 @@ impl<'a> Canvas<'a> {
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
                         |ui: &mut Ui, rect: Rect| {
-                            Image::from_texture(texture)
-                                
-                                .rotate(
-                                    canvas_photo.photo.metadata.rotation().radians(),
-                                    Vec2::splat(0.5),
+                            let uv =
+                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
+
+                            let painter = ui.painter();
+                            let mut mesh = Mesh::with_texture(texture.id);
+
+                            // If the photo is rotated swap the width and height
+                            let rect = if canvas_photo.photo.metadata.rotation().radians() == 0.0
+                                || canvas_photo.photo.metadata.rotation().radians()
+                                    == std::f32::consts::PI
+                            {
+                                rect
+                            } else {
+                                Rect::from_center_size(
+                                    rect.center(),
+                                    Vec2::new(rect.height(), rect.width()),
                                 )
-                                .fit_to_exact_size(rect.size())
-                                .paint_at(ui, rect)
+                            };
+
+                            mesh.add_rect_with_uv(rect, uv, Color32::WHITE);
+                            mesh.rotate(
+                                Rot2::from_angle(canvas_photo.photo.metadata.rotation().radians()),
+                                rect.min + Vec2::splat(0.5) * rect.size(),
+                            );
+
+                            painter.add(Shape::mesh(mesh));
                         },
                     );
 
@@ -87,7 +119,13 @@ impl<'a> Canvas<'a> {
             })
         }
 
-        response
+        if ui
+            .input(|input| input.key_pressed(egui::Key::Escape))
+        {
+            return Some(CanvasResponse::Exit);
+        }
+
+        None
     }
 }
 

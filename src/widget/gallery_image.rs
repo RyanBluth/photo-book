@@ -46,9 +46,8 @@ impl Widget for GalleryImage {
                 ),
                 crate::photo::MaxPhotoDimension::Height => Vec2::new(
                     photo.metadata.rotated_width() as f32 / photo.metadata.rotated_height() as f32
-                        * Self::SIZE.y
-                        * 0.8,
-                    Self::SIZE.y * 0.8,
+                        * Self::SIZE.y,
+                    Self::SIZE.y,
                 ),
             },
         };
