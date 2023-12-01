@@ -11,7 +11,7 @@ use tokio::runtime;
 use widget::{
     image_gallery::{ImageGallery, ImageGalleryResponse},
     image_viewer::{self, ImageViewer, ImageViewerState},
-    page_canvas::{Canvas, CanvasResponse, CanvasState},
+    page_canvas::{Canvas, CanvasPhoto, CanvasResponse, CanvasState},
     photo_info::PhotoInfo,
 };
 
@@ -107,6 +107,7 @@ enum NavAction {
     Push(AppMode),
     Pop,
     Split(AppMode, AppMode),
+    OpenPhoto(Photo),
 }
 
 impl eframe::App for MyApp {
@@ -118,7 +119,7 @@ impl eframe::App for MyApp {
                 left: left_mode,
                 right: right_mode,
             } => {
-                let mut left_nav_action = SidePanel::left("split_left_panel")
+                let left_nav_action = SidePanel::left("split_left_panel")
                     .resizable(true)
                     .default_width(400.0)
                     .show(ctx, |ui| {
@@ -137,7 +138,7 @@ impl eframe::App for MyApp {
                 } else {
                     right_nav_action
                 }
-            },
+            }
             mode => {
                 CentralPanel::default()
                     .show(ctx, |ui| {
@@ -156,11 +157,34 @@ impl eframe::App for MyApp {
                     self.nav_stack.pop();
                 }
                 NavAction::Split(left, right) => {
+                    self.nav_stack.pop();
                     self.nav_stack.push(AppMode::Split {
                         left: Box::new(left),
                         right: Box::new(right),
                     });
                 }
+                NavAction::OpenPhoto(photo) => match self.nav_stack.last_mut().unwrap() {
+                    AppMode::Split { left, right }
+                        if matches!(
+                            left.as_ref(),
+                            AppMode::Gallery {
+                                selected_images: _,
+                                current_dir: _
+                            }
+                        ) && matches!(right.as_ref(), AppMode::Canvas { state: _ }) =>
+                    {
+                        if let AppMode::Canvas { state } = right.as_mut() {
+                            state.photos.push(CanvasPhoto::new(photo));
+                        }
+                    }
+                    _ => {
+                        let current = self.nav_stack.pop().unwrap();
+                        self.nav_stack.push(AppMode::Split { 
+                            left: Box::new(current), 
+                            right: Box::new(AppMode::Canvas { state: CanvasState::with_photo(photo) })
+                        });
+                    }
+                },
             }
         }
     }
@@ -195,12 +219,7 @@ impl MyApp {
                                     //     state: ImageViewerState::default(),
                                     // });
 
-                                    nav_action = Some(NavAction::Split(
-                                        mode.clone(),
-                                        AppMode::Canvas {
-                                            state: CanvasState::with_photo(photo),
-                                        },
-                                    ));
+                                    nav_action = Some(NavAction::OpenPhoto(photo));
                                 }
                             });
                         }

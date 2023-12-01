@@ -12,7 +12,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
-    utils::Truncate,
+    utils::{ConstrainRect, Truncate},
     widget::placeholder::RectPlaceholder,
 };
 
@@ -26,6 +26,27 @@ pub struct CanvasPhoto {
     pub transform_state: TransformableState,
 }
 
+impl CanvasPhoto {
+    pub fn new(photo: Photo) -> Self {
+        let initial_rect = match photo.max_dimension() {
+            crate::photo::MaxPhotoDimension::Width => {
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
+            }
+            crate::photo::MaxPhotoDimension::Height => {
+                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0 * photo.aspect_ratio(), 1000.0))
+            }
+        };
+
+        Self {
+            photo,
+            transform_state: TransformableState {
+                rect: initial_rect,
+                active_handle: None,
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
     pub photos: Vec<CanvasPhoto>,
@@ -37,14 +58,13 @@ impl CanvasState {
     }
 
     pub fn with_photo(photo: Photo) -> Self {
-
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
-            },
+            }
             crate::photo::MaxPhotoDimension::Height => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0 * photo.aspect_ratio(), 1000.0))
-            },
+            }
         };
 
         Self {
@@ -73,9 +93,14 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
-        let (rect, _response) = ui.allocate_exact_size(ui.available_size(), Sense::click_and_drag());
+        let available_rect = ui.available_rect_before_wrap();
+        let response = ui.allocate_rect(available_rect, Sense::hover());
+        let rect = response.rect;
 
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+
+        // Reset the cursor icon so it can be set by the transform widgets
+        ui.ctx().set_cursor_icon(CursorIcon::Default);
 
         for canvas_photo in &mut self.state.photos {
             self.photo_manager.with_lock_mut(|photo_manager| {
@@ -84,7 +109,8 @@ impl<'a> Canvas<'a> {
                     let mut transform_state = canvas_photo.transform_state.clone();
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
-                        |ui: &mut Ui, rect: Rect| {
+                        available_rect,
+                        |ui: &mut Ui, transformed_rect: Rect| {
                             let uv =
                                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
 
@@ -92,22 +118,23 @@ impl<'a> Canvas<'a> {
                             let mut mesh = Mesh::with_texture(texture.id);
 
                             // If the photo is rotated swap the width and height
-                            let rect = if canvas_photo.photo.metadata.rotation().radians() == 0.0
+                            let mut mesh_rect = if canvas_photo.photo.metadata.rotation().radians()
+                                == 0.0
                                 || canvas_photo.photo.metadata.rotation().radians()
                                     == std::f32::consts::PI
                             {
-                                rect
+                                transformed_rect
                             } else {
                                 Rect::from_center_size(
-                                    rect.center(),
-                                    Vec2::new(rect.height(), rect.width()),
+                                    transformed_rect.center(),
+                                    Vec2::new(transformed_rect.height(), transformed_rect.width()),
                                 )
                             };
 
-                            mesh.add_rect_with_uv(rect, uv, Color32::WHITE);
+                            mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
                             mesh.rotate(
                                 Rot2::from_angle(canvas_photo.photo.metadata.rotation().radians()),
-                                rect.min + Vec2::splat(0.5) * rect.size(),
+                                mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size(),
                             );
 
                             painter.add(Shape::mesh(mesh));
@@ -119,9 +146,7 @@ impl<'a> Canvas<'a> {
             })
         }
 
-        if ui
-            .input(|input| input.key_pressed(egui::Key::Escape))
-        {
+        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
             return Some(CanvasResponse::Exit);
         }
 
@@ -174,11 +199,27 @@ impl<'a> TransformableWidget<'a> {
     pub fn show<R>(
         &mut self,
         ui: &mut Ui,
+        container_rect: Rect,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
     ) -> Response {
-        let response = ui.allocate_rect(self.state.rect, Sense::click_and_drag());
+        let response =
+            ui.allocate_rect(self.state.rect.constrain_to(container_rect), Sense::hover());
 
-        let rect = response.rect;
+        let mut rect = response.rect;
+
+        // Adjust the rect to fit inside the container
+        if rect.min.x < container_rect.min.x {
+            rect.min.x = container_rect.min.x;
+        }
+        if rect.min.y < container_rect.min.y {
+            rect.min.y = container_rect.min.y;
+        }
+        if rect.max.x > container_rect.max.x {
+            rect.max.x = container_rect.max.x;
+        }
+        if rect.max.y > container_rect.max.y {
+            rect.max.y = container_rect.max.y;
+        }
 
         let handle_size = Vec2::splat(10.0); // Size of the resize handles
 
@@ -276,13 +317,18 @@ impl<'a> TransformableWidget<'a> {
 
         if self.state.active_handle.is_none() {
             let move_response = ui.interact(rect, ui.id(), Sense::click_and_drag());
-            if move_response.dragged() {
+            if move_response.dragged()
+                && (response
+                    .hover_pos()
+                    .and_then(|pos| Some(rect.contains(pos)))
+                    .unwrap_or(false))
+            {
                 let delta = move_response.drag_delta();
                 self.state.rect = self.state.rect.translate(delta);
             }
         }
 
-        let inner_response = add_contents(ui, rect);
+        let _inner_response = add_contents(ui, rect);
 
         ui.painter()
             .rect_stroke(rect, 0.0, Stroke::new(3.0, Color32::RED));
@@ -294,18 +340,19 @@ impl<'a> TransformableWidget<'a> {
         }
 
         ui.ctx().pointer_latest_pos().map(|pos| {
-            let mut cursor_icon = CursorIcon::Default;
             for (handle, handle_pos) in &handles {
                 let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
                 if handle_rect.contains(pos) {
-                    cursor_icon = handle.cursor();
+                    ui.ctx().set_cursor_icon(handle.cursor());
                     break;
                 } else if rect.contains(pos) {
-                    cursor_icon = CursorIcon::Move;
+                    ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
-            ui.ctx().set_cursor_icon(cursor_icon);
+            
         });
+
+        self.state.rect = self.state.rect.constrain_to(container_rect);
 
         response
     }
