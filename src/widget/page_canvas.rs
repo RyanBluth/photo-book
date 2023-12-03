@@ -22,12 +22,13 @@ pub enum CanvasResponse {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
+    pub id: usize,
     pub photo: Photo,
     pub transform_state: TransformableState,
 }
 
 impl CanvasPhoto {
-    pub fn new(photo: Photo) -> Self {
+    pub fn new(photo: Photo, id: usize) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
@@ -42,19 +43,25 @@ impl CanvasPhoto {
             transform_state: TransformableState {
                 rect: initial_rect,
                 active_handle: None,
+                is_moving: false,
             },
+            id,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
-    pub photos: Vec<CanvasPhoto>,
+    photos: Vec<CanvasPhoto>,
+    active_photo: Option<usize>,
 }
 
 impl CanvasState {
     pub fn new() -> Self {
-        Self { photos: Vec::new() }
+        Self {
+            photos: Vec::new(),
+            active_photo: None,
+        }
     }
 
     pub fn with_photo(photo: Photo) -> Self {
@@ -73,9 +80,16 @@ impl CanvasState {
                 transform_state: TransformableState {
                     rect: initial_rect,
                     active_handle: None,
+                    is_moving: false,
                 },
+                id: 0,
             }],
+            active_photo: None,
         }
+    }
+
+    pub fn add_photo(&mut self, photo: Photo) {
+        self.photos.push(CanvasPhoto::new(photo, self.photos.len()));
     }
 }
 
@@ -102,14 +116,23 @@ impl<'a> Canvas<'a> {
         // Reset the cursor icon so it can be set by the transform widgets
         ui.ctx().set_cursor_icon(CursorIcon::Default);
 
-        for canvas_photo in &mut self.state.photos {
+        for canvas_photo in &mut self.state.photos.iter_mut().rev() {
             self.photo_manager.with_lock_mut(|photo_manager| {
                 if let Ok(Some(texture)) = photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
                 {
+                    let enabled = self.state.active_photo.is_none()
+                        || self
+                            .state
+                            .active_photo
+                            .map(|x| x == canvas_photo.id)
+                            .unwrap_or(false);
+
                     let mut transform_state = canvas_photo.transform_state.clone();
+
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
                         available_rect,
+                        enabled,
                         |ui: &mut Ui, transformed_rect: Rect| {
                             let uv =
                                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
@@ -118,7 +141,7 @@ impl<'a> Canvas<'a> {
                             let mut mesh = Mesh::with_texture(texture.id);
 
                             // If the photo is rotated swap the width and height
-                            let mut mesh_rect = if canvas_photo.photo.metadata.rotation().radians()
+                            let mesh_rect = if canvas_photo.photo.metadata.rotation().radians()
                                 == 0.0
                                 || canvas_photo.photo.metadata.rotation().radians()
                                     == std::f32::consts::PI
@@ -140,6 +163,12 @@ impl<'a> Canvas<'a> {
                             painter.add(Shape::mesh(mesh));
                         },
                     );
+
+                    if enabled && (transform_state.is_moving || transform_state.active_handle.is_some()) {
+                        self.state.active_photo = Some(canvas_photo.id);
+                    } else {
+                        self.state.active_photo = None;
+                    }
 
                     canvas_photo.transform_state = transform_state;
                 }
@@ -185,6 +214,7 @@ impl TransformHandle {
 pub struct TransformableState {
     pub rect: Rect,
     pub active_handle: Option<TransformHandle>,
+    pub is_moving: bool,
 }
 
 pub struct TransformableWidget<'a> {
@@ -200,6 +230,7 @@ impl<'a> TransformableWidget<'a> {
         &mut self,
         ui: &mut Ui,
         container_rect: Rect,
+        enabled: bool,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
     ) -> Response {
         let response =
@@ -260,72 +291,83 @@ impl<'a> TransformableWidget<'a> {
             ),
         ];
 
-        for (handle, handle_pos) in &handles {
-            let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
-            let response: Response = ui.interact(handle_rect, ui.id(), Sense::click_and_drag());
+        if enabled {
+            for (handle, handle_pos) in &handles {
+                let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
+                let handle_response: Response =
+                    ui.interact(handle_rect, ui.id(), Sense::click_and_drag());
 
-            if !response.is_pointer_button_down_on() && self.state.active_handle == Some(*handle) {
-                self.state.active_handle = None;
-            }
+                if !handle_response.is_pointer_button_down_on()
+                    && self.state.active_handle == Some(*handle)
+                {
+                    self.state.active_handle = None;
+                }
 
-            if response.dragged()
-                && (response
+                if handle_response
                     .interact_pointer_pos()
                     .and_then(|pos| Some(handle_rect.contains(pos)))
                     .unwrap_or(false)
-                    || self.state.active_handle == Some(*handle))
-            {
-                let delta = response.drag_delta();
+                    || self.state.active_handle == Some(*handle)
+                {
+                    let delta = handle_response.drag_delta();
 
-                let mut new_rect = self.state.rect;
+                    let mut new_rect = self.state.rect;
 
-                match handle {
-                    TransformHandle::TopLeft => {
-                        new_rect.min.x += delta.x;
-                        new_rect.min.y += delta.y;
-                    }
-                    TransformHandle::TopRight => {
-                        new_rect.max.x += delta.x;
-                        new_rect.min.y += delta.y;
-                    }
-                    TransformHandle::BottomLeft => {
-                        new_rect.min.x += delta.x;
-                        new_rect.max.y += delta.y;
-                    }
-                    TransformHandle::BottomRight => {
-                        new_rect.max.x += delta.x;
-                        new_rect.max.y += delta.y;
-                    }
-                    TransformHandle::MiddleTop => {
-                        new_rect.min.y += delta.y;
-                    }
-                    TransformHandle::MiddleBottom => {
-                        new_rect.max.y += delta.y;
-                    }
-                    TransformHandle::MiddleLeft => {
-                        new_rect.min.x += delta.x;
-                    }
-                    TransformHandle::MiddleRight => {
-                        new_rect.max.x += delta.x;
-                    }
-                };
+                    match handle {
+                        TransformHandle::TopLeft => {
+                            new_rect.min.x += delta.x;
+                            new_rect.min.y += delta.y;
+                        }
+                        TransformHandle::TopRight => {
+                            new_rect.max.x += delta.x;
+                            new_rect.min.y += delta.y;
+                        }
+                        TransformHandle::BottomLeft => {
+                            new_rect.min.x += delta.x;
+                            new_rect.max.y += delta.y;
+                        }
+                        TransformHandle::BottomRight => {
+                            new_rect.max.x += delta.x;
+                            new_rect.max.y += delta.y;
+                        }
+                        TransformHandle::MiddleTop => {
+                            new_rect.min.y += delta.y;
+                        }
+                        TransformHandle::MiddleBottom => {
+                            new_rect.max.y += delta.y;
+                        }
+                        TransformHandle::MiddleLeft => {
+                            new_rect.min.x += delta.x;
+                        }
+                        TransformHandle::MiddleRight => {
+                            new_rect.max.x += delta.x;
+                        }
+                    };
 
-                self.state.active_handle = Some(*handle);
-                self.state.rect = new_rect;
+                    self.state.active_handle = Some(*handle);
+                    self.state.rect = new_rect;
+                }
             }
-        }
 
-        if self.state.active_handle.is_none() {
-            let move_response = ui.interact(rect, ui.id(), Sense::click_and_drag());
-            if move_response.dragged()
-                && (response
-                    .hover_pos()
-                    .and_then(|pos| Some(rect.contains(pos)))
-                    .unwrap_or(false))
-            {
-                let delta = move_response.drag_delta();
-                self.state.rect = self.state.rect.translate(delta);
+            if self.state.active_handle.is_none() {
+                let move_response = ui.interact(rect, ui.id(), Sense::click_and_drag());
+                if move_response
+                        .interact_pointer_pos()
+                        .and_then(|pos| Some(rect.contains(pos)))
+                        .unwrap_or(false)
+                {
+                    let delta = move_response.drag_delta();
+                    self.state.rect = self.state.rect.translate(delta);
+                    self.state.is_moving = true;
+                } else {
+                    self.state.is_moving = false;
+                }
+            } else {
+                self.state.is_moving = false;
             }
+        } else {
+            self.state.is_moving = false;
+            self.state.active_handle = None;
         }
 
         let _inner_response = add_contents(ui, rect);
@@ -349,7 +391,6 @@ impl<'a> TransformableWidget<'a> {
                     ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
-            
         });
 
         self.state.rect = self.state.rect.constrain_to(container_rect);

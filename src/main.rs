@@ -174,7 +174,7 @@ impl eframe::App for MyApp {
                         ) && matches!(right.as_ref(), AppMode::Canvas { state: _ }) =>
                     {
                         if let AppMode::Canvas { state } = right.as_mut() {
-                            state.photos.push(CanvasPhoto::new(photo));
+                            state.add_photo(photo);
                         }
                     }
                     _ => {
@@ -241,7 +241,6 @@ impl MyApp {
                     });
 
                 let viewer_response = ImageViewer::new(photo, state).show(ui);
-
                 match viewer_response.request {
                     Some(request) => match request {
                         image_viewer::Request::Exit => {
