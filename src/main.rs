@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .start()?;
 
     let options = eframe::NativeOptions {
-        viewport: ViewportBuilder::default().with_maximized(true),
+        viewport: ViewportBuilder::default(),
         ..Default::default()
     };
 
@@ -119,17 +119,18 @@ impl eframe::App for MyApp {
                 left: left_mode,
                 right: right_mode,
             } => {
+
+                let right_nav_action = CentralPanel::default()
+                .show(ctx, |ui| {
+                    MyApp::show_mode(&mut self.photo_manager, ui, right_mode)
+                })
+                .inner;
+
                 let left_nav_action = SidePanel::left("split_left_panel")
                     .resizable(true)
                     .default_width(400.0)
                     .show(ctx, |ui| {
                         MyApp::show_mode(&mut self.photo_manager, ui, left_mode)
-                    })
-                    .inner;
-
-                let right_nav_action = CentralPanel::default()
-                    .show(ctx, |ui| {
-                        MyApp::show_mode(&mut self.photo_manager, ui, right_mode)
                     })
                     .inner;
 
