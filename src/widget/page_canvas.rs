@@ -126,26 +126,27 @@ impl<'a> Canvas<'a> {
         let has_active_photo_at_frame_start = self.state.active_photo.is_some();
 
         for canvas_photo in &mut self.state.photos.iter_mut() {
-            self.photo_manager.with_lock_mut(|photo_manager| {
-                if let Ok(Some(texture)) = photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
-                {
-                    // If there is no active photo at the start of the frame then allow the widget to be enabled
-                    // This allows photos on top of other photos to take priority since we draw back to front
-                    let enabled = !has_active_photo_at_frame_start
-                        || self
-                            .state
-                            .active_photo
-                            .map(|x| x == canvas_photo.id)
-                            .unwrap_or(false);
+            ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
+                self.photo_manager.with_lock_mut(|photo_manager| {
+                    if let Ok(Some(texture)) =
+                        photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
+                    {
+                        // If there is no active photo at the start of the frame then allow the widget to be enabled
+                        // This allows photos on top of other photos to take priority since we draw back to front
+                        let enabled = !has_active_photo_at_frame_start
+                            || self
+                                .state
+                                .active_photo
+                                .map(|x| x == canvas_photo.id)
+                                .unwrap_or(false);
 
-                    let mut transform_state = canvas_photo.transform_state.clone();
+                        let mut transform_state = canvas_photo.transform_state.clone();
 
-                    TransformableWidget::new(&mut transform_state).show(
-                        ui,
-                        available_rect,
-                        enabled,
-                        |ui: &mut Ui, transformed_rect: Rect| {
-                            ui.with_layer_id(LayerId::background(), |ui| {
+                        TransformableWidget::new(&mut transform_state).show(
+                            ui,
+                            available_rect,
+                            enabled,
+                            |ui: &mut Ui, transformed_rect: Rect| {
                                 let uv = Rect::from_min_max(
                                     Pos2::new(0.0, 0.0),
                                     Pos2 { x: 1.0, y: 1.0 },
@@ -180,21 +181,22 @@ impl<'a> Canvas<'a> {
                                 );
 
                                 painter.add(Shape::mesh(mesh));
-                            });
-                        },
-                    );
+                            },
+                        );
 
-                    if enabled
-                        && (transform_state.is_moving || transform_state.active_handle.is_some())
-                    {
-                        self.state.active_photo = Some(canvas_photo.id);
-                    } else if self.state.active_photo == Some(canvas_photo.id) {
-                        self.state.active_photo = None;
+                        if enabled
+                            && (transform_state.is_moving
+                                || transform_state.active_handle.is_some())
+                        {
+                            self.state.active_photo = Some(canvas_photo.id);
+                        } else if self.state.active_photo == Some(canvas_photo.id) {
+                            self.state.active_photo = None;
+                        }
+
+                        canvas_photo.transform_state = transform_state;
                     }
-
-                    canvas_photo.transform_state = transform_state;
-                }
-            })
+                })
+            });
         }
 
         if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
@@ -298,25 +300,30 @@ impl<'a> TransformableWidget<'a> {
             ),
         ];
 
+        // Interact with an expanded rect to include the handles which are partially outside the rect
+        let interact_response = ui.interact(
+            rect.expand(handle_size.x / 2.0),
+            response.id,
+            Sense::click_and_drag(),
+        );
+
         if enabled {
             for (handle, handle_pos) in &handles {
                 let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
-                let handle_response: Response =
-                    ui.interact(handle_rect, ui.id(), Sense::click_and_drag());
 
-                if !handle_response.is_pointer_button_down_on()
+                if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
                 {
                     self.state.active_handle = None;
                 }
 
-                if handle_response
+                if interact_response
                     .interact_pointer_pos()
                     .and_then(|pos| Some(handle_rect.contains(pos)))
                     .unwrap_or(false)
                     || self.state.active_handle == Some(*handle)
                 {
-                    let delta = handle_response.drag_delta();
+                    let delta = interact_response.drag_delta();
 
                     let mut new_rect = self.state.rect;
 
@@ -357,15 +364,14 @@ impl<'a> TransformableWidget<'a> {
             }
 
             if self.state.active_handle.is_none() {
-                let move_response = ui.interact(rect, ui.id(), Sense::click_and_drag());
-
-                if move_response.is_pointer_button_down_on() && (move_response
-                    .interact_pointer_pos()
-                    .and_then(|pos| Some(rect.contains(pos)))
-                    .unwrap_or(false)
-                    || self.state.is_moving)
+                if interact_response.is_pointer_button_down_on()
+                    && (interact_response
+                        .interact_pointer_pos()
+                        .and_then(|pos| Some(rect.contains(pos)))
+                        .unwrap_or(false)
+                        || self.state.is_moving)
                 {
-                    let delta = move_response.drag_delta();
+                    let delta = interact_response.drag_delta();
                     self.state.rect = self.state.rect.translate(delta);
                     self.state.is_moving = true;
                 } else {
