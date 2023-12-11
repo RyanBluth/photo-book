@@ -54,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .start()?;
 
     let options = eframe::NativeOptions {
-        viewport: ViewportBuilder::default(),
+        viewport: ViewportBuilder::default().with_maximize_button(true),
         ..Default::default()
     };
 
@@ -119,12 +119,11 @@ impl eframe::App for MyApp {
                 left: left_mode,
                 right: right_mode,
             } => {
-
                 let right_nav_action = CentralPanel::default()
-                .show(ctx, |ui| {
-                    MyApp::show_mode(&mut self.photo_manager, ui, right_mode)
-                })
-                .inner;
+                    .show(ctx, |ui| {
+                        MyApp::show_mode(&mut self.photo_manager, ui, right_mode)
+                    })
+                    .inner;
 
                 let left_nav_action = SidePanel::left("split_left_panel")
                     .resizable(true)
@@ -180,9 +179,11 @@ impl eframe::App for MyApp {
                     }
                     _ => {
                         let current = self.nav_stack.pop().unwrap();
-                        self.nav_stack.push(AppMode::Split { 
-                            left: Box::new(current), 
-                            right: Box::new(AppMode::Canvas { state: CanvasState::with_photo(photo) })
+                        self.nav_stack.push(AppMode::Split {
+                            left: Box::new(current),
+                            right: Box::new(AppMode::Canvas {
+                                state: CanvasState::with_photo(photo),
+                            }),
                         });
                     }
                 },

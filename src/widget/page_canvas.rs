@@ -117,7 +117,33 @@ impl<'a> Canvas<'a> {
         let response = ui.allocate_rect(available_rect, Sense::hover());
         let rect = response.rect;
 
+        ui.input(|input| {
+            self.state.zoom += input.scroll_delta.y * 0.02;
+            self.state.zoom = self.state.zoom.max(0.1);
+        });
+
+        ui.input(|input| {
+            if input.key_down(egui::Key::Space) {
+                self.state.offset += input.pointer.delta();
+                true
+            } else {
+                false
+            }
+        });
+
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+
+        {
+            // TEMP: page placeholder
+
+            let page_rect = Rect::from_center_size(rect.center(), Vec2::new(1000.0, 1500.0));
+            let page_rect = page_rect.translate(self.state.offset);
+
+            let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
+            let page_rect = page_rect.expand2(expansion);
+            
+            ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+        }
 
         // Reset the cursor icon so it can be set by the transform widgets
         ui.ctx().set_cursor_icon(CursorIcon::Default);
@@ -146,6 +172,8 @@ impl<'a> Canvas<'a> {
                             ui,
                             available_rect,
                             enabled,
+                            self.state.zoom,
+                            self.state.offset,
                             |ui: &mut Ui, transformed_rect: Rect| {
                                 let uv = Rect::from_min_max(
                                     Pos2::new(0.0, 0.0),
@@ -255,9 +283,16 @@ impl<'a> TransformableWidget<'a> {
         ui: &mut Ui,
         container_rect: Rect,
         enabled: bool,
+        global_scale: f32,
+        global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
     ) -> Response {
-        let response = ui.allocate_rect(self.state.rect, Sense::hover());
+        let offset_rect = self.state.rect.translate(global_offset);
+
+        let expansion = ((offset_rect.size() * global_scale) - offset_rect.size()) * 0.5;
+        let offset_and_scaled_rect = offset_rect.expand2(expansion);
+
+        let response = ui.allocate_rect(offset_and_scaled_rect, Sense::hover());
 
         let rect = response.rect;
 
