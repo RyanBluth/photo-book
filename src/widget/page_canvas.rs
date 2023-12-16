@@ -25,6 +25,7 @@ pub struct CanvasPhoto {
     pub id: usize,
     pub photo: Photo,
     pub transform_state: TransformableState,
+    set_initial_position: bool,
 }
 
 impl CanvasPhoto {
@@ -46,6 +47,7 @@ impl CanvasPhoto {
                 is_moving: false,
             },
             id,
+            set_initial_position: false,
         }
     }
 }
@@ -87,6 +89,7 @@ impl CanvasState {
                     is_moving: false,
                 },
                 id: 0,
+                set_initial_position: false
             }],
             active_photo: None,
             zoom: 1.0,
@@ -141,7 +144,7 @@ impl<'a> Canvas<'a> {
 
             let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
             let page_rect = page_rect.expand2(expansion);
-            
+
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
         }
 
@@ -152,6 +155,13 @@ impl<'a> Canvas<'a> {
         let has_active_photo_at_frame_start = self.state.active_photo.is_some();
 
         for canvas_photo in &mut self.state.photos.iter_mut() {
+
+            // Move the photo to the center of the canvas if it hasn't been moved yet
+            if !canvas_photo.set_initial_position {
+                canvas_photo.transform_state.rect.set_center(rect.center());
+                canvas_photo.set_initial_position = true;
+            }
+
             ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
                 self.photo_manager.with_lock_mut(|photo_manager| {
                     if let Ok(Some(texture)) =
@@ -287,12 +297,25 @@ impl<'a> TransformableWidget<'a> {
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
     ) -> Response {
-        let offset_rect = self.state.rect.translate(global_offset);
+        
+        let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
 
-        let expansion = ((offset_rect.size() * global_scale) - offset_rect.size()) * 0.5;
-        let offset_and_scaled_rect = offset_rect.expand2(expansion);
-
-        let response = ui.allocate_rect(offset_and_scaled_rect, Sense::hover());
+        // Scale the position of the center of the photo
+        let scaled_photo_center = photo_center_relative_to_page * global_scale;
+    
+        // Translate photo to the new center position, adjusted for the global offset
+        let translated_rect_center = container_rect.center() + global_offset - scaled_photo_center;
+    
+        // Scale the size of the photo
+        let scaled_photo_size = self.state.rect.size() * global_scale;
+    
+        // Create the new scaled and translated rect for the photo
+        let scaled_and_translated_rect = Rect::from_min_size(
+            translated_rect_center - scaled_photo_size / 2.0,
+            scaled_photo_size,
+        );
+        
+        let response = ui.allocate_rect(scaled_and_translated_rect, Sense::hover());
 
         let rect = response.rect;
 
@@ -358,7 +381,7 @@ impl<'a> TransformableWidget<'a> {
                     .unwrap_or(false)
                     || self.state.active_handle == Some(*handle)
                 {
-                    let delta = interact_response.drag_delta();
+                    let delta = interact_response.drag_delta() / global_scale;
 
                     let mut new_rect = self.state.rect;
 
@@ -406,7 +429,7 @@ impl<'a> TransformableWidget<'a> {
                         .unwrap_or(false)
                         || self.state.is_moving)
                 {
-                    let delta = interact_response.drag_delta();
+                    let delta = interact_response.drag_delta() / global_scale;
                     self.state.rect = self.state.rect.translate(delta);
                     self.state.is_moving = true;
                 } else {
