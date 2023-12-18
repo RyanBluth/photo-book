@@ -28,6 +28,7 @@ mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
+mod assets;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -54,7 +55,9 @@ async fn main() -> anyhow::Result<()> {
         .start()?;
 
     let options = eframe::NativeOptions {
-        viewport: ViewportBuilder::default().with_maximize_button(true),
+        viewport: ViewportBuilder::default()
+            .with_maximize_button(true)
+            .with_inner_size((1000.0, 1000.0)),
         ..Default::default()
     };
 

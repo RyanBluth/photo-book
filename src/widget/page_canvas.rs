@@ -1,14 +1,16 @@
 use eframe::{
     egui::{
-        self, load::SizedTexture, CursorIcon, Image, InnerResponse, LayerId, Layout, Response,
-        Sense, Ui, Widget,
+        self, include_image, load::SizedTexture, Align, Button, CursorIcon, Image, InnerResponse,
+        LayerId, Layout, Response, Sense, Ui, Widget,
     },
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
+use env_logger::fmt::Color;
 use log::error;
 
 use crate::{
+    assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
@@ -45,6 +47,7 @@ impl CanvasPhoto {
                 rect: initial_rect,
                 active_handle: None,
                 is_moving: false,
+                handle_mode: TransformHandleMode::Resize,
             },
             id,
             set_initial_position: false,
@@ -87,9 +90,10 @@ impl CanvasState {
                     rect: initial_rect,
                     active_handle: None,
                     is_moving: false,
+                    handle_mode: TransformHandleMode::Resize,
                 },
                 id: 0,
-                set_initial_position: false
+                set_initial_position: false,
             }],
             active_photo: None,
             zoom: 1.0,
@@ -155,7 +159,6 @@ impl<'a> Canvas<'a> {
         let has_active_photo_at_frame_start = self.state.active_photo.is_some();
 
         for canvas_photo in &mut self.state.photos.iter_mut() {
-
             // Move the photo to the center of the canvas if it hasn't been moved yet
             if !canvas_photo.set_initial_position {
                 canvas_photo.transform_state.rect.set_center(rect.center());
@@ -246,7 +249,7 @@ impl<'a> Canvas<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
-enum TransformHandle {
+pub enum TransformHandle {
     TopLeft,
     TopRight,
     BottomLeft,
@@ -255,6 +258,12 @@ enum TransformHandle {
     MiddleBottom,
     MiddleLeft,
     MiddleRight,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Copy)]
+pub enum TransformHandleMode {
+    Resize,
+    Rotate,
 }
 
 impl TransformHandle {
@@ -277,6 +286,7 @@ pub struct TransformableState {
     pub rect: Rect,
     pub active_handle: Option<TransformHandle>,
     pub is_moving: bool,
+    pub handle_mode: TransformHandleMode,
 }
 
 pub struct TransformableWidget<'a> {
@@ -297,25 +307,31 @@ impl<'a> TransformableWidget<'a> {
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
     ) -> Response {
-        
         let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
 
         // Scale the position of the center of the photo
         let scaled_photo_center = photo_center_relative_to_page * global_scale;
-    
+
         // Translate photo to the new center position, adjusted for the global offset
         let translated_rect_center = container_rect.center() + global_offset - scaled_photo_center;
-    
+
         // Scale the size of the photo
         let scaled_photo_size = self.state.rect.size() * global_scale;
-    
+
         // Create the new scaled and translated rect for the photo
-        let scaled_and_translated_rect = Rect::from_min_size(
+        let inner_content_rect = Rect::from_min_size(
             translated_rect_center - scaled_photo_size / 2.0,
             scaled_photo_size,
         );
-        
-        let response = ui.allocate_rect(scaled_and_translated_rect, Sense::hover());
+
+        // Draw the mode selector above the inner content
+        let mode_selector_response =
+            self.draw_handle_mode_selector(ui, inner_content_rect.center_top());
+
+        let response = ui.allocate_rect(
+            inner_content_rect.union(mode_selector_response.rect),
+            Sense::hover(),
+        );
 
         let rect = response.rect;
 
@@ -326,41 +342,53 @@ impl<'a> TransformableWidget<'a> {
         let handles = [
             (
                 TransformHandle::TopLeft,
-                rect.left_top() - handle_size / 2.0,
+                inner_content_rect.left_top() - handle_size / 2.0,
             ),
             (
                 TransformHandle::TopRight,
-                rect.right_top() - handle_size / 2.0,
+                inner_content_rect.right_top() - handle_size / 2.0,
             ),
             (
                 TransformHandle::BottomLeft,
-                rect.left_bottom() - handle_size / 2.0,
+                inner_content_rect.left_bottom() - handle_size / 2.0,
             ),
             (
                 TransformHandle::BottomRight,
-                rect.right_bottom() - handle_size / 2.0,
+                inner_content_rect.right_bottom() - handle_size / 2.0,
             ),
             (
                 TransformHandle::MiddleTop,
-                middle_point(rect.left_top(), rect.right_top()) - handle_size / 2.0,
+                middle_point(
+                    inner_content_rect.left_top(),
+                    inner_content_rect.right_top(),
+                ) - handle_size / 2.0,
             ),
             (
                 TransformHandle::MiddleBottom,
-                middle_point(rect.left_bottom(), rect.right_bottom()) - handle_size / 2.0,
+                middle_point(
+                    inner_content_rect.left_bottom(),
+                    inner_content_rect.right_bottom(),
+                ) - handle_size / 2.0,
             ),
             (
                 TransformHandle::MiddleLeft,
-                middle_point(rect.left_top(), rect.left_bottom()) - handle_size / 2.0,
+                middle_point(
+                    inner_content_rect.left_top(),
+                    inner_content_rect.left_bottom(),
+                ) - handle_size / 2.0,
             ),
             (
                 TransformHandle::MiddleRight,
-                middle_point(rect.right_top(), rect.right_bottom()) - handle_size / 2.0,
+                middle_point(
+                    inner_content_rect.right_top(),
+                    inner_content_rect.right_bottom(),
+                ) - handle_size / 2.0,
             ),
         ];
 
         // Interact with an expanded rect to include the handles which are partially outside the rect
         let interact_response = ui.interact(
-            rect.expand(handle_size.x / 2.0),
+            inner_content_rect.expand(handle_size.x / 2.0),
             response.id,
             Sense::click_and_drag(),
         );
@@ -443,10 +471,10 @@ impl<'a> TransformableWidget<'a> {
             self.state.active_handle = None;
         }
 
-        let _inner_response = add_contents(ui, rect);
+        let _inner_response = add_contents(ui, inner_content_rect);
 
         ui.painter().rect_stroke(
-            rect,
+            inner_content_rect,
             0.0,
             Stroke::new(
                 3.0,
@@ -468,13 +496,97 @@ impl<'a> TransformableWidget<'a> {
             for (handle, handle_pos) in &handles {
                 let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
                 if handle_rect.contains(pos) {
-                    ui.ctx().set_cursor_icon(handle.cursor());
+                    match self.state.handle_mode {
+                        TransformHandleMode::Resize => {
+                            ui.ctx().set_cursor_icon(handle.cursor());
+                        }
+                        TransformHandleMode::Rotate => {
+                            ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+                        }
+                    }
                     break;
-                } else if rect.contains(pos) {
+                } else if inner_content_rect.contains(pos) {
                     ui.ctx().set_cursor_icon(CursorIcon::Move);
                 }
             }
         });
+
+        response
+    }
+
+    fn draw_handle_mode_selector(&mut self, ui: &mut Ui, bottom_center_origin: Pos2) -> Response {
+        let width = 100.0;
+        let height = 60.0;
+        let margin_bottom = 20.0;
+        let button_padding = 15.0;
+
+        let button_size = Vec2::new(height - button_padding * 2.0, height - button_padding * 2.0);
+
+        let response = ui.allocate_rect(
+            Rect::from_points(&[
+                bottom_center_origin + Vec2::new(0.0, -margin_bottom),
+                bottom_center_origin + Vec2::new(-width * 0.5, -height),
+                bottom_center_origin + Vec2::new(width * 0.5, -height),
+            ]),
+            Sense::hover(),
+        );
+
+        ui.painter()
+            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
+
+        let left_half_rect =
+            Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
+
+        let right_half_rect =
+            Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
+
+        if ui
+            .put(
+                Rect::from_center_size(left_half_rect.center(), button_size),
+                Button::image(
+                    Image::from(Asset::resize())
+                        .tint(Color32::WHITE)
+                        .fit_to_exact_size(button_size * 0.8),
+                )
+                .fill(
+                    if matches!(self.state.handle_mode, TransformHandleMode::Resize)
+                        && !self.state.is_moving
+                    {
+                        Color32::from_gray(100)
+                    } else {
+                        Color32::from_gray(50)
+                    },
+                )
+                .sense(Sense::click_and_drag()),
+            )
+            .clicked()
+        {
+            self.state.handle_mode = TransformHandleMode::Resize;
+        }
+
+        if ui
+            .put(
+                Rect::from_center_size(right_half_rect.center(), button_size),
+                Button::image(
+                    Image::from(Asset::rotate())
+                        .tint(Color32::WHITE)
+                        .fit_to_exact_size(button_size * 0.8),
+                )
+                .fill(
+                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate)
+                        && !self.state.is_moving
+                    {
+                        Color32::from_gray(100)
+                    } else {
+                        Color32::from_gray(50)
+                    },
+                )
+                .sense(Sense::click_and_drag()),
+            )
+            .clicked()
+        {
+            self.state.handle_mode = TransformHandleMode::Rotate;
+        }
 
         response
     }
