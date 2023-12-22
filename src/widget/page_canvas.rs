@@ -49,6 +49,7 @@ impl CanvasPhoto {
                 is_moving: false,
                 handle_mode: TransformHandleMode::Resize,
                 rotation: 0.0,
+                last_frame_rotation: None,
             },
             id,
             set_initial_position: false,
@@ -93,6 +94,7 @@ impl CanvasState {
                     is_moving: false,
                     handle_mode: TransformHandleMode::Resize,
                     rotation: 0.0,
+                    last_frame_rotation: None,
                 },
                 id: 0,
                 set_initial_position: false,
@@ -127,7 +129,7 @@ impl<'a> Canvas<'a> {
         let rect = response.rect;
 
         ui.input(|input| {
-            self.state.zoom += input.scroll_delta.y * 0.02;
+            self.state.zoom += input.scroll_delta.y * (0.02 * self.state.zoom);
             self.state.zoom = self.state.zoom.max(0.1);
         });
 
@@ -298,6 +300,7 @@ pub struct TransformableState {
     pub is_moving: bool,
     pub handle_mode: TransformHandleMode,
     pub rotation: f32,
+    pub last_frame_rotation: Option<f32>,
 }
 
 pub struct TransformableWidget<'a> {
@@ -407,14 +410,18 @@ impl<'a> TransformableWidget<'a> {
             Sense::click_and_drag(),
         );
 
+        let mut a: Vec2 = Vec2::ZERO;
+        let mut b: Vec2 = Vec2::ZERO;
+
         if enabled {
-            for (handle, handle_pos) in &handles {
-                let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
+            for (handle, rotated_handle_pos) in &handles {
+                let handle_rect = Rect::from_min_size(*rotated_handle_pos, handle_size);
 
                 if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
                 {
                     self.state.active_handle = None;
+                    self.state.last_frame_rotation = None;
                 }
 
                 if interact_response
@@ -464,16 +471,27 @@ impl<'a> TransformableWidget<'a> {
                         }
                         TransformHandleMode::Rotate => {
                             if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
-                                let from_center_to_cursor = rect.center() - cursor_pos;
-                                let from_center_to_cursor = from_center_to_cursor.normalized();
+                                let from_cursor_to_center =
+                                    cursor_pos - rotated_inner_content_rect.center();
 
-                                let from_center_to_cursor = from_center_to_cursor
-                                    * (from_center_to_cursor.dot(Vec2::Y).acos()
-                                        + std::f32::consts::PI / 2.0);
+                                let from_rotated_handle_to_center =
+                                    Rect::from_min_size(*rotated_handle_pos, handle_size).center()
+                                        - rotated_inner_content_rect.center();
 
-                                self.state.rotation =
-                                    from_center_to_cursor.y.atan2(from_center_to_cursor.x);
+                                a = from_cursor_to_center;
+                                b = from_rotated_handle_to_center;
+
+                                let rotated_signed_angle =
+                                    f32::atan2(from_cursor_to_center.y, from_cursor_to_center.x)
+                                        - f32::atan2(
+                                            from_rotated_handle_to_center.y,
+                                            from_rotated_handle_to_center.x,
+                                        );
+
+                                self.state.rotation += rotated_signed_angle
+                                    - self.state.last_frame_rotation.unwrap_or(0.0);
                                 self.state.active_handle = Some(*handle);
+                                self.state.last_frame_rotation = Some(rotated_signed_angle);
                             }
                         }
                     }
@@ -495,7 +513,7 @@ impl<'a> TransformableWidget<'a> {
                     self.state.is_moving = false;
                 }
 
-                if interact_response.clicked() {
+                if interact_response.double_clicked() {
                     match self.state.handle_mode {
                         TransformHandleMode::Resize => {
                             self.state.handle_mode = TransformHandleMode::Rotate
@@ -528,6 +546,12 @@ impl<'a> TransformableWidget<'a> {
             ),
         );
 
+        ui.painter().rect_stroke(
+            pre_rotated_inner_content_rect,
+            0.0,
+            Stroke::new(3.0, Color32::YELLOW),
+        );
+
         // Draw the resize handles
         for (_, handle_pos) in &handles {
             let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
@@ -552,6 +576,22 @@ impl<'a> TransformableWidget<'a> {
                 }
             }
         });
+
+        ui.painter().line_segment(
+            [
+                pre_rotated_inner_content_rect.center(),
+                pre_rotated_inner_content_rect.center() + a,
+            ],
+            Stroke::new(3.0, Color32::BLUE),
+        );
+
+        ui.painter().line_segment(
+            [
+                pre_rotated_inner_content_rect.center(),
+                pre_rotated_inner_content_rect.center() + b,
+            ],
+            Stroke::new(5.0, Color32::RED),
+        );
 
         response
     }

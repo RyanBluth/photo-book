@@ -57,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
-            .with_inner_size((1000.0, 1000.0)),
+            .with_inner_size((3000.0, 2000.0)),
         ..Default::default()
     };
 
