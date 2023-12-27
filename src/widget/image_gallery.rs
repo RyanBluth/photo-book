@@ -30,6 +30,7 @@ pub enum Request {
 
 pub enum ImageGalleryResponse {
     ViewPhotoAt(usize),
+    EditPhotoAt(usize),
 }
 
 impl<'a> ImageGallery<'a> {
@@ -125,6 +126,9 @@ impl<'a> ImageGallery<'a> {
                                         if image_response.double_clicked() {
                                             response =
                                                 Some(ImageGalleryResponse::ViewPhotoAt(offest + i));
+                                        } else if image_response.middle_clicked() {
+                                            response =
+                                                Some(ImageGalleryResponse::EditPhotoAt(offest + i));
                                         }
                                     });
                                 });

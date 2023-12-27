@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
         self, include_image, load::SizedTexture, Align, Button, CursorIcon, Image, InnerResponse,
-        LayerId, Layout, Response, Sense, Ui, Widget,
+        LayerId, Layout, Response, Sense, Ui, Widget, SidePanel,
     },
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
@@ -128,10 +128,14 @@ impl<'a> Canvas<'a> {
         let response = ui.allocate_rect(available_rect, Sense::hover());
         let rect = response.rect;
 
-        ui.input(|input| {
-            self.state.zoom += input.scroll_delta.y * (0.02 * self.state.zoom);
-            self.state.zoom = self.state.zoom.max(0.1);
-        });
+        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+            if rect.contains(pointer_pos) {
+                ui.input(|input| {
+                    self.state.zoom += input.scroll_delta.y * (0.02 * self.state.zoom);
+                    self.state.zoom = self.state.zoom.max(0.1);
+                });
+            }
+        }
 
         ui.input(|input| {
             if input.key_down(egui::Key::Space) {
