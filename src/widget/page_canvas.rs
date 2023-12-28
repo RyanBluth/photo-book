@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
         self, include_image, load::SizedTexture, Align, Button, CursorIcon, Image, InnerResponse,
-        LayerId, Layout, Response, Sense, Ui, Widget, SidePanel,
+        LayerId, Layout, Response, Sense, SidePanel, Ui, Widget,
     },
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
@@ -50,6 +50,7 @@ impl CanvasPhoto {
                 handle_mode: TransformHandleMode::Resize,
                 rotation: 0.0,
                 last_frame_rotation: None,
+                selected: false,
             },
             id,
             set_initial_position: false,
@@ -95,6 +96,7 @@ impl CanvasState {
                     handle_mode: TransformHandleMode::Resize,
                     rotation: 0.0,
                     last_frame_rotation: None,
+                    selected: false,
                 },
                 id: 0,
                 set_initial_position: false,
@@ -180,19 +182,22 @@ impl<'a> Canvas<'a> {
                     {
                         // If there is no active photo at the start of the frame then allow the widget to be enabled
                         // This allows photos on top of other photos to take priority since we draw back to front
-                        let enabled = !has_active_photo_at_frame_start
-                            || self
-                                .state
-                                .active_photo
-                                .map(|x| x == canvas_photo.id)
-                                .unwrap_or(false);
+                        // let enabled = !has_active_photo_at_frame_start
+                        //     || self
+                        //         .state
+                        //         .active_photo
+                        //         .map(|x| x == canvas_photo.id)
+                        //         .unwrap_or(false);
 
                         let mut transform_state = canvas_photo.transform_state.clone();
+
+                        if canvas_photo.id != self.state.active_photo.unwrap_or(usize::MAX) {
+                            transform_state.selected = false;
+                        }
 
                         TransformableWidget::new(&mut transform_state).show(
                             ui,
                             available_rect,
-                            enabled,
                             self.state.zoom,
                             self.state.offset,
                             |ui: &mut Ui, transformed_rect: Rect| {
@@ -241,13 +246,10 @@ impl<'a> Canvas<'a> {
                             },
                         );
 
-                        if enabled
-                            && (transform_state.is_moving
-                                || transform_state.active_handle.is_some())
-                        {
+                        // If the photo was selected this frame then set it as the active photo
+                        // and deselect all other photos
+                        if transform_state.selected {
                             self.state.active_photo = Some(canvas_photo.id);
-                        } else if self.state.active_photo == Some(canvas_photo.id) {
-                            self.state.active_photo = None;
                         }
 
                         canvas_photo.transform_state = transform_state;
@@ -305,6 +307,7 @@ pub struct TransformableState {
     pub handle_mode: TransformHandleMode,
     pub rotation: f32,
     pub last_frame_rotation: Option<f32>,
+    pub selected: bool,
 }
 
 pub struct TransformableWidget<'a> {
@@ -312,6 +315,8 @@ pub struct TransformableWidget<'a> {
 }
 
 impl<'a> TransformableWidget<'a> {
+    const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
+
     pub fn new(state: &'a mut TransformableState) -> Self {
         Self { state }
     }
@@ -320,7 +325,6 @@ impl<'a> TransformableWidget<'a> {
         &mut self,
         ui: &mut Ui,
         container_rect: Rect,
-        enabled: bool,
         global_scale: f32,
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect) -> R,
@@ -345,81 +349,84 @@ impl<'a> TransformableWidget<'a> {
         let rotated_inner_content_rect =
             pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);
 
-        // Draw the mode selector above the inner content
-        let mode_selector_response =
-            self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
+        let response = if self.state.selected {
+            // Draw the mode selector above the inner content
+            let mode_selector_response =
+                self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
 
-        let response = ui.allocate_rect(
-            rotated_inner_content_rect.union(mode_selector_response.rect),
-            Sense::hover(),
-        );
+            ui.allocate_rect(
+                rotated_inner_content_rect.union(mode_selector_response.rect),
+                Sense::hover(),
+            )
+        } else {
+            ui.allocate_rect(rotated_inner_content_rect, Sense::hover())
+        };
 
         let rect = response.rect;
-
-        let handle_size = Vec2::splat(10.0); // Size of the resize handles
 
         let middle_point = |p1: Pos2, p2: Pos2| p1 + (p2 - p1) / 2.0;
 
         let handles = [
             (
                 TransformHandle::TopLeft,
-                rotated_inner_content_rect.left_top() - handle_size / 2.0,
+                rotated_inner_content_rect.left_top() - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::TopRight,
-                rotated_inner_content_rect.right_top() - handle_size / 2.0,
+                rotated_inner_content_rect.right_top() - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::BottomLeft,
-                rotated_inner_content_rect.left_bottom() - handle_size / 2.0,
+                rotated_inner_content_rect.left_bottom() - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::BottomRight,
-                rotated_inner_content_rect.right_bottom() - handle_size / 2.0,
+                rotated_inner_content_rect.right_bottom() - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleTop,
                 middle_point(
                     rotated_inner_content_rect.left_top(),
                     rotated_inner_content_rect.right_top(),
-                ) - handle_size / 2.0,
+                ) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleBottom,
                 middle_point(
                     rotated_inner_content_rect.left_bottom(),
                     rotated_inner_content_rect.right_bottom(),
-                ) - handle_size / 2.0,
+                ) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleLeft,
                 middle_point(
                     rotated_inner_content_rect.left_top(),
                     rotated_inner_content_rect.left_bottom(),
-                ) - handle_size / 2.0,
+                ) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleRight,
                 middle_point(
                     rotated_inner_content_rect.right_top(),
                     rotated_inner_content_rect.right_bottom(),
-                ) - handle_size / 2.0,
+                ) - Self::HANDLE_SIZE / 2.0,
             ),
         ];
 
         // Interact with an expanded rect to include the handles which are partially outside the rect
         let interact_response = ui.interact(
-            rotated_inner_content_rect.expand(handle_size.x / 2.0),
+            rotated_inner_content_rect.expand(Self::HANDLE_SIZE.x / 2.0),
             response.id,
             Sense::click_and_drag(),
         );
 
-        let mut a: Vec2 = Vec2::ZERO;
-        let mut b: Vec2 = Vec2::ZERO;
+        if interact_response.is_pointer_button_down_on() {
+            self.state.selected = true;
+        }
 
-        if enabled {
+        if self.state.selected {
             for (handle, rotated_handle_pos) in &handles {
-                let handle_rect = Rect::from_min_size(*rotated_handle_pos, handle_size);
+                let handle_rect = Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE);
 
                 if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
@@ -479,11 +486,9 @@ impl<'a> TransformableWidget<'a> {
                                     cursor_pos - rotated_inner_content_rect.center();
 
                                 let from_rotated_handle_to_center =
-                                    Rect::from_min_size(*rotated_handle_pos, handle_size).center()
+                                    Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE)
+                                        .center()
                                         - rotated_inner_content_rect.center();
-
-                                a = from_cursor_to_center;
-                                b = from_rotated_handle_to_center;
 
                                 let rotated_signed_angle =
                                     f32::atan2(from_cursor_to_center.y, from_cursor_to_center.x)
@@ -537,34 +542,23 @@ impl<'a> TransformableWidget<'a> {
 
         let _inner_response = add_contents(ui, pre_rotated_inner_content_rect);
 
-        ui.painter().rect_stroke(
-            rotated_inner_content_rect,
-            0.0,
-            Stroke::new(
-                3.0,
-                if enabled {
-                    Color32::GREEN
-                } else {
-                    Color32::RED
-                },
-            ),
-        );
-
-        ui.painter().rect_stroke(
-            pre_rotated_inner_content_rect,
-            0.0,
-            Stroke::new(3.0, Color32::YELLOW),
-        );
-
-        // Draw the resize handles
-        for (_, handle_pos) in &handles {
-            let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
-            ui.painter().rect_filled(handle_rect, 0.0, Color32::WHITE);
+        if self.state.selected {
+            self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
+            self.update_cursor(ui, &rotated_inner_content_rect, &handles);
         }
 
+        response
+    }
+
+    fn update_cursor(
+        &self,
+        ui: &mut Ui,
+        rotated_inner_content_rect: &Rect,
+        handles: &[(TransformHandle, Pos2)],
+    ) {
         ui.ctx().pointer_latest_pos().map(|pos| {
-            for (handle, handle_pos) in &handles {
-                let handle_rect = Rect::from_min_size(*handle_pos, handle_size);
+            for (handle, handle_pos) in handles {
+                let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
                 if handle_rect.contains(pos) {
                     match self.state.handle_mode {
                         TransformHandleMode::Resize => {
@@ -580,24 +574,22 @@ impl<'a> TransformableWidget<'a> {
                 }
             }
         });
+    }
 
-        ui.painter().line_segment(
-            [
-                pre_rotated_inner_content_rect.center(),
-                pre_rotated_inner_content_rect.center() + a,
-            ],
-            Stroke::new(3.0, Color32::BLUE),
-        );
+    fn draw_bounds_with_handles(
+        &self,
+        ui: &mut Ui,
+        rotated_content_rect: &Rect,
+        handles: &[(TransformHandle, Pos2)],
+    ) {
+        ui.painter()
+            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(3.0, Color32::GREEN));
 
-        ui.painter().line_segment(
-            [
-                pre_rotated_inner_content_rect.center(),
-                pre_rotated_inner_content_rect.center() + b,
-            ],
-            Stroke::new(5.0, Color32::RED),
-        );
-
-        response
+        // Draw the resize handles
+        for (_, handle_pos) in handles {
+            let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
+            ui.painter().rect_filled(handle_rect, 0.0, Color32::WHITE);
+        }
     }
 
     fn draw_handle_mode_selector(&mut self, ui: &mut Ui, bottom_center_origin: Pos2) -> Response {
