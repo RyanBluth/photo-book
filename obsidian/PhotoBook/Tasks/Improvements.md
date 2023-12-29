@@ -1,0 +1,37 @@
+### Canvas
+
+- [ ] Add right side panel
+	- [ ] Add layers UI
+		- [ ] Should be able to re-arrange layers
+		- [ ] Should be able to lock layers
+		- [ ] Should be able to hide layers
+	- [ ] Add UI to control position, scale and rotation of photo
+	- [ ] Add UI for text tool
+	- [ ] Add alignment UI
+- [ ] Support multi select
+- [ ]  Rotate bounding box instead of expanding to contain the rotated photo
+- [ ] Add crop tool
+- [ ] Add text support
+	- [ ] Be able to add a label
+	- [ ] Change font and font size
+	- [ ] Edit the text
+	- [ ] Set text colour
+- [ ] Controls
+	- [x] Delete an image: **Delete**
+	- [x] Deselect an image: **Escape?**
+	- [x] Scale mode: **S**
+	- [x] Rotate mode: **R**
+	- [x] Move image: **Arrow Keys**
+	- [ ] Lock scale: **Shift**
+	- [ ] Scale from center: **Alt**
+- [ ] Add page size configuration
+	- [ ] Preset page sizes
+- [ ] Add auto-layout
+	- [ ] Preset layouts
+	- [ ] Crop modes
+		- [ ] Fit
+		- [ ] Center Crop
+		- [ ] Offset Crop - The user can position the image within the cropped area
+	- [ ] Free-form layouts
+		- [ ] How does a user go between fixed and free-form?
+- [ ] Undo/Redo support

@@ -1,7 +1,7 @@
 use eframe::{
     egui::{
-        self, include_image, load::SizedTexture, Align, Button, CursorIcon, Image, InnerResponse,
-        LayerId, Layout, Response, Sense, SidePanel, Ui, Widget,
+        self, include_image, load::SizedTexture, Align, Button, Context, CursorIcon, Image,
+        InnerResponse, LayerId, Layout, Response, Sense, SidePanel, Ui, Widget,
     },
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
@@ -126,6 +126,10 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
+        if let Some(response) = self.handle_keys(ui.ctx()) {
+            return Some(response);
+        }
+
         let available_rect = ui.available_rect_before_wrap();
         let response = ui.allocate_rect(available_rect, Sense::hover());
         let rect = response.rect;
@@ -258,11 +262,80 @@ impl<'a> Canvas<'a> {
             });
         }
 
-        if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
-            return Some(CanvasResponse::Exit);
-        }
-
         None
+    }
+
+    fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
+        ctx.input(|input| {
+            // Exit the canvas
+            if input.key_pressed(egui::Key::Backspace) && input.modifiers.ctrl {
+                return Some(CanvasResponse::Exit);
+            }
+
+            // Clear the selected photo
+            if input.key_pressed(egui::Key::Escape) {
+                self.state.active_photo = None;
+            }
+
+            // Delete the selected photo
+            if input.key_pressed(egui::Key::Delete) {
+                if let Some(active_photo) = self.state.active_photo {
+                    self.state.photos.remove(active_photo);
+                    self.state.active_photo = None;
+
+                    // Update the ids of the photos since they are just indices
+                    for (i, photo) in self.state.photos.iter_mut().enumerate() {
+                        photo.id = i;
+                    }
+                }
+            }
+
+            // Move the selected photo
+            if let Some(active_photo) = self.state.active_photo {
+                // Handle movement via arrow keys
+                {
+                    let distance = if input.modifiers.shift { 10.0 } else { 1.0 };
+
+                    let mut transform_state =
+                        self.state.photos[active_photo].transform_state.clone();
+
+                    if input.key_pressed(egui::Key::ArrowLeft) {
+                        transform_state.rect =
+                            transform_state.rect.translate(Vec2::new(-distance, 0.0));
+                    }
+
+                    if input.key_pressed(egui::Key::ArrowRight) {
+                        transform_state.rect =
+                            transform_state.rect.translate(Vec2::new(distance, 0.0));
+                    }
+
+                    if input.key_pressed(egui::Key::ArrowUp) {
+                        transform_state.rect =
+                            transform_state.rect.translate(Vec2::new(0.0, -distance));
+                    }
+
+                    if input.key_pressed(egui::Key::ArrowDown) {
+                        transform_state.rect =
+                            transform_state.rect.translate(Vec2::new(0.0, distance));
+                    }
+
+                    self.state.photos[active_photo].transform_state = transform_state;
+                }
+
+                // Switch to scale mode
+                if input.key_pressed(egui::Key::S) {
+                    self.state.photos[active_photo].transform_state.handle_mode =
+                        TransformHandleMode::Resize;
+                }
+
+                // Switch to rotate mode
+                if input.key_pressed(egui::Key::R) {
+                    self.state.photos[active_photo].transform_state.handle_mode =
+                        TransformHandleMode::Rotate;
+                }
+            }
+            None
+        })
     }
 }
 
@@ -583,12 +656,17 @@ impl<'a> TransformableWidget<'a> {
         handles: &[(TransformHandle, Pos2)],
     ) {
         ui.painter()
-            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(3.0, Color32::GREEN));
+            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
 
         // Draw the resize handles
         for (_, handle_pos) in handles {
             let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
-            ui.painter().rect_filled(handle_rect, 0.0, Color32::WHITE);
+            ui.painter().rect(
+                handle_rect,
+                1.0,
+                Color32::WHITE,
+                Stroke::new(2.0, Color32::BLACK),
+            );
         }
     }
 
