@@ -24,6 +24,7 @@
 	- [x] Move image: **Arrow Keys**
 	- [ ] Lock scale: **Shift**
 	- [ ] Scale from center: **Alt**
+	- [ ] Clicking on canvas deselects
 - [ ] Add page size configuration
 	- [ ] Preset page sizes
 - [ ] Add auto-layout
@@ -35,3 +36,4 @@
 	- [ ] Free-form layouts
 		- [ ] How does a user go between fixed and free-form?
 - [ ] Undo/Redo support
+- [ ] Zoom into mouse cursor, not center

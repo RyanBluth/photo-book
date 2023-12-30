@@ -13,18 +13,10 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Tasks/Improvements.md",
+                "file": "Tasks/Bugs.md",
                 "mode": "source",
                 "source": false
               }
-            }
-          },
-          {
-            "id": "671a03d9f60cb469",
-            "type": "leaf",
-            "state": {
-              "type": "graph",
-              "state": {}
             }
           }
         ]
@@ -93,7 +85,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Tasks/Improvements.md",
+                "file": "Tasks/Bugs.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -110,7 +102,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Tasks/Improvements.md",
+                "file": "Tasks/Bugs.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -133,7 +125,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Tasks/Improvements.md"
+                "file": "Tasks/Bugs.md"
               }
             }
           }
@@ -156,8 +148,9 @@
   },
   "active": "de65e1c06dfaf3a5",
   "lastOpenFiles": [
-    "Tasks/Bugs.md",
     "Tasks/Improvements.md",
+    "Tasks/Bugs.md",
+    "Untitled.canvas",
     "Tasks",
     "Welcome.md"
   ]

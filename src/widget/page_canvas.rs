@@ -137,7 +137,7 @@ impl<'a> Canvas<'a> {
         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
             if rect.contains(pointer_pos) {
                 ui.input(|input| {
-                    self.state.zoom += input.scroll_delta.y * (0.02 * self.state.zoom);
+                    self.state.zoom += input.scroll_delta.y * 0.005;
                     self.state.zoom = self.state.zoom.max(0.1);
                 });
             }
@@ -169,9 +169,6 @@ impl<'a> Canvas<'a> {
         // Reset the cursor icon so it can be set by the transform widgets
         ui.ctx().set_cursor_icon(CursorIcon::Default);
 
-        // Track if there was an active photo at the start of the frame.
-        let has_active_photo_at_frame_start = self.state.active_photo.is_some();
-
         for canvas_photo in &mut self.state.photos.iter_mut() {
             // Move the photo to the center of the canvas if it hasn't been moved yet
             if !canvas_photo.set_initial_position {
@@ -184,15 +181,6 @@ impl<'a> Canvas<'a> {
                     if let Ok(Some(texture)) =
                         photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
                     {
-                        // If there is no active photo at the start of the frame then allow the widget to be enabled
-                        // This allows photos on top of other photos to take priority since we draw back to front
-                        // let enabled = !has_active_photo_at_frame_start
-                        //     || self
-                        //         .state
-                        //         .active_photo
-                        //         .map(|x| x == canvas_photo.id)
-                        //         .unwrap_or(false);
-
                         let mut transform_state = canvas_photo.transform_state.clone();
 
                         if canvas_photo.id != self.state.active_photo.unwrap_or(usize::MAX) {
@@ -427,12 +415,10 @@ impl<'a> TransformableWidget<'a> {
             let mode_selector_response =
                 self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
 
-            ui.allocate_rect(
-                rotated_inner_content_rect.union(mode_selector_response.rect),
-                Sense::hover(),
-            )
+            mode_selector_response
+                .union(ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag()))
         } else {
-            ui.allocate_rect(rotated_inner_content_rect, Sense::hover())
+            ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
         };
 
         let rect = response.rect;
@@ -487,7 +473,7 @@ impl<'a> TransformableWidget<'a> {
         ];
 
         // Interact with an expanded rect to include the handles which are partially outside the rect
-        let interact_response = ui.interact(
+        let interact_response: Response = ui.interact(
             rotated_inner_content_rect.expand(Self::HANDLE_SIZE.x / 2.0),
             response.id,
             Sense::click_and_drag(),
@@ -499,7 +485,7 @@ impl<'a> TransformableWidget<'a> {
 
         if self.state.selected {
             for (handle, rotated_handle_pos) in &handles {
-                let handle_rect = Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE);
+                let handle_rect: Rect = Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE);
 
                 if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
@@ -582,11 +568,11 @@ impl<'a> TransformableWidget<'a> {
 
             if self.state.active_handle.is_none() {
                 if interact_response.is_pointer_button_down_on()
-                    && (interact_response
-                        .interact_pointer_pos()
-                        .and_then(|pos| Some(rect.contains(pos)))
-                        .unwrap_or(false)
-                        || self.state.is_moving)
+                    && (self.state.is_moving
+                        || interact_response
+                            .interact_pointer_pos()
+                            .and_then(|pos| Some(rect.contains(pos)))
+                            .unwrap_or(false))
                 {
                     let delta = interact_response.drag_delta() / global_scale;
                     self.state.rect = self.state.rect.translate(delta);
@@ -705,15 +691,13 @@ impl<'a> TransformableWidget<'a> {
                         .fit_to_exact_size(button_size * 0.8),
                 )
                 .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Resize)
-                        && !self.state.is_moving
-                    {
+                    if matches!(self.state.handle_mode, TransformHandleMode::Resize) {
                         Color32::from_gray(100)
                     } else {
                         Color32::from_gray(50)
                     },
                 )
-                .sense(Sense::click_and_drag()),
+                .sense(Sense::click()),
             )
             .clicked()
         {
@@ -729,15 +713,13 @@ impl<'a> TransformableWidget<'a> {
                         .fit_to_exact_size(button_size * 0.8),
                 )
                 .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate)
-                        && !self.state.is_moving
-                    {
+                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
                         Color32::from_gray(100)
                     } else {
                         Color32::from_gray(50)
                     },
                 )
-                .sense(Sense::click_and_drag()),
+                .sense(Sense::click()),
             )
             .clicked()
         {
