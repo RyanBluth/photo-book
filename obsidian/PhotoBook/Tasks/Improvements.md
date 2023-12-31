@@ -23,8 +23,8 @@
 	- [x] Rotate mode: **R**
 	- [x] Move image: **Arrow Keys**
 	- [ ] Lock scale: **Shift**
-	- [ ] Scale from center: **Alt**
-	- [ ] Clicking on canvas deselects
+	- [x] Scale from center: **Alt**
+	- [x] Clicking on canvas deselects
 - [ ] Add page size configuration
 	- [ ] Preset page sizes
 - [ ] Add auto-layout
