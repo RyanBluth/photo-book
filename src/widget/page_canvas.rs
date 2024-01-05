@@ -1,3 +1,5 @@
+use std::cell::{Cell, RefCell};
+
 use eframe::{
     egui::{
         self, include_image, load::SizedTexture, Align, Button, Context, CursorIcon, Image,
@@ -8,6 +10,7 @@ use eframe::{
 };
 use env_logger::fmt::Color;
 use log::error;
+use rayon::vec;
 
 use crate::{
     assets::Asset,
@@ -59,11 +62,56 @@ impl CanvasPhoto {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+struct CanvasHistory {
+    photos: Vec<CanvasPhoto>,
+    active_photo: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
     photos: Vec<CanvasPhoto>,
     active_photo: Option<usize>,
     zoom: f32,
     offset: Vec2,
+    history: Vec<CanvasHistory>,
+    history_index: usize,
+}
+
+// History Stuff
+impl CanvasState {
+    pub fn undo(&mut self) {
+        if self.history_index > 0 {
+            self.history_index = self.history_index - 1;
+
+            let history = &self.history[self.history_index];
+
+            self.photos = history.photos.clone();
+            self.active_photo = history.active_photo;
+        }
+    }
+
+    pub fn redo(&mut self) {
+        if self.history_index < self.history.len() - 1 {
+            self.history_index = self.history_index + 1;
+
+            let history = &self.history[self.history_index];
+
+            self.photos = history.photos.clone();
+            self.active_photo = history.active_photo;
+        }
+    }
+
+    pub fn save_history(&mut self) {
+        let new_history = CanvasHistory {
+            photos: self.photos.clone(),
+            active_photo: self.active_photo,
+        };
+
+        self.history.truncate(self.history_index + 1);
+        self.history.push(new_history);
+
+        self.history_index = self.history.len() - 1;
+    }
 }
 
 impl CanvasState {
@@ -73,6 +121,11 @@ impl CanvasState {
             active_photo: None,
             zoom: 1.0,
             offset: Vec2::ZERO,
+            history: vec![CanvasHistory {
+                photos: Vec::new(),
+                active_photo: None,
+            }],
+            history_index: 0,
         }
     }
 
@@ -86,29 +139,37 @@ impl CanvasState {
             }
         };
 
+        let photo = CanvasPhoto {
+            photo,
+            transform_state: TransformableState {
+                rect: initial_rect,
+                active_handle: None,
+                is_moving: false,
+                handle_mode: TransformHandleMode::default(),
+                rotation: 0.0,
+                last_frame_rotation: None,
+                selected: false,
+            },
+            id: 0,
+            set_initial_position: false,
+        };
+
         Self {
-            photos: vec![CanvasPhoto {
-                photo,
-                transform_state: TransformableState {
-                    rect: initial_rect,
-                    active_handle: None,
-                    is_moving: false,
-                    handle_mode: TransformHandleMode::default(),
-                    rotation: 0.0,
-                    last_frame_rotation: None,
-                    selected: false,
-                },
-                id: 0,
-                set_initial_position: false,
-            }],
+            photos: vec![photo.clone()],
             active_photo: None,
             zoom: 1.0,
             offset: Vec2::ZERO,
+            history: vec![CanvasHistory {
+                photos: vec![photo],
+                active_photo: None,
+            }],
+            history_index: 0,
         }
     }
 
     pub fn add_photo(&mut self, photo: Photo) {
         self.photos.push(CanvasPhoto::new(photo, self.photos.len()));
+        self.save_history();
     }
 }
 
@@ -169,6 +230,8 @@ impl<'a> Canvas<'a> {
         // Reset the cursor icon so it can be set by the transform widgets
         ui.ctx().set_cursor_icon(CursorIcon::Default);
 
+        let mut save_history = false;
+
         for canvas_photo in &mut self.state.photos.iter_mut() {
             // Move the photo to the center of the canvas if it hasn't been moved yet
             if !canvas_photo.set_initial_position {
@@ -176,7 +239,7 @@ impl<'a> Canvas<'a> {
                 canvas_photo.set_initial_position = true;
             }
 
-            ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
+            let transform_response = ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
                 self.photo_manager.with_lock_mut(|photo_manager| {
                     if let Ok(Some(texture)) =
                         photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
@@ -187,75 +250,92 @@ impl<'a> Canvas<'a> {
                             transform_state.selected = false;
                         }
 
-                        TransformableWidget::new(&mut transform_state).show(
-                            ui,
-                            available_rect,
-                            self.state.zoom,
-                            self.state.offset,
-                            |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                                let uv = Rect::from_min_max(
-                                    Pos2::new(0.0, 0.0),
-                                    Pos2 { x: 1.0, y: 1.0 },
-                                );
+                        let transform_response = TransformableWidget::new(&mut transform_state)
+                            .show(
+                                ui,
+                                available_rect,
+                                self.state.zoom,
+                                self.state.offset,
+                                |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                                    let uv = Rect::from_min_max(
+                                        Pos2::new(0.0, 0.0),
+                                        Pos2 { x: 1.0, y: 1.0 },
+                                    );
 
-                                let painter = ui.painter();
-                                let mut mesh = Mesh::with_texture(texture.id);
+                                    let painter = ui.painter();
+                                    let mut mesh = Mesh::with_texture(texture.id);
 
-                                // If the photo is rotated swap the width and height
-                                let mesh_rect = if canvas_photo.photo.metadata.rotation().radians()
-                                    == 0.0
-                                    || canvas_photo.photo.metadata.rotation().radians()
-                                        == std::f32::consts::PI
-                                {
-                                    transformed_rect
-                                } else {
-                                    Rect::from_center_size(
-                                        transformed_rect.center(),
-                                        Vec2::new(
-                                            transformed_rect.height(),
-                                            transformed_rect.width(),
+                                    // If the photo is rotated swap the width and height
+                                    let mesh_rect =
+                                        if canvas_photo.photo.metadata.rotation().radians() == 0.0
+                                            || canvas_photo.photo.metadata.rotation().radians()
+                                                == std::f32::consts::PI
+                                        {
+                                            transformed_rect
+                                        } else {
+                                            Rect::from_center_size(
+                                                transformed_rect.center(),
+                                                Vec2::new(
+                                                    transformed_rect.height(),
+                                                    transformed_rect.width(),
+                                                ),
+                                            )
+                                        };
+
+                                    mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
+
+                                    let mesh_center =
+                                        mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
+
+                                    mesh.rotate(
+                                        Rot2::from_angle(
+                                            canvas_photo.photo.metadata.rotation().radians(),
                                         ),
-                                    )
-                                };
+                                        mesh_center,
+                                    );
+                                    mesh.rotate(
+                                        Rot2::from_angle(canvas_photo.transform_state.rotation),
+                                        mesh_center,
+                                    );
 
-                                mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
+                                    painter.add(Shape::mesh(mesh));
 
-                                let mesh_center =
-                                    mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
-
-                                mesh.rotate(
-                                    Rot2::from_angle(
-                                        canvas_photo.photo.metadata.rotation().radians(),
-                                    ),
-                                    mesh_center,
-                                );
-                                mesh.rotate(
-                                    Rot2::from_angle(canvas_photo.transform_state.rotation),
-                                    mesh_center,
-                                );
-
-                                painter.add(Shape::mesh(mesh));
-
-                                // If the canvas was clicked but not on the photo then deselect the photo
-                                if response.clicked()
-                                    && !transformed_rect.contains(
-                                        response.interact_pointer_pos().unwrap_or(Pos2::ZERO),
-                                    )
-                                    && self.state.active_photo == Some(canvas_photo.id)
-                                {
-                                    self.state.active_photo = None;
-                                } else if transformable_state.selected {
-                                    // If the photo was selected this frame then set it as the active photo
-                                    // and deselect all other photos
-                                    self.state.active_photo = Some(canvas_photo.id);
-                                }
-                            },
-                        );
+                                    // If the canvas was clicked but not on the photo then deselect the photo
+                                    if response.clicked()
+                                        && !transformed_rect.contains(
+                                            response.interact_pointer_pos().unwrap_or(Pos2::ZERO),
+                                        )
+                                        && self.state.active_photo == Some(canvas_photo.id)
+                                    {
+                                        self.state.active_photo = None;
+                                    } else if transformable_state.selected {
+                                        // If the photo was selected this frame then set it as the active photo
+                                        // and deselect all other photos
+                                        self.state.active_photo = Some(canvas_photo.id);
+                                    }
+                                },
+                            );
 
                         canvas_photo.transform_state = transform_state;
+
+                        Some(transform_response)
+                    } else {
+                        None
                     }
                 })
             });
+
+            if let Some(transform_action) = transform_response.inner.and_then(|r| r.action) {
+                match transform_action {
+                    TransformableWidgetResponseAction::PushHistory => {
+                        save_history = true;
+                    }
+                }
+            }
+        }
+
+        if save_history {
+            self.state.save_history();
         }
 
         None
@@ -331,6 +411,17 @@ impl<'a> Canvas<'a> {
                         TransformHandleMode::Rotate;
                 }
             }
+
+
+            // Undo/Redo
+            if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
+                if input.modifiers.shift {
+                    self.state.redo();
+                } else {
+                    self.state.undo();
+                }
+            }
+
             None
         })
     }
@@ -397,6 +488,17 @@ pub struct TransformableWidget<'a> {
     pub state: &'a mut TransformableState,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum TransformableWidgetResponseAction {
+    PushHistory,
+}
+
+#[derive(Debug, Clone)]
+pub struct TransformableWidgetResponse {
+    inner: Response,
+    action: Option<TransformableWidgetResponseAction>,
+}
+
 impl<'a> TransformableWidget<'a> {
     const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
 
@@ -411,7 +513,7 @@ impl<'a> TransformableWidget<'a> {
         global_scale: f32,
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect, &TransformableState) -> R,
-    ) -> Response {
+    ) -> TransformableWidgetResponse {
         let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
 
         // Scale the position of the center of the photo
@@ -761,7 +863,10 @@ impl<'a> TransformableWidget<'a> {
             self.update_cursor(ui, &rotated_inner_content_rect, &handles);
         }
 
-        response
+        TransformableWidgetResponse {
+            inner: response,
+            action: None,
+        }
     }
 
     fn update_cursor(
