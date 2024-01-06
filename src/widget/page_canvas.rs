@@ -1,4 +1,7 @@
-use std::cell::{Cell, RefCell};
+use std::{
+    cell::{Cell, RefCell},
+    fmt::Display,
+};
 
 use eframe::{
     egui::{
@@ -62,9 +65,69 @@ impl CanvasPhoto {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum CanvasHistoryKind {
+    Initial,
+    Transform,
+    AddPhoto,
+    DeletePhoto,
+    Select,
+}
+
+impl Display for CanvasHistoryKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CanvasHistoryKind::Initial => write!(f, "Initial"),
+            CanvasHistoryKind::Transform => write!(f, "Move"),
+            CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
+            CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
+            CanvasHistoryKind::Select => write!(f, "Select"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 struct CanvasHistory {
     photos: Vec<CanvasPhoto>,
     active_photo: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct HistoryManager<Kind, Value> {
+    history: Vec<(Kind, Value)>,
+    index: usize,
+}
+
+impl<Kind, Value> HistoryManager<Kind, Value>
+where
+    Kind: Display,
+    Value: Clone,
+{
+    pub fn undo(&mut self) -> Value {
+        if self.index > 0 {
+            self.index = self.index - 1;
+            let history = &self.history[self.index];
+            history.1.clone()
+        } else {
+            self.history[self.index].1.clone()
+        }
+    }
+
+    pub fn redo(&mut self) -> Value {
+        if self.index < self.history.len() - 1 {
+            self.index = self.index + 1;
+            let history = &self.history[self.index];
+            history.1.clone()
+        } else {
+            self.history[self.index].1.clone()
+        }
+    }
+
+    pub fn save_history(&mut self, kind: Kind, value: Value) {
+        self.history.truncate(self.index + 1);
+        self.history.push((kind, value));
+
+        self.index = self.history.len() - 1;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,44 +136,34 @@ pub struct CanvasState {
     active_photo: Option<usize>,
     zoom: f32,
     offset: Vec2,
-    history: Vec<CanvasHistory>,
-    history_index: usize,
+    history_manager: HistoryManager<CanvasHistoryKind, CanvasHistory>,
 }
 
 // History Stuff
 impl CanvasState {
     pub fn undo(&mut self) {
-        if self.history_index > 0 {
-            self.history_index = self.history_index - 1;
-
-            let history = &self.history[self.history_index];
-
-            self.photos = history.photos.clone();
-            self.active_photo = history.active_photo;
-        }
+        let new_value = self.history_manager.undo();
+        self.apply_history(new_value);
     }
 
     pub fn redo(&mut self) {
-        if self.history_index < self.history.len() - 1 {
-            self.history_index = self.history_index + 1;
-
-            let history = &self.history[self.history_index];
-
-            self.photos = history.photos.clone();
-            self.active_photo = history.active_photo;
-        }
+        let new_value = self.history_manager.redo();
+        self.apply_history(new_value);
     }
 
-    pub fn save_history(&mut self) {
-        let new_history = CanvasHistory {
-            photos: self.photos.clone(),
-            active_photo: self.active_photo,
-        };
+    pub fn save_history(&mut self, kind: CanvasHistoryKind) {
+        self.history_manager.save_history(
+            kind,
+            CanvasHistory {
+                photos: self.photos.clone(),
+                active_photo: self.active_photo,
+            },
+        );
+    }
 
-        self.history.truncate(self.history_index + 1);
-        self.history.push(new_history);
-
-        self.history_index = self.history.len() - 1;
+    fn apply_history(&mut self, history: CanvasHistory) {
+        self.photos = history.photos;
+        self.active_photo = history.active_photo;
     }
 }
 
@@ -121,11 +174,16 @@ impl CanvasState {
             active_photo: None,
             zoom: 1.0,
             offset: Vec2::ZERO,
-            history: vec![CanvasHistory {
-                photos: Vec::new(),
-                active_photo: None,
-            }],
-            history_index: 0,
+            history_manager: HistoryManager {
+                history: vec![(
+                    CanvasHistoryKind::Initial,
+                    CanvasHistory {
+                        photos: vec![],
+                        active_photo: None,
+                    },
+                )],
+                index: 0,
+            },
         }
     }
 
@@ -159,17 +217,22 @@ impl CanvasState {
             active_photo: None,
             zoom: 1.0,
             offset: Vec2::ZERO,
-            history: vec![CanvasHistory {
-                photos: vec![photo],
-                active_photo: None,
-            }],
-            history_index: 0,
+            history_manager: HistoryManager {
+                history: vec![(
+                    CanvasHistoryKind::Initial,
+                    CanvasHistory {
+                        photos: vec![photo],
+                        active_photo: None,
+                    },
+                )],
+                index: 0,
+            },
         }
     }
 
     pub fn add_photo(&mut self, photo: Photo) {
         self.photos.push(CanvasPhoto::new(photo, self.photos.len()));
-        self.save_history();
+        self.save_history(CanvasHistoryKind::AddPhoto);
     }
 }
 
@@ -230,7 +293,8 @@ impl<'a> Canvas<'a> {
         // Reset the cursor icon so it can be set by the transform widgets
         ui.ctx().set_cursor_icon(CursorIcon::Default);
 
-        let mut save_history = false;
+        let mut save_selected_history = false;
+        let mut transform_responses = Vec::new();
 
         for canvas_photo in &mut self.state.photos.iter_mut() {
             // Move the photo to the center of the canvas if it hasn't been moved yet
@@ -239,7 +303,7 @@ impl<'a> Canvas<'a> {
                 canvas_photo.set_initial_position = true;
             }
 
-            let transform_response = ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
+            ui.push_id(format!("CanvasPhoto_{}", canvas_photo.id), |ui| {
                 self.photo_manager.with_lock_mut(|photo_manager| {
                     if let Ok(Some(texture)) =
                         photo_manager.texture_for(&canvas_photo.photo, &ui.ctx())
@@ -308,34 +372,37 @@ impl<'a> Canvas<'a> {
                                         && self.state.active_photo == Some(canvas_photo.id)
                                     {
                                         self.state.active_photo = None;
-                                    } else if transformable_state.selected {
+                                    } else if transformable_state.selected
+                                        && self.state.active_photo != Some(canvas_photo.id)
+                                    {
                                         // If the photo was selected this frame then set it as the active photo
                                         // and deselect all other photos
                                         self.state.active_photo = Some(canvas_photo.id);
+                                        save_selected_history = true;
                                     }
                                 },
                             );
 
                         canvas_photo.transform_state = transform_state;
 
-                        Some(transform_response)
-                    } else {
-                        None
+                        transform_responses.push(transform_response);
                     }
-                })
+                });
             });
-
-            if let Some(transform_action) = transform_response.inner.and_then(|r| r.action) {
-                match transform_action {
-                    TransformableWidgetResponseAction::PushHistory => {
-                        save_history = true;
-                    }
-                }
-            }
         }
 
-        if save_history {
-            self.state.save_history();
+        if save_selected_history {
+            self.state.save_history(CanvasHistoryKind::Select);
+        }
+
+        for transform_response in transform_responses {
+            if transform_response.ended_moving
+                || transform_response.ended_resizing
+                || transform_response.ended_rotating
+            {
+                self.state.save_history(CanvasHistoryKind::Transform);
+                break;
+            }
         }
 
         None
@@ -411,7 +478,6 @@ impl<'a> Canvas<'a> {
                         TransformHandleMode::Rotate;
                 }
             }
-
 
             // Undo/Redo
             if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
@@ -496,7 +562,12 @@ pub enum TransformableWidgetResponseAction {
 #[derive(Debug, Clone)]
 pub struct TransformableWidgetResponse {
     inner: Response,
-    action: Option<TransformableWidgetResponseAction>,
+    began_moving: bool,
+    began_resizing: bool,
+    began_rotating: bool,
+    ended_moving: bool,
+    ended_resizing: bool,
+    ended_rotating: bool,
 }
 
 impl<'a> TransformableWidget<'a> {
@@ -514,6 +585,10 @@ impl<'a> TransformableWidget<'a> {
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect, &TransformableState) -> R,
     ) -> TransformableWidgetResponse {
+        let initial_is_moving = self.state.is_moving;
+        let initial_active_handle = self.state.active_handle;
+        let initial_mode = self.state.handle_mode;
+
         let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
 
         // Scale the position of the center of the photo
@@ -865,7 +940,20 @@ impl<'a> TransformableWidget<'a> {
 
         TransformableWidgetResponse {
             inner: response,
-            action: None,
+            began_moving: !initial_is_moving && self.state.is_moving,
+            began_resizing: initial_active_handle.is_none()
+                && self.state.active_handle.is_some()
+                && matches!(initial_mode, TransformHandleMode::Resize(_)),
+            began_rotating: initial_active_handle.is_none()
+                && self.state.active_handle.is_some()
+                && matches!(initial_mode, TransformHandleMode::Rotate),
+            ended_moving: initial_is_moving && !self.state.is_moving,
+            ended_resizing: initial_active_handle.is_some()
+                && self.state.active_handle.is_none()
+                && matches!(initial_mode, TransformHandleMode::Resize(_)),
+            ended_rotating: initial_active_handle.is_some()
+                && self.state.active_handle.is_none()
+                && matches!(initial_mode, TransformHandleMode::Rotate),
         }
     }
 
