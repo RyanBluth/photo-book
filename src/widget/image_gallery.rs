@@ -17,10 +17,15 @@ use crate::{
 
 use super::{gallery_image::GalleryImage, page_canvas::TransformableWidget, spacer::Spacer};
 
+#[derive(Debug, PartialEq, Clone, Default)]
+pub struct ImageGalleryState {
+    pub selected_images: HashSet<PathBuf>,
+    pub current_dir: Option<PathBuf>,
+}
+
 pub struct ImageGallery<'a> {
-    current_dir: Option<std::path::PathBuf>,
     photo_manager: Singleton<PhotoManager>,
-    selected_images: &'a mut HashSet<Photo>,
+    state: &'a mut ImageGalleryState,
 }
 
 pub enum Request {
@@ -34,13 +39,12 @@ pub enum ImageGalleryResponse {
 }
 
 impl<'a> ImageGallery<'a> {
-    pub fn show(
-        ui: &mut Ui,
-        current_dir: &mut Option<std::path::PathBuf>,
-        selected_images: &'a mut HashSet<PathBuf>,
-    ) -> Option<ImageGalleryResponse> {
+    pub fn show(ui: &mut Ui, state: &'a mut ImageGalleryState) -> Option<ImageGalleryResponse> {
         let mut response = None;
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+        let current_dir = &mut state.current_dir;
+        let selected_images = &mut state.selected_images;
 
         menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {

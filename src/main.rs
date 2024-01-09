@@ -11,9 +11,10 @@ use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
 use tokio::runtime;
 use widget::{
-    image_gallery::{ImageGallery, ImageGalleryResponse},
+    canvas_info::panel::CanvasInfo,
+    image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
     image_viewer::{self, ImageViewer, ImageViewerState},
-    page_canvas::{Canvas, CanvasPhoto, CanvasResponse, CanvasState},
+    page_canvas::{Canvas, CanvasPhoto, CanvasResponse, CanvasScene, CanvasState},
     photo_info::PhotoInfo,
 };
 
@@ -31,6 +32,8 @@ mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
+
+const AUTO_LOAD_PHOTOS: bool = true;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -65,6 +68,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app_log = Arc::clone(&log);
 
+    if AUTO_LOAD_PHOTOS {
+        PhotoManager::load_directory(PathBuf::from("/home/ryan/Desktop/Aug-5-2023")).unwrap();
+    }
+
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
@@ -72,10 +79,12 @@ async fn main() -> anyhow::Result<()> {
             Box::<MyApp>::new(MyApp {
                 photo_manager: Dependency::<PhotoManager>::get(),
                 log: app_log,
-                nav_stack: vec![NavState::new(PrimaryComponent::Gallery {
-                    selected_images: HashSet::new(),
-                    current_dir: None,
-                })],
+                nav_stack: vec![PrimaryComponent::Gallery {
+                    state: ImageGalleryState {
+                        selected_images: HashSet::new(),
+                        current_dir: None,
+                    },
+                }],
             })
         }),
     )
@@ -85,8 +94,7 @@ async fn main() -> anyhow::Result<()> {
 #[derive(Debug, Clone, PartialEq)]
 enum PrimaryComponent {
     Gallery {
-        selected_images: HashSet<PathBuf>,
-        current_dir: Option<PathBuf>,
+        state: ImageGalleryState,
     },
     Viewer {
         photo: Photo,
@@ -118,91 +126,29 @@ enum PrimaryComponentKind {
     Viewer,
     Canvas,
     PhotoInfo,
-}
-
-struct NavState {
-    center: Box<PrimaryComponent>,
-    left: Option<Box<PrimaryComponent>>,
-    right: Option<Box<PrimaryComponent>>,
-    bottom: Option<Box<PrimaryComponent>>,
-}
-
-impl NavState {
-    fn new(center: PrimaryComponent) -> Self {
-        Self {
-            center: Box::new(center),
-            left: None,
-            right: None,
-            bottom: None,
-        }
-    }
+    CanvasInfo,
 }
 
 struct MyApp {
     log: Arc<StringLog>,
     photo_manager: Singleton<PhotoManager>,
-    nav_stack: Vec<NavState>,
+    nav_stack: Vec<PrimaryComponent>,
 }
 
 enum NavAction {
-    Push(NavState),
+    Push(PrimaryComponent),
     Pop,
-    OpenPhoto(Photo),
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
 
-        let nav_state: &mut NavState = self.nav_stack.last_mut().unwrap();
+        let component: &mut PrimaryComponent = self.nav_stack.last_mut().unwrap();
 
         let mut nav_actions = vec![];
 
-        if let Some(left_state) = nav_state.left.as_mut() {
-            let left_nav_action = SidePanel::left("split_left_panel")
-                .resizable(true)
-                .default_width(400.0)
-                .show(ctx, |ui| {
-                    MyApp::show_mode(&mut self.photo_manager, ui, left_state)
-                })
-                .inner;
-
-            if let Some(left_nav_action) = left_nav_action {
-                nav_actions.push(left_nav_action);
-            }
-        }
-
-        if let Some(right_state) = nav_state.right.as_mut() {
-            let right_nav_action = SidePanel::right("split_right_panel")
-                .resizable(true)
-                .default_width(400.0)
-                .show(ctx, |ui| {
-                    MyApp::show_mode(&mut self.photo_manager, ui, right_state)
-                })
-                .inner;
-            if let Some(right_nav_action) = right_nav_action {
-                nav_actions.push(right_nav_action);
-            }
-        }
-
-        if let Some(bottom_state) = nav_state.bottom.as_mut() {
-            let bottom_nav_action = TopBottomPanel::bottom("split_bottom_panel")
-                .resizable(true)
-                .default_height(400.0)
-                .show(ctx, |ui| {
-                    MyApp::show_mode(&mut self.photo_manager, ui, bottom_state)
-                })
-                .inner;
-            if let Some(bottom_nav_action) = bottom_nav_action {
-                nav_actions.push(bottom_nav_action);
-            }
-        }
-
-        let center_nav_action = CentralPanel::default()
-            .show(ctx, |ui| {
-                MyApp::show_mode(&mut self.photo_manager, ui, nav_state.center.as_mut())
-            })
-            .inner;
+        let center_nav_action = MyApp::show_mode(&mut self.photo_manager, ctx, component);
 
         if let Some(center_nav_action) = center_nav_action {
             nav_actions.push(center_nav_action);
@@ -216,25 +162,6 @@ impl eframe::App for MyApp {
                 NavAction::Pop => {
                     self.nav_stack.pop();
                 }
-                NavAction::OpenPhoto(photo) => {
-                    let current = self.nav_stack.last_mut().unwrap();
-
-                    if current.center.kind() == PrimaryComponentKind::Canvas {
-                        if let PrimaryComponent::Canvas { state } = current.center.as_mut() {
-                            state.add_photo(photo);
-                        }
-                    } else {
-                        let current = self.nav_stack.pop().unwrap();
-                        self.nav_stack.push(NavState {
-                            center: Box::new(PrimaryComponent::Canvas {
-                                state: CanvasState::with_photo(photo),
-                            }),
-                            left: Some(current.center),
-                            right: None,
-                            bottom: None,
-                        });
-                    }
-                }
             }
         }
     }
@@ -243,17 +170,16 @@ impl eframe::App for MyApp {
 impl MyApp {
     fn show_mode(
         photo_manager: &mut Singleton<PhotoManager>,
-        ui: &mut Ui,
+        ctx: &Context,
         mode: &mut PrimaryComponent,
     ) -> Option<NavAction> {
         let mut nav_action = None;
 
         match mode {
-            PrimaryComponent::Gallery {
-                selected_images,
-                current_dir,
-            } => {
-                let mut gallery_response = ImageGallery::show(ui, current_dir, selected_images);
+            PrimaryComponent::Gallery { state } => {
+                let mut gallery_response = CentralPanel::default()
+                    .show(ctx, |ui| ImageGallery::show(ui, state))
+                    .inner;
 
                 if let Some(gallery_response) = gallery_response {
                     match gallery_response {
@@ -263,17 +189,10 @@ impl MyApp {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    nav_action = Some(NavAction::Push(NavState {
-                                        center: Box::new(PrimaryComponent::Viewer {
-                                            photo: photo.clone(),
-                                            index,
-                                            state: ImageViewerState::default(),
-                                        }),
-                                        left: None,
-                                        right: Some(Box::new(PrimaryComponent::PhotoInfo {
-                                            photo,
-                                        })),
-                                        bottom: None,
+                                    nav_action = Some(NavAction::Push(PrimaryComponent::Viewer {
+                                        photo: photo.clone(),
+                                        index,
+                                        state: ImageViewerState::default(),
                                     }))
                                 }
                             });
@@ -284,7 +203,14 @@ impl MyApp {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    nav_action = Some(NavAction::OpenPhoto(photo));
+                                    let gallery_state = match mode {
+                                        PrimaryComponent::Gallery { state } => state.clone(),
+                                        _ => ImageGalleryState::default(),
+                                    };
+
+                                    nav_action = Some(NavAction::Push(PrimaryComponent::Canvas {
+                                        state: CanvasState::with_photo(photo, gallery_state),
+                                    }));
                                 }
                             });
                         }
@@ -298,39 +224,43 @@ impl MyApp {
             } => {
                 let index = index;
 
-                let viewer_response = ImageViewer::new(photo, state).show(ui);
-                match viewer_response.request {
-                    Some(request) => match request {
-                        image_viewer::Request::Exit => {
-                            nav_action = Some(NavAction::Pop);
-                        }
-                        image_viewer::Request::Previous => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let (prev_photo, new_index) = photo_manager
-                                    .previous_photo(*index, ui.ctx())
-                                    .unwrap()
-                                    .unwrap();
+                CentralPanel::default().show(ctx, |ui| {
+                    let viewer_response = ImageViewer::new(photo, state).show(ui);
+                    match viewer_response.request {
+                        Some(request) => match request {
+                            image_viewer::Request::Exit => {
+                                nav_action = Some(NavAction::Pop);
+                            }
+                            image_viewer::Request::Previous => {
+                                photo_manager.with_lock_mut(|photo_manager| {
+                                    let (prev_photo, new_index) = photo_manager
+                                        .previous_photo(*index, ui.ctx())
+                                        .unwrap()
+                                        .unwrap();
 
-                                *photo = prev_photo;
-                                *index = new_index;
-                                *state = ImageViewerState::default();
-                            });
-                        }
-                        image_viewer::Request::Next => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let (next_photo, new_index) =
-                                    photo_manager.next_photo(*index, ui.ctx()).unwrap().unwrap();
+                                    *photo = prev_photo;
+                                    *index = new_index;
+                                    *state = ImageViewerState::default();
+                                });
+                            }
+                            image_viewer::Request::Next => {
+                                photo_manager.with_lock_mut(|photo_manager| {
+                                    let (next_photo, new_index) = photo_manager
+                                        .next_photo(*index, ui.ctx())
+                                        .unwrap()
+                                        .unwrap();
 
-                                *photo = next_photo;
-                                *index = new_index;
-                                *state = ImageViewerState::default();
-                            });
-                        }
-                    },
-                    None => {}
-                }
+                                    *photo = next_photo;
+                                    *index = new_index;
+                                    *state = ImageViewerState::default();
+                                });
+                            }
+                        },
+                        None => {}
+                    }
+                });
             }
-            PrimaryComponent::Canvas { state } => match Canvas::new(state).show(ui) {
+            PrimaryComponent::Canvas { state } => match CanvasScene::new(state).show(ctx) {
                 Some(request) => match request {
                     CanvasResponse::Exit => {
                         nav_action = Some(NavAction::Pop);
@@ -339,8 +269,11 @@ impl MyApp {
                 None => {}
             },
             PrimaryComponent::PhotoInfo { photo } => {
-                PhotoInfo::new(photo).ui(ui);
+                SidePanel::right("photo_info_panel").show(ctx, |ui| {
+                    PhotoInfo::new(photo).ui(ui);
+                });
             }
+
             _ => {
                 todo!()
             }
