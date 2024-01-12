@@ -458,6 +458,22 @@ impl Photo {
     pub fn aspect_ratio(&self) -> f32 {
         self.metadata.rotated_width() as f32 / self.metadata.rotated_height() as f32
     }
+
+    pub fn size_with_max_size(&self, max_size: f32) -> (f32, f32) {
+        let (width, height) = match self.max_dimension() {
+            MaxPhotoDimension::Width => {
+                let width = max_size;
+                let height = (width as f32 / self.aspect_ratio());
+                (width, height)
+            }
+            MaxPhotoDimension::Height => {
+                let height = max_size;
+                let width = (height as f32 * self.aspect_ratio());
+                (width, height)
+            }
+        };
+        (width, height)
+    }
 }
 
 impl PartialEq for Photo {

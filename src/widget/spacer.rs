@@ -17,7 +17,8 @@ impl Spacer {
 
 impl Widget for Spacer {
     fn ui(self, ui: &mut Ui) -> Response {
-        let rect = Rect::from_min_size(ui.min_rect().min, self.size);
+        let pos = ui.next_widget_position();
+        let rect = Rect::from_min_size(pos, self.size);
         let response = ui.allocate_rect(rect, Sense::hover());
         ui.painter().rect_filled(rect, 0.0, Color32::TRANSPARENT);
         response

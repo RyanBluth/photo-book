@@ -94,8 +94,8 @@ impl<'a> ImageGallery<'a> {
                     .columns(Column::exact(column_width), num_columns)
                     .column(Column::exact(spacer_width))
                     .body(|body| {
-                        body.rows(row_height, num_rows, |row_idx, mut row| {
-                            let offest = row_idx * num_columns;
+                        body.rows(row_height, num_rows, |mut row| {
+                            let offest = row.index() * num_columns;
                             for i in 0..num_columns {
                                 if offest + i >= num_photos {
                                     break;

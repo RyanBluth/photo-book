@@ -19,7 +19,6 @@ pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -
     output
 }
 
-
 pub trait Truncate {
     fn truncate(&self, max_length: usize) -> String;
 }

@@ -20,6 +20,7 @@ use image::{
 use indexmap::IndexMap;
 use log::{error, info};
 use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
+use tokio::task::spawn_blocking;
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
@@ -61,6 +62,7 @@ impl PhotoLoadResult {
     }
 }
 
+#[derive(Debug)]
 pub struct PhotoManager {
     pub photos: IndexMap<PathBuf, PhotoLoadResult>,
 
@@ -197,6 +199,25 @@ impl PhotoManager {
         )
     }
 
+    pub fn texture_for_photo_with_thumbail_backup(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        match Self::load_texture(
+            &photo.uri(),
+            ctx,
+            &mut self.texture_cache,
+            &mut self.pending_textures,
+        ) {
+            Result::Ok(Some(tex)) => return Ok(Some(tex)),
+            _ => Ok(self
+                .texture_cache
+                .get(&photo.thumbnail_uri())
+                .map(|x| x.clone())),
+        }
+    }
+
     pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
             Some((_, PhotoLoadResult::Ready(photo))) => Self::load_texture(
@@ -269,21 +290,31 @@ impl PhotoManager {
                 Ok(Some(*texture))
             }
             None => {
-                let texture = ctx.try_load_texture(
-                    uri,
-                    eframe::egui::TextureOptions::default(),
-                    eframe::egui::SizeHint::Scale(1.0_f32.ord()),
-                )?;
-                match texture {
-                    eframe::egui::load::TexturePoll::Pending { size: _ } => {
-                        pending_textures.insert(uri.to_string());
-                        Ok(None)
+                let uri = uri.to_string();
+                let ctx = ctx.clone();
+                spawn_blocking(move || {
+                    let texture = ctx.try_load_texture(
+                        &uri,
+                        eframe::egui::TextureOptions::default(),
+                        eframe::egui::SizeHint::Scale(1.0_f32.ord()),
+                    );
+
+                    let photo_manager = Dependency::<PhotoManager>::get();
+                    match texture {
+                        Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
+                            photo_manager.with_lock_mut(|photo_manager| {
+                                photo_manager.pending_textures.insert(uri)
+                            });
+                        }
+                        Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                            photo_manager.with_lock_mut(|photo_manager| {
+                                photo_manager.texture_cache.insert(uri, texture);
+                            });
+                        }
+                        _ => {}
                     }
-                    eframe::egui::load::TexturePoll::Ready { texture } => {
-                        texture_cache.insert(uri.to_string(), texture);
-                        Ok(Some(texture))
-                    }
-                }
+                });
+                Ok(None)
             }
         }
     }
@@ -310,17 +341,17 @@ impl PhotoManager {
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
-           // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-                //thread::spawn(move || {
-                partition.into_iter().for_each(|photo| {
-                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
-                    if res.is_err() {
-                        error!("{:?}", res);
-                    }
-                });
-                //});
+            // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            //thread::spawn(move || {
+            partition.into_iter().for_each(|photo| {
+                let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
+                if res.is_err() {
+                    error!("{:?}", res);
+                }
+            });
+            //});
 
-                //Ok(())
+            //Ok(())
             //});
         }
         Ok(())

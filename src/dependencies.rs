@@ -29,6 +29,7 @@ macro_rules! dependency {
     };
 }
 
+#[derive(Debug)]
 pub struct Singleton<T>(Arc<RwLock<T>>);
 
 

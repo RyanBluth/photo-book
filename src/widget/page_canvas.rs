@@ -293,6 +293,7 @@ impl CanvasState {
             name: name,
             visible: true,
             locked: false,
+            selected: false,
         };
 
         Self {
@@ -318,6 +319,23 @@ impl CanvasState {
         self.photos
             .push(Layer::with_photo(photo, self.photos.len()));
         self.save_history(CanvasHistoryKind::AddPhoto);
+    }
+
+    fn select_photo(&mut self, photo_id: Option<usize>) {
+        match photo_id {
+            Some(photo_id) => {
+                for layer in &mut self.photos {
+                    layer.photo.transform_state.selected = layer.photo.id == photo_id;
+                }
+                self.active_photo = Some(photo_id);
+            }
+            None => {
+                for layer in &mut self.photos {
+                    layer.photo.transform_state.selected = false;
+                }
+                self.active_photo = None;
+            }
+        }
     }
 }
 
@@ -464,6 +482,8 @@ impl<'a> Canvas<'a> {
                                         // If the photo was selected this frame then set it as the active photo
                                         // and deselect all other photos
                                         self.state.active_photo = Some(layer.photo.id);
+
+                                       // self.state.select_photo(Some(layer.photo.id));
                                     }
                                 },
                             );
@@ -658,8 +678,8 @@ pub enum TransformableWidgetResponseAction {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransformableWidgetResponse {
-    inner: Response,
+pub struct TransformableWidgetResponse<Inner> {
+    inner: Inner,
     began_moving: bool,
     began_resizing: bool,
     began_rotating: bool,
@@ -682,7 +702,7 @@ impl<'a> TransformableWidget<'a> {
         global_scale: f32,
         global_offset: Vec2,
         add_contents: impl FnOnce(&mut Ui, Rect, &TransformableState) -> R,
-    ) -> TransformableWidgetResponse {
+    ) -> TransformableWidgetResponse<R> {
         let initial_is_moving = self.state.is_moving;
         let initial_active_handle = self.state.active_handle;
         let initial_mode = self.state.handle_mode;
@@ -1029,7 +1049,7 @@ impl<'a> TransformableWidget<'a> {
             self.state.active_handle = None;
         }
 
-        let _inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
+        let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
 
         if self.state.selected {
             self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
@@ -1037,7 +1057,7 @@ impl<'a> TransformableWidget<'a> {
         }
 
         TransformableWidgetResponse {
-            inner: response,
+            inner: inner_response,
             began_moving: !initial_is_moving && self.state.is_moving,
             began_resizing: initial_active_handle.is_none()
                 && self.state.active_handle.is_some()

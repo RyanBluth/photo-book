@@ -1,6 +1,15 @@
-use eframe::egui::{Grid, Widget};
+use eframe::{
+    egui::{text, Grid, Image, Widget},
+    epaint::Vec2,
+    epaint::{Color32, Rect},
+};
 
-use crate::{photo::Photo, widget::page_canvas::CanvasPhoto};
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    photo::{self, Photo},
+    photo_manager::PhotoManager,
+    widget::{page_canvas::CanvasPhoto, placeholder::RectPlaceholder, spacer::Spacer},
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layer {
@@ -8,6 +17,7 @@ pub struct Layer {
     pub name: String,
     pub visible: bool,
     pub locked: bool,
+    pub selected: bool,
 }
 
 impl Layer {
@@ -18,36 +28,71 @@ impl Layer {
             name: name,
             visible: true,
             locked: false,
+            selected: false,
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub struct Layers<'a> {
     layers: &'a mut Vec<Layer>,
+    photo_manager: Singleton<PhotoManager>,
 }
 
 impl<'a> Layers<'a> {
     pub fn new(layers: &'a mut Vec<Layer>) -> Self {
-        Self { layers }
+        Self {
+            layers,
+            photo_manager: Dependency::get(),
+        }
     }
 }
 
 impl<'a> Widget for Layers<'a> {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
         ui.allocate_ui(ui.available_size(), |ui| {
-            Grid::new("layers_grid")
-            .striped(false)
-            .num_columns(1)
-            .spacing([10.0, 10.0])
-            .show(ui, |ui| {
-                for layer in self.layers {
-                    ui.label(&layer.name);
+            Grid::new("LayersGrid")
+                .num_columns(3)
+                .spacing(Vec2::new(0.0, 3.0))
+                .show(ui, |ui| {
                     ui.end_row();
-                }
-            })
-            .response
-        }).response
-        
+                    for layer in self.layers {
+                        let texture_id = self.photo_manager.with_lock_mut(|photo_manager| {
+                            photo_manager.thumbnail_texture_for(&layer.photo.photo, ui.ctx())
+                        });
+
+                        let image_size = Vec2::from(layer.photo.photo.size_with_max_size(50.0));
+
+                        match texture_id {
+                            Ok(Some(texture_id)) => {
+                                let image = Image::from_texture(texture_id)
+                                    .rotate(
+                                        layer.photo.photo.metadata.rotation().radians(),
+                                        Vec2::splat(0.5),
+                                    )
+                                    .fit_to_exact_size(image_size);
+                                ui.add(image);
+                            }
+                            _ => {
+                                RectPlaceholder::new(image_size, Color32::GRAY);
+                            }
+                        };
+
+                        ui.add_space(10.0);
+
+                        ui.label(&layer.name);
+
+                        ui.end_row();
+
+                        ui.separator();
+                        ui.separator();
+                        ui.separator();
+
+                        ui.end_row();
+                    }
+                })
+                .response
+        })
+        .response
     }
 }
