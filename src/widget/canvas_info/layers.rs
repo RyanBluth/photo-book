@@ -50,13 +50,27 @@ impl<'a> Layers<'a> {
 
 impl<'a> Widget for Layers<'a> {
     fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
+        let selected_index = self
+            .layers
+            .iter()
+            .position(|layer| layer.selected)
+            .unwrap_or(usize::MAX);
         ui.allocate_ui(ui.available_size(), |ui| {
             Grid::new("LayersGrid")
                 .num_columns(3)
+                .with_row_color(move |row, _| {
+                    if row > 0 && row - 2 == selected_index {
+                        return Some(Color32::from_rgb(0, 0, 255));
+                    }
+                    None
+                })
                 .spacing(Vec2::new(0.0, 3.0))
                 .show(ui, |ui| {
+                    
                     ui.end_row();
+
                     for layer in self.layers {
+
                         let texture_id = self.photo_manager.with_lock_mut(|photo_manager| {
                             photo_manager.thumbnail_texture_for(&layer.photo.photo, ui.ctx())
                         });
