@@ -1,15 +1,19 @@
 use std::{
     marker::PhantomData,
-    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockWriteGuard, RwLockReadGuard},
+    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-use crate::{image_cache::ImageCache, event_bus::{EventBus, EventBusId}, photo_manager::PhotoManager};
+use crate::{
+    cursor_manager::CursorManager,
+    image_cache::ImageCache,
+    photo_manager::PhotoManager,
+};
 
 macro_rules! singleton {
     ($name: ident, $type:ty, $init:expr) => {
+        static $name: once_cell::sync::Lazy<Singleton<$type>> =
+            once_cell::sync::Lazy::new(|| Singleton(Arc::new(RwLock::new($init))));
 
-        static $name: once_cell::sync::Lazy<Singleton<$type>> = once_cell::sync::Lazy::new(|| Singleton(Arc::new(RwLock::new($init))));
-        
         impl SingletonFor<$type> for Dependency<$type> {
             fn get() -> Singleton<$type> {
                 ($name).clone()
@@ -20,7 +24,6 @@ macro_rules! singleton {
 
 macro_rules! dependency {
     ($type:ty, $init: expr) => {
-
         impl DependencyFor<$type> for Dependency<$type> {
             fn get() -> $type {
                 $init
@@ -31,7 +34,6 @@ macro_rules! dependency {
 
 #[derive(Debug)]
 pub struct Singleton<T>(Arc<RwLock<T>>);
-
 
 impl<T> Clone for Singleton<T> {
     fn clone(&self) -> Self {
@@ -49,17 +51,6 @@ impl<T> Singleton<T> {
     }
 }
 
-impl <E: Clone> Singleton<EventBus<E>> {
-
-    pub fn emit(&self, event: E) {
-        self.with_lock_mut(|event_bus| event_bus.emit(event));
-    }
-
-    pub fn listen(&self, id: EventBusId, listener: impl Fn(E) + 'static) {
-        self.with_lock_mut(|event_bus| event_bus.listen(id, Box::new(listener)));
-    }
-}
-
 pub trait DependencyFor<T> {
     fn get() -> T;
 }
@@ -68,23 +59,10 @@ pub trait SingletonFor<T> {
     fn get() -> Singleton<T>;
 }
 
-
 pub struct Dependency<T>(PhantomData<T>);
 
-singleton!(
-    IMAGE_CACHE_INSTANCE,
-    ImageCache,
-    ImageCache::new()
-);
+singleton!(IMAGE_CACHE_INSTANCE, ImageCache, ImageCache::new());
 
-// singleton!(
-//     GALLERY_IMAGE_EVENT_BUS_INSTANCE,
-//     EventBus<GalleryImageEvent>,
-//     EventBus::new()
-// );
+singleton!(PHOTO_MANAGER_INSTANCE, PhotoManager, PhotoManager::new());
 
-singleton!(
-    PHOTO_MANAGER_INSTANCE,
-    PhotoManager,
-    PhotoManager::new()
-);
+singleton!(CURSOR_MANAGER, CursorManager, CursorManager::new());

@@ -7,7 +7,7 @@ use std::{
 use eframe::{
     egui::{
         self, include_image, load::SizedTexture, Align, Button, CentralPanel, Context, CursorIcon,
-        Image, InnerResponse, LayerId, Layout, Response, Sense, SidePanel, Ui, Widget,
+        Image, InnerResponse, LayerId, Layout, Response, Sense, SidePanel, Ui, Widget, Order, Id,
     },
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, TextureId, Vec2},
@@ -18,6 +18,7 @@ use rayon::vec;
 
 use crate::{
     assets::Asset,
+    cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{self, PhotoLoadResult, PhotoManager},
@@ -73,15 +74,19 @@ impl<'a> CanvasScene<'a> {
             None => {}
         }
 
-        SidePanel::right("canvas_info_panel")
+        let canvas_info_response = SidePanel::right("canvas_info_panel")
             .default_width(300.0)
             .resizable(true)
             .show(ctx, |ui| {
                 CanvasInfo {
                     layers: &mut self.state.photos,
                 }
-                .ui(ui)
+                .show(ui)
             });
+
+        if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
+            self.state.select_photo(Some(selected_layer));
+        }
 
         match CentralPanel::default()
             .show(ctx, |ui| {
@@ -406,9 +411,6 @@ impl<'a> Canvas<'a> {
 
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
         }
-
-        // Reset the cursor icon so it can be set by the transform widgets
-        ui.ctx().set_cursor_icon(CursorIcon::Default);
 
         for layer_id in 0..self.state.photos.len() {
             {
@@ -1096,15 +1098,21 @@ impl<'a> TransformableWidget<'a> {
                 if handle_rect.contains(pos) {
                     match self.state.handle_mode {
                         TransformHandleMode::Resize(_) => {
-                            ui.ctx().set_cursor_icon(handle.cursor());
+                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                                cursor_manager.set_cursor(handle.cursor());
+                            });
                         }
                         TransformHandleMode::Rotate => {
-                            ui.ctx().set_cursor_icon(CursorIcon::Crosshair);
+                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                                cursor_manager.set_cursor(CursorIcon::Crosshair);
+                            });
                         }
                     }
                     break;
                 } else if rotated_inner_content_rect.contains(pos) {
-                    ui.ctx().set_cursor_icon(CursorIcon::Move);
+                    Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                        cursor_manager.set_cursor(CursorIcon::Move);
+                    });
                 }
             }
         });
@@ -1148,58 +1156,60 @@ impl<'a> TransformableWidget<'a> {
             Sense::hover(),
         );
 
-        ui.painter()
-            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
+        ui.with_layer_id(LayerId::new(Order::Tooltip, Id::new(123456)), |ui| {
+            ui.painter()
+                .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
 
-        let left_half_rect =
-            Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
+            let left_half_rect =
+                Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
 
-        let right_half_rect =
-            Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
+            let right_half_rect =
+                Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
 
-        if ui
-            .put(
-                Rect::from_center_size(left_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::resize())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
+            if ui
+                .put(
+                    Rect::from_center_size(left_half_rect.center(), button_size),
+                    Button::image(
+                        Image::from(Asset::resize())
+                            .tint(Color32::WHITE)
+                            .fit_to_exact_size(button_size * 0.8),
+                    )
+                    .fill(
+                        if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
+                            Color32::from_gray(100)
+                        } else {
+                            Color32::from_gray(50)
+                        },
+                    )
+                    .sense(Sense::click()),
                 )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
-        }
+                .clicked()
+            {
+                self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
+            }
 
-        if ui
-            .put(
-                Rect::from_center_size(right_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::rotate())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
+            if ui
+                .put(
+                    Rect::from_center_size(right_half_rect.center(), button_size),
+                    Button::image(
+                        Image::from(Asset::rotate())
+                            .tint(Color32::WHITE)
+                            .fit_to_exact_size(button_size * 0.8),
+                    )
+                    .fill(
+                        if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
+                            Color32::from_gray(100)
+                        } else {
+                            Color32::from_gray(50)
+                        },
+                    )
+                    .sense(Sense::click()),
                 )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Rotate;
-        }
+                .clicked()
+            {
+                self.state.handle_mode = TransformHandleMode::Rotate;
+            }
+        });
 
         response
     }

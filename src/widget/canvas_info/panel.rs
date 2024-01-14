@@ -1,4 +1,6 @@
-use eframe::egui::{Grid, Widget};
+use eframe::egui::{self, Grid, Response, Widget};
+
+use crate::widget::page_canvas::Canvas;
 
 use super::layers::{Layer, Layers};
 
@@ -7,9 +9,18 @@ pub struct CanvasInfo<'a> {
     pub layers: &'a mut Vec<Layer>,
 }
 
-impl<'a> Widget for CanvasInfo<'a> {
-    fn ui(self, ui: &mut eframe::egui::Ui) -> eframe::egui::Response {
-        ui.allocate_ui(ui.available_size(), |ui| Layers::new(self.layers).ui(ui))
-            .response
+pub struct CanvasInfoResponse {
+    pub selected_layer: Option<usize>,
+    pub response: Response,
+}
+
+impl<'a> CanvasInfo<'a> {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> CanvasInfoResponse {
+        let response = ui.allocate_ui(ui.available_size(), |ui| Layers::new(self.layers).show(ui));
+
+        CanvasInfoResponse {
+            selected_layer: response.inner.selected_layer,
+            response: response.response,
+        }
     }
 }

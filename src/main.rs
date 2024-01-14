@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
+use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{
     self, CentralPanel, Context, SidePanel, TopBottomPanel, Ui, ViewportBuilder, Widget,
@@ -24,7 +25,6 @@ use string_log::{ArcStringLog, StringLog};
 mod assets;
 mod dependencies;
 mod error_sink;
-mod event_bus;
 mod image_cache;
 mod persistence;
 mod photo;
@@ -32,6 +32,7 @@ mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
+mod cursor_manager;
 
 const AUTO_LOAD_PHOTOS: bool = true;
 
@@ -144,6 +145,10 @@ impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
 
+        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+            cursor_manager.begin_frame(ctx);
+        });
+
         let component: &mut PrimaryComponent = self.nav_stack.last_mut().unwrap();
 
         let mut nav_actions = vec![];
@@ -164,6 +169,10 @@ impl eframe::App for MyApp {
                 }
             }
         }
+
+        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+            cursor_manager.end_frame(ctx);
+        });
     }
 }
 
