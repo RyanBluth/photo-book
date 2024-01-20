@@ -5,7 +5,7 @@ use eframe::{
 use log::error;
 
 use crate::{
-    photo::Photo, photo_manager::PhotoLoadResult, utils::Truncate,
+    photo_manager::PhotoLoadResult, utils::Truncate,
     widget::placeholder::RectPlaceholder,
 };
 

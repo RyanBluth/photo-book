@@ -259,7 +259,7 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
                 match field.value {
                     Value::Ascii(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::Camera(
                                 String::from_utf8_lossy(value).to_string(),
                             ));
@@ -271,7 +271,7 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
                 match field.value {
                     Value::Ascii(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::DateTime(
                                 String::from_utf8_lossy(value).to_string(),
                             ));
@@ -290,7 +290,7 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
                 match field.value {
                     Value::Rational(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::ShutterSpeed(SRational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
@@ -298,7 +298,7 @@ impl PhotoMetadata {
                         }
                     }
                     Value::SRational(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::ShutterSpeed(*value));
                         }
                     }
@@ -309,7 +309,7 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
                 match field.value {
                     Value::Rational(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::Aperture(SRational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
@@ -323,7 +323,7 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
                 match field.value {
                     Value::Rational(ref vec) => {
-                        if let Some(value) = vec.get(0) {
+                        if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::FocalLength(SRational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
@@ -463,12 +463,12 @@ impl Photo {
         let (width, height) = match self.max_dimension() {
             MaxPhotoDimension::Width => {
                 let width = max_size;
-                let height = (width as f32 / self.aspect_ratio());
+                let height = width / self.aspect_ratio();
                 (width, height)
             }
             MaxPhotoDimension::Height => {
                 let height = max_size;
-                let width = (height as f32 * self.aspect_ratio());
+                let width = height * self.aspect_ratio();
                 (width, height)
             }
         };

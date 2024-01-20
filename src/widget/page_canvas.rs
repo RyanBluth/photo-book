@@ -1,37 +1,25 @@
-use std::{
-    cell::{Cell, RefCell},
-    fmt::Display,
-    mem,
-};
+use std::fmt::Display;
 
 use eframe::{
     egui::{
-        self, include_image, load::SizedTexture, Align, Button, CentralPanel, Context, CursorIcon,
-        Image, InnerResponse, LayerId, Layout, Response, Sense, SidePanel, Ui, Widget, Order, Id,
+        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image, Response, Sense,
+        SidePanel, Ui,
     },
     emath::Rot2,
-    epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, TextureId, Vec2},
+    epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
-use env_logger::fmt::Color;
-use log::error;
-use rayon::vec;
 
 use crate::{
     assets::Asset,
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
-    photo_manager::{self, PhotoLoadResult, PhotoManager},
-    utils::{RectExt, Truncate},
-    widget::placeholder::RectPlaceholder,
+    photo_manager::{PhotoLoadResult, PhotoManager},
+    utils::{RectExt, Toggle, Truncate},
 };
 
 use super::{
-    canvas_info::{
-        layers::{Layer, Layers},
-        panel::CanvasInfo,
-    },
-    gallery_image::GalleryImage,
+    canvas_info::{layers::Layer, panel::CanvasInfo},
     image_gallery::{self, ImageGallery, ImageGalleryState},
 };
 
@@ -47,6 +35,34 @@ impl<'a> CanvasScene<'a> {
     }
 
     pub fn show(&mut self, ctx: &Context) -> Option<CanvasResponse> {
+        let left_panel_rect = match PanelState::load(ctx, "image_gallery_panel".into()) {
+            Some(state) => state.rect,
+            None => Rect::ZERO,
+        };
+
+        let right_panel_rect = match PanelState::load(ctx, "canvas_info_panel".into()) {
+            Some(state) => state.rect,
+            None => Rect::ZERO,
+        };
+
+        let mut available_rect = ctx.available_rect();
+
+        available_rect.min.x += left_panel_rect.width();
+        available_rect.max.x -= right_panel_rect.width();
+
+        let canvas_response = match CentralPanel::default()
+            .show(ctx, |ui| {
+                let mut canvas = Canvas::new(self.state, available_rect);
+                canvas.show(ui)
+            })
+            .inner
+        {
+            Some(action) => match action {
+                CanvasResponse::Exit => Some(CanvasResponse::Exit),
+            },
+            None => None,
+        };
+
         match SidePanel::left("image_gallery_panel")
             .default_width(300.0)
             .resizable(true)
@@ -56,7 +72,7 @@ impl<'a> CanvasScene<'a> {
             .inner
         {
             Some(action) => match action {
-                image_gallery::ImageGalleryResponse::ViewPhotoAt(index) => {
+                image_gallery::ImageGalleryResponse::ViewPhotoAt(_index) => {
                     // TODO
                     return Some(CanvasResponse::Exit);
                 }
@@ -79,27 +95,16 @@ impl<'a> CanvasScene<'a> {
             .resizable(true)
             .show(ctx, |ui| {
                 CanvasInfo {
-                    layers: &mut self.state.photos,
+                    layers: &mut self.state.layers,
                 }
                 .show(ui)
             });
 
         if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
-            self.state.select_photo(Some(selected_layer));
+            self.state.select_photo(selected_layer, ctx);
         }
 
-        match CentralPanel::default()
-            .show(ctx, |ui| {
-                let mut canvas = Canvas::new(&mut self.state);
-                canvas.show(ui)
-            })
-            .inner
-        {
-            Some(action) => match action {
-                CanvasResponse::Exit => Some(CanvasResponse::Exit),
-            },
-            None => None,
-        }
+        canvas_response
     }
 }
 
@@ -135,7 +140,6 @@ impl CanvasPhoto {
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
                 last_frame_rotation: None,
-                selected: false,
             },
             id,
             set_initial_position: false,
@@ -166,8 +170,8 @@ impl Display for CanvasHistoryKind {
 
 #[derive(Debug, Clone, PartialEq)]
 struct CanvasHistory {
-    photos: Vec<Layer>,
-    active_photo: Option<usize>,
+    layers: Vec<Layer>,
+    multi_select: Option<MultiSelect>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -184,7 +188,7 @@ where
 {
     pub fn undo(&mut self) -> Value {
         if self.index > 0 {
-            self.index = self.index - 1;
+            self.index -= 1;
             let history = &self.history[self.index];
             history.1.clone()
         } else {
@@ -194,7 +198,7 @@ where
 
     pub fn redo(&mut self) -> Value {
         if self.index < self.history.len() - 1 {
-            self.index = self.index + 1;
+            self.index += 1;
             let history = &self.history[self.index];
             history.1.clone()
         } else {
@@ -216,12 +220,12 @@ where
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
-    photos: Vec<Layer>,
-    active_photo: Option<usize>,
+    layers: Vec<Layer>,
     zoom: f32,
     offset: Vec2,
     history_manager: HistoryManager<CanvasHistoryKind, CanvasHistory>,
     gallery_state: ImageGalleryState,
+    multi_select: Option<MultiSelect>,
 }
 
 // History Stuff
@@ -240,8 +244,8 @@ impl CanvasState {
         self.history_manager.save_history(
             kind,
             CanvasHistory {
-                photos: self.photos.clone(),
-                active_photo: self.active_photo,
+                layers: self.layers.clone(),
+                multi_select: self.multi_select.clone(),
             },
         );
 
@@ -249,29 +253,29 @@ impl CanvasState {
     }
 
     fn apply_history(&mut self, history: CanvasHistory) {
-        self.photos = history.photos;
-        self.active_photo = history.active_photo;
+        self.layers = history.layers;
+        self.multi_select = history.multi_select;
     }
 }
 
 impl CanvasState {
     pub fn new() -> Self {
         Self {
-            photos: Vec::new(),
-            active_photo: None,
+            layers: Vec::new(),
             zoom: 1.0,
             offset: Vec2::ZERO,
             history_manager: HistoryManager {
                 history: vec![(
                     CanvasHistoryKind::Initial,
                     CanvasHistory {
-                        photos: vec![],
-                        active_photo: None,
+                        layers: vec![],
+                        multi_select: None,
                     },
                 )],
                 index: 0,
             },
             gallery_state: ImageGalleryState::default(),
+            multi_select: None,
         }
     }
 
@@ -294,7 +298,6 @@ impl CanvasState {
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
                 last_frame_rotation: None,
-                selected: false,
             },
             id: 0,
             set_initial_position: false,
@@ -302,70 +305,129 @@ impl CanvasState {
 
         let name = photo.photo.file_name().to_string();
         let layer = Layer {
-            photo: photo,
-            name: name,
+            photo,
+            name,
             visible: true,
             locked: false,
             selected: false,
         };
 
         Self {
-            photos: vec![layer.clone()],
-            active_photo: None,
+            layers: vec![layer.clone()],
             zoom: 1.0,
             offset: Vec2::ZERO,
             history_manager: HistoryManager {
                 history: vec![(
                     CanvasHistoryKind::Initial,
                     CanvasHistory {
-                        photos: vec![layer],
-                        active_photo: None,
+                        layers: vec![layer],
+                        multi_select: None,
                     },
                 )],
                 index: 0,
             },
-            gallery_state: gallery_state,
+            gallery_state,
+            multi_select: None,
         }
     }
 
     pub fn add_photo(&mut self, photo: Photo) {
-        self.photos
-            .push(Layer::with_photo(photo, self.photos.len()));
+        self.layers
+            .push(Layer::with_photo(photo, self.layers.len()));
         self.save_history(CanvasHistoryKind::AddPhoto);
     }
 
-    fn select_photo(&mut self, photo_id: Option<usize>) {
-        match photo_id {
-            Some(photo_id) => {
-                for layer in &mut self.photos {
-                    layer.photo.transform_state.selected = layer.photo.id == photo_id;
-                    layer.selected = layer.photo.id == photo_id;
-                }
-                self.active_photo = Some(photo_id);
-            }
-            None => {
-                for layer in &mut self.photos {
-                    layer.photo.transform_state.selected = false;
-                    layer.selected = false;
-                }
-                self.active_photo = None;
+    fn select_photo(&mut self, layer_id: usize, ctx: &Context) {
+        if ctx.input(|input| input.modifiers.ctrl) {
+            self.layers[layer_id].selected.toggle();
+        } else {
+            for layer in &mut self.layers {
+                layer.selected = layer.photo.id == layer_id;
             }
         }
+    }
 
-        self.save_history(CanvasHistoryKind::Select);
+    fn deselect_photo(&mut self, layer_id: usize) {
+        self.layers[layer_id].selected = false;
+    }
+
+    fn deselect_all_photos(&mut self) {
+        for layer in &mut self.layers {
+            layer.selected = false;
+        }
+    }
+
+    fn is_layer_selected(&self, layer_id: usize) -> bool {
+        self.layers[layer_id].selected
+    }
+
+    fn selected_layers_iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
+        self.layers.iter_mut().filter(|layer| layer.selected)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiSelect {
+    transformable_state: TransformableState,
+    selected_layers: Vec<usize>,
+}
+
+impl MultiSelect {
+    fn new(layers: &[Layer]) -> Self {
+        let mut res = Self {
+            transformable_state: TransformableState {
+                rect: Rect::ZERO,
+                active_handle: None,
+                is_moving: false,
+                handle_mode: TransformHandleMode::default(),
+                rotation: 0.0,
+                last_frame_rotation: None,
+            },
+            selected_layers: layers
+                .iter()
+                .filter(|x| x.selected)
+                .enumerate()
+                .map(|(i, _)| i)
+                .collect(),
+        };
+        res.transformable_state.rect = res.compute_rect(layers);
+        res
+    }
+}
+
+impl MultiSelect {
+    fn compute_rect(&self, layers: &[Layer]) -> Rect {
+        let mut min = Vec2::splat(std::f32::MAX);
+        let mut max = Vec2::splat(std::f32::MIN);
+
+        for layer_id in &self.selected_layers {
+            let layer = &layers[*layer_id];
+
+            let rect = layer.photo.transform_state.rect;
+
+            min.x = min.x.min(rect.min.x);
+            min.y = min.y.min(rect.min.y);
+
+            max.x = max.x.max(rect.max.x);
+            max.y = max.y.max(rect.max.y);
+        }
+
+        Rect::from_min_max(min.to_pos2(), max.to_pos2())
     }
 }
 
 pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     photo_manager: Singleton<PhotoManager>,
+    available_rect: Rect,
 }
 
 impl<'a> Canvas<'a> {
-    pub fn new(state: &'a mut CanvasState) -> Self {
+    pub fn new(state: &'a mut CanvasState, available_rect: Rect) -> Self {
         Self {
             state,
             photo_manager: Dependency::get(),
+            available_rect: available_rect,
         }
     }
 
@@ -374,14 +436,15 @@ impl<'a> Canvas<'a> {
             return Some(response);
         }
 
-        let available_rect = ui.available_rect_before_wrap();
-        let canvas_response = ui.allocate_rect(available_rect, Sense::click());
+        let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
         let rect = canvas_response.rect;
+
+        let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
 
         ui.set_clip_rect(rect);
 
         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
-            if rect.contains(pointer_pos) {
+            if is_pointer_on_canvas {
                 ui.input(|input| {
                     self.state.zoom += input.scroll_delta.y * 0.005;
                     self.state.zoom = self.state.zoom.max(0.1);
@@ -390,7 +453,7 @@ impl<'a> Canvas<'a> {
         }
 
         ui.input(|input| {
-            if input.key_down(egui::Key::Space) {
+            if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
                 self.state.offset += input.pointer.delta();
                 true
             } else {
@@ -412,37 +475,165 @@ impl<'a> Canvas<'a> {
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
         }
 
-        for layer_id in 0..self.state.photos.len() {
+        for layer_id in 0..self.state.layers.len() {
             {
-                let layer = &mut self.state.photos[layer_id];
+                let layer = &mut self.state.layers[layer_id];
 
                 // Move the photo to the center of the canvas if it hasn't been moved yet
                 if !layer.photo.set_initial_position {
                     layer.photo.transform_state.rect.set_center(rect.center());
                     layer.photo.set_initial_position = true;
-
-                    if layer.photo.id != self.state.active_photo.unwrap_or(usize::MAX) {
-                        layer.photo.transform_state.selected = false;
-                    }
                 }
             }
 
-            if let Some(transform_response) = self.draw_layer(layer_id, available_rect, ui) {
-                let transform_state = &self.state.photos[layer_id].photo.transform_state;
+            if let Some(transform_response) = self.draw_layer(layer_id, self.available_rect, ui) {
+                let transform_state = &self.state.layers[layer_id].photo.transform_state;
+
+                let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
 
                 // If the canvas was clicked but not on the photo then deselect the photo
                 if canvas_response.clicked()
                     && !transform_state
                         .rect
                         .contains(canvas_response.interact_pointer_pos().unwrap_or(Pos2::ZERO))
-                    && self.state.active_photo == Some(layer_id)
+                    && self.is_pointer_on_canvas(ui)
+                    && self.state.is_layer_selected(layer_id)
                 {
-                    self.state.select_photo(None);
-                } else if transform_state.selected && self.state.active_photo != Some(layer_id) {
-                    // If the photo was selected this frame then set it as the active photo
-                    // and deselect all other photos
-                    self.state.select_photo(Some(layer_id));
+                    self.state.deselect_all_photos();
+                } else if transform_response.mouse_down && primary_pointer_pressed {
+                    self.state.select_photo(layer_id, ui.ctx());
                 }
+
+                if transform_response.ended_moving
+                    || transform_response.ended_resizing
+                    || transform_response.ended_rotating
+                {
+                    self.state.save_history(CanvasHistoryKind::Transform);
+                }
+            }
+        }
+
+        let selected_layer_ids = self
+            .state
+            .layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.selected)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        if selected_layer_ids.len() > 1 {
+            if let Some(multi_select) = &mut self.state.multi_select {
+                multi_select.selected_layers = selected_layer_ids;
+            } else {
+                println!("Creating multi select");
+                self.state.multi_select = Some(MultiSelect::new(&self.state.layers));
+            }
+        } else {
+            self.state.multi_select = None;
+        }
+
+        if let Some(multi_select) = &mut self.state.multi_select {
+            if multi_select.selected_layers.is_empty() {
+                self.state.multi_select = None;
+            } else {
+                let mut transform_state = multi_select.transformable_state.clone();
+
+                let pre_transform_rect = transform_state.rect;
+
+                let transform_response =
+                    TransformableWidget::new(&mut transform_state).show(
+                        ui,
+                        rect,
+                        self.state.zoom,
+                        self.state.offset,
+                        true,
+                        |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
+                            // Apply transformation to the transformable_state of each layer in the multi select
+                            for layer_id in &multi_select.selected_layers {
+                                let layer = &mut self.state.layers[*layer_id];
+
+                                let delta_left =
+                                    transformable_state.rect.left() - pre_transform_rect.left();
+                                let delta_top =
+                                    transformable_state.rect.top() - pre_transform_rect.top();
+                                let delta_right =
+                                    transformable_state.rect.right() - pre_transform_rect.right();
+                                let delta_bottom =
+                                    transformable_state.rect.bottom() - pre_transform_rect.bottom();
+
+                                let relative_top = (pre_transform_rect.top()
+                                    - layer.photo.transform_state.rect.top())
+                                .abs()
+                                    / pre_transform_rect.height();
+
+                                let relative_left = (pre_transform_rect.left()
+                                    - layer.photo.transform_state.rect.left())
+                                .abs()
+                                    / pre_transform_rect.width();
+
+                                let relative_right = (pre_transform_rect.right()
+                                    - layer.photo.transform_state.rect.right())
+                                .abs()
+                                    / pre_transform_rect.width();
+
+                                let relative_bottom = (pre_transform_rect.bottom()
+                                    - layer.photo.transform_state.rect.bottom())
+                                .abs()
+                                    / pre_transform_rect.height();
+
+                                layer
+                                    .photo
+                                    .transform_state
+                                    .rect
+                                    .set_left(layer.photo.transform_state.rect.left() + delta_left);
+
+                                layer
+                                    .photo
+                                    .transform_state
+                                    .rect
+                                    .set_top(layer.photo.transform_state.rect.top() + delta_top);
+
+                                layer.photo.transform_state.rect.set_right(
+                                    layer.photo.transform_state.rect.right() + delta_right,
+                                );
+
+                                layer.photo.transform_state.rect.set_bottom(
+                                    layer.photo.transform_state.rect.bottom() + delta_bottom,
+                                );
+
+                                if relative_top > 0.0 {
+                                    layer.photo.transform_state.rect.set_top(
+                                        transformable_state.rect.top()
+                                            + relative_top * transformable_state.rect.height(),
+                                    );
+                                }
+
+                                if relative_left > 0.0 {
+                                    layer.photo.transform_state.rect.set_left(
+                                        transformable_state.rect.left()
+                                            + relative_left * transformable_state.rect.width(),
+                                    );
+                                }
+
+                                if relative_right > 0.0 {
+                                    layer.photo.transform_state.rect.set_right(
+                                        transformable_state.rect.right()
+                                            - relative_right * transformable_state.rect.width(),
+                                    );
+                                }
+
+                                if relative_bottom > 0.0 {
+                                    layer.photo.transform_state.rect.set_bottom(
+                                        transformable_state.rect.bottom()
+                                            - relative_bottom * transformable_state.rect.height(),
+                                    );
+                                }
+                            }
+                        },
+                    );
+
+                multi_select.transformable_state = transform_state;
 
                 if transform_response.ended_moving
                     || transform_response.ended_resizing
@@ -462,11 +653,13 @@ impl<'a> Canvas<'a> {
         available_rect: Rect,
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
-        let layer = &mut self.state.photos[layer_id];
+        let layer = &mut self.state.layers[layer_id];
+        let active = layer.selected && self.state.multi_select.is_none();
 
         ui.push_id(format!("CanvasPhoto_{}", layer.photo.id), |ui| {
             self.photo_manager.with_lock_mut(|photo_manager| {
-                if let Ok(Some(texture)) = photo_manager.texture_for(&layer.photo.photo, &ui.ctx())
+                if let Ok(Some(texture)) = photo_manager
+                    .texture_for_photo_with_thumbail_backup(&layer.photo.photo, ui.ctx())
                 {
                     let mut transform_state = layer.photo.transform_state.clone();
 
@@ -475,7 +668,8 @@ impl<'a> Canvas<'a> {
                         available_rect,
                         self.state.zoom,
                         self.state.offset,
-                        |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                        active,
+                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                             let uv =
                                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
 
@@ -533,32 +727,29 @@ impl<'a> Canvas<'a> {
 
             // Clear the selected photo
             if input.key_pressed(egui::Key::Escape) {
-                self.state.active_photo = None;
+                self.state.deselect_all_photos();
             }
 
             // Delete the selected photo
             if input.key_pressed(egui::Key::Delete) {
-                if let Some(active_photo) = self.state.active_photo {
-                    self.state.photos.remove(active_photo);
-                    self.state.active_photo = None;
+                self.state.layers.retain(|layer| !layer.selected);
 
-                    // Update the ids of the photos since they are just indices
-                    for (i, photo) in self.state.photos.iter_mut().enumerate() {
-                        photo.photo.id = i;
-                    }
-
-                    self.state.save_history(CanvasHistoryKind::DeletePhoto);
+                // Update the ids of the photos since they are just indices
+                for (i, photo) in self.state.layers.iter_mut().enumerate() {
+                    photo.photo.id = i;
                 }
+
+                self.state.save_history(CanvasHistoryKind::DeletePhoto);
             }
 
             // Move the selected photo
-            if let Some(active_photo) = self.state.active_photo {
+            let mut save_transform_history = false;
+            for layer in self.state.selected_layers_iter_mut() {
                 // Handle movement via arrow keys
                 {
                     let distance = if input.modifiers.shift { 10.0 } else { 1.0 };
 
-                    let transform_state =
-                        &mut self.state.photos[active_photo].photo.transform_state;
+                    let transform_state = &mut layer.photo.transform_state;
 
                     if input.key_pressed(egui::Key::ArrowLeft) {
                         transform_state.rect =
@@ -586,26 +777,26 @@ impl<'a> Canvas<'a> {
                         || input.key_released(egui::Key::ArrowUp)
                         || input.key_released(egui::Key::ArrowDown)
                     {
-                        self.state.save_history(CanvasHistoryKind::Transform);
+                        save_transform_history = true
                     }
                 }
 
                 // Switch to scale mode
                 if input.key_pressed(egui::Key::S) {
                     // TODO should the resize mode be persisted? Probably.
-                    self.state.photos[active_photo]
-                        .photo
-                        .transform_state
-                        .handle_mode = TransformHandleMode::Resize(ResizeMode::MirrorAxis);
+
+                    layer.photo.transform_state.handle_mode =
+                        TransformHandleMode::Resize(ResizeMode::Free);
                 }
 
                 // Switch to rotate mode
                 if input.key_pressed(egui::Key::R) {
-                    self.state.photos[active_photo]
-                        .photo
-                        .transform_state
-                        .handle_mode = TransformHandleMode::Rotate;
-                }
+                    layer.photo.transform_state.handle_mode = TransformHandleMode::Rotate;
+                };
+            }
+
+            if save_transform_history {
+                self.state.save_history(CanvasHistoryKind::Transform);
             }
 
             // Undo/Redo
@@ -619,6 +810,13 @@ impl<'a> Canvas<'a> {
 
             None
         })
+    }
+
+    fn is_pointer_on_canvas(&self, ui: &mut Ui) -> bool {
+        self.available_rect.contains(
+            ui.input(|input| input.pointer.hover_pos())
+                .unwrap_or_default(),
+        )
     }
 }
 
@@ -676,7 +874,6 @@ pub struct TransformableState {
     pub handle_mode: TransformHandleMode,
     pub rotation: f32,
     pub last_frame_rotation: Option<f32>,
-    pub selected: bool,
 }
 
 pub struct TransformableWidget<'a> {
@@ -697,6 +894,8 @@ pub struct TransformableWidgetResponse<Inner> {
     ended_moving: bool,
     ended_resizing: bool,
     ended_rotating: bool,
+    mouse_down: bool,
+    clicked: bool,
 }
 
 impl<'a> TransformableWidget<'a> {
@@ -712,6 +911,7 @@ impl<'a> TransformableWidget<'a> {
         container_rect: Rect,
         global_scale: f32,
         global_offset: Vec2,
+        active: bool,
         add_contents: impl FnOnce(&mut Ui, Rect, &TransformableState) -> R,
     ) -> TransformableWidgetResponse<R> {
         let initial_is_moving = self.state.is_moving;
@@ -738,7 +938,7 @@ impl<'a> TransformableWidget<'a> {
         let rotated_inner_content_rect =
             pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);
 
-        let response = if self.state.selected {
+        let response = if active {
             // Draw the mode selector above the inner content
             let mode_selector_response =
                 self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
@@ -807,14 +1007,9 @@ impl<'a> TransformableWidget<'a> {
             Sense::click_and_drag(),
         );
 
-        if interact_response.is_pointer_button_down_on() {
-            self.state.selected = true;
-        }
-
-        if self.state.selected {
+        if active {
             for (handle, rotated_handle_pos) in &handles {
                 let handle_rect: Rect = Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE);
-
                 if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
                 {
@@ -824,7 +1019,7 @@ impl<'a> TransformableWidget<'a> {
 
                 if interact_response
                     .interact_pointer_pos()
-                    .and_then(|pos| Some(handle_rect.contains(pos)))
+                    .map(|pos| handle_rect.contains(pos))
                     .unwrap_or(false)
                     || self.state.active_handle == Some(*handle)
                 {
@@ -1032,7 +1227,7 @@ impl<'a> TransformableWidget<'a> {
                     && (self.state.is_moving
                         || interact_response
                             .interact_pointer_pos()
-                            .and_then(|pos| Some(rect.contains(pos)))
+                            .map(|pos| rect.contains(pos))
                             .unwrap_or(false))
                 {
                     let delta = interact_response.drag_delta() / global_scale;
@@ -1062,7 +1257,7 @@ impl<'a> TransformableWidget<'a> {
 
         let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
 
-        if self.state.selected {
+        if active {
             self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
             self.update_cursor(ui, &rotated_inner_content_rect, &handles);
         }
@@ -1083,6 +1278,8 @@ impl<'a> TransformableWidget<'a> {
             ended_rotating: initial_active_handle.is_some()
                 && self.state.active_handle.is_none()
                 && matches!(initial_mode, TransformHandleMode::Rotate),
+            mouse_down: interact_response.is_pointer_button_down_on(),
+            clicked: interact_response.clicked(),
         }
     }
 
@@ -1156,60 +1353,58 @@ impl<'a> TransformableWidget<'a> {
             Sense::hover(),
         );
 
-        ui.with_layer_id(LayerId::new(Order::Tooltip, Id::new(123456)), |ui| {
-            ui.painter()
-                .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
+        ui.painter()
+            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
 
-            let left_half_rect =
-                Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
+        let left_half_rect =
+            Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
 
-            let right_half_rect =
-                Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
+        let right_half_rect =
+            Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
 
-            if ui
-                .put(
-                    Rect::from_center_size(left_half_rect.center(), button_size),
-                    Button::image(
-                        Image::from(Asset::resize())
-                            .tint(Color32::WHITE)
-                            .fit_to_exact_size(button_size * 0.8),
-                    )
-                    .fill(
-                        if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                            Color32::from_gray(100)
-                        } else {
-                            Color32::from_gray(50)
-                        },
-                    )
-                    .sense(Sense::click()),
+        if ui
+            .put(
+                Rect::from_center_size(left_half_rect.center(), button_size),
+                Button::image(
+                    Image::from(Asset::resize())
+                        .tint(Color32::WHITE)
+                        .fit_to_exact_size(button_size * 0.8),
                 )
-                .clicked()
-            {
-                self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
-            }
-
-            if ui
-                .put(
-                    Rect::from_center_size(right_half_rect.center(), button_size),
-                    Button::image(
-                        Image::from(Asset::rotate())
-                            .tint(Color32::WHITE)
-                            .fit_to_exact_size(button_size * 0.8),
-                    )
-                    .fill(
-                        if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                            Color32::from_gray(100)
-                        } else {
-                            Color32::from_gray(50)
-                        },
-                    )
-                    .sense(Sense::click()),
+                .fill(
+                    if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
+                        Color32::from_gray(100)
+                    } else {
+                        Color32::from_gray(50)
+                    },
                 )
-                .clicked()
-            {
-                self.state.handle_mode = TransformHandleMode::Rotate;
-            }
-        });
+                .sense(Sense::click()),
+            )
+            .clicked()
+        {
+            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
+        }
+
+        if ui
+            .put(
+                Rect::from_center_size(right_half_rect.center(), button_size),
+                Button::image(
+                    Image::from(Asset::rotate())
+                        .tint(Color32::WHITE)
+                        .fit_to_exact_size(button_size * 0.8),
+                )
+                .fill(
+                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
+                        Color32::from_gray(100)
+                    } else {
+                        Color32::from_gray(50)
+                    },
+                )
+                .sense(Sense::click()),
+            )
+            .clicked()
+        {
+            self.state.handle_mode = TransformHandleMode::Rotate;
+        }
 
         response
     }

@@ -1,6 +1,4 @@
-use eframe::egui::{self, Grid, Response, Widget};
-
-use crate::widget::page_canvas::Canvas;
+use eframe::egui::{self, Response};
 
 use super::layers::{Layer, Layers};
 

@@ -86,3 +86,13 @@ impl RectExt for Rect {
         Rect::from_min_max(Pos2::new(min_x, min_y), Pos2::new(max_x, max_y))
     }
 }
+
+pub trait Toggle {
+    fn toggle(&mut self);
+}
+
+impl Toggle for bool {
+    fn toggle(&mut self) {
+        *self = !*self;
+    }
+}

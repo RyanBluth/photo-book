@@ -12,7 +12,7 @@ impl CursorManager {
         }
     }
 
-    pub fn begin_frame(&mut self, ctx: &Context) {
+    pub fn begin_frame(&mut self, _ctx: &Context) {
         self.current_frame_cursor = None;
     }
 

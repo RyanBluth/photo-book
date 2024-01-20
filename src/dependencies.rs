@@ -1,11 +1,10 @@
 use std::{
     marker::PhantomData,
-    sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use crate::{
     cursor_manager::CursorManager,
-    image_cache::ImageCache,
     photo_manager::PhotoManager,
 };
 
@@ -60,8 +59,6 @@ pub trait SingletonFor<T> {
 }
 
 pub struct Dependency<T>(PhantomData<T>);
-
-singleton!(IMAGE_CACHE_INSTANCE, ImageCache, ImageCache::new());
 
 singleton!(PHOTO_MANAGER_INSTANCE, PhotoManager, PhotoManager::new());
 

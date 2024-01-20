@@ -5,17 +5,16 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{
-    self, CentralPanel, Context, SidePanel, TopBottomPanel, Ui, ViewportBuilder, Widget,
+    self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget,
 };
 
 use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
 use tokio::runtime;
 use widget::{
-    canvas_info::panel::CanvasInfo,
     image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
     image_viewer::{self, ImageViewer, ImageViewerState},
-    page_canvas::{Canvas, CanvasPhoto, CanvasResponse, CanvasScene, CanvasState},
+    page_canvas::{CanvasResponse, CanvasScene, CanvasState},
     photo_info::PhotoInfo,
 };
 
@@ -25,7 +24,6 @@ use string_log::{ArcStringLog, StringLog};
 mod assets;
 mod dependencies;
 mod error_sink;
-mod image_cache;
 mod persistence;
 mod photo;
 mod photo_manager;
@@ -186,7 +184,7 @@ impl MyApp {
 
         match mode {
             PrimaryComponent::Gallery { state } => {
-                let mut gallery_response = CentralPanel::default()
+                let gallery_response = CentralPanel::default()
                     .show(ctx, |ui| ImageGallery::show(ui, state))
                     .inner;
 

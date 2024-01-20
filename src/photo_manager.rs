@@ -2,8 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::read_dir,
     io::BufWriter,
-    path::{Path, PathBuf},
-    thread,
+    path::{PathBuf},
 };
 
 use eframe::{
@@ -19,7 +18,7 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
-use rayon::{iter::ParallelBridge, prelude::ParallelIterator};
+use rayon::{prelude::ParallelIterator};
 use tokio::task::spawn_blocking;
 
 use crate::{
@@ -27,8 +26,8 @@ use crate::{
     photo::Photo,
 };
 
-use eframe::egui::SizeHint::Size;
-use eframe::egui::{self, TextureOptions};
+
+
 
 use std::fs::create_dir;
 
@@ -210,11 +209,10 @@ impl PhotoManager {
             &mut self.texture_cache,
             &mut self.pending_textures,
         ) {
-            Result::Ok(Some(tex)) => return Ok(Some(tex)),
+            Result::Ok(Some(tex)) => Ok(Some(tex)),
             _ => Ok(self
                 .texture_cache
-                .get(&photo.thumbnail_uri())
-                .map(|x| x.clone())),
+                .get(&photo.thumbnail_uri()).copied()),
         }
     }
 

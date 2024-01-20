@@ -1,8 +1,7 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use eframe::{
-    egui::{self, menu, Key, Layout, Ui},
-    emath::Align,
+    egui::{menu, Key, Ui},
     epaint::Vec2,
 };
 use egui_extras::Column;
@@ -11,11 +10,10 @@ use log::info;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    photo::Photo,
     photo_manager::PhotoManager,
 };
 
-use super::{gallery_image::GalleryImage, page_canvas::TransformableWidget, spacer::Spacer};
+use super::{gallery_image::GalleryImage, spacer::Spacer};
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub struct ImageGalleryState {
