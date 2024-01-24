@@ -1,4 +1,7 @@
-use eframe::{epaint::{Rect, Vec2, Pos2}, emath::Rot2};
+use eframe::{
+    emath::Rot2,
+    epaint::{Pos2, Rect, Vec2},
+};
 
 macro_rules! guard_let {
     ($x:ident, $y:expr) => {
@@ -23,7 +26,10 @@ pub trait Truncate {
     fn truncate(&self, max_length: usize) -> String;
 }
 
-impl<T> Truncate for T where T: ToString + std::fmt::Display {
+impl<T> Truncate for T
+where
+    T: ToString + std::fmt::Display,
+{
     fn truncate(&self, max_length: usize) -> String {
         let string = self.to_string();
         if string.len() > max_length {
@@ -37,6 +43,8 @@ impl<T> Truncate for T where T: ToString + std::fmt::Display {
 pub trait RectExt {
     fn constrain_to(&self, rect: Rect) -> Rect;
     fn rotate_bb_around_center(&self, angle: f32) -> Rect;
+    fn to_local_space(&self, parent: Rect) -> Rect;
+    fn to_world_space(&self, parent: Rect) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -52,7 +60,8 @@ impl RectExt for Rect {
             constrained = constrained.translate(Vec2::new(0.0, rect.top() - constrained.top()));
         }
         if constrained.bottom() > rect.bottom() {
-            constrained = constrained.translate(Vec2::new(0.0, rect.bottom() - constrained.bottom()));
+            constrained =
+                constrained.translate(Vec2::new(0.0, rect.bottom() - constrained.bottom()));
         }
         constrained
     }
@@ -67,7 +76,7 @@ impl RectExt for Rect {
         let rotation = Rot2::from_angle(angle);
         let rotated_top_left = rotation * top_left;
         let rotated_top_right = rotation * top_right;
-        let rotated_bottom_left = rotation* bottom_left;
+        let rotated_bottom_left = rotation * bottom_left;
         let rotated_bottom_right = rotation * bottom_right;
 
         let rotated_corners = [
@@ -78,12 +87,38 @@ impl RectExt for Rect {
         ];
 
         // Find the minimum and maximum points among the rotated corners
-        let min_x = rotated_corners.iter().map(|p| p.x).fold(f32::INFINITY, f32::min);
-        let max_x = rotated_corners.iter().map(|p| p.x).fold(f32::NEG_INFINITY, f32::max);
-        let min_y = rotated_corners.iter().map(|p| p.y).fold(f32::INFINITY, f32::min);
-        let max_y = rotated_corners.iter().map(|p| p.y).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = rotated_corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f32::INFINITY, f32::min);
+        let max_x = rotated_corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = rotated_corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::INFINITY, f32::min);
+        let max_y = rotated_corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::NEG_INFINITY, f32::max);
 
         Rect::from_min_max(Pos2::new(min_x, min_y), Pos2::new(max_x, max_y))
+    }
+
+    fn to_local_space(&self, parent: Rect) -> Rect {
+        let mut local = *self;
+        local.min -= parent.min.to_vec2();
+        local.max -= parent.min.to_vec2();
+        local
+    }
+
+    fn to_world_space(&self, parent: Rect) -> Rect {
+        let mut world = *self;
+        world.min += parent.min.to_vec2();
+        world.max += parent.min.to_vec2();
+        world
     }
 }
 

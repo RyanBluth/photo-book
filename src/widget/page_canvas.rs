@@ -5,8 +5,8 @@ use eframe::{
         self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image, Response, Sense,
         SidePanel, Ui,
     },
-    emath::Rot2,
-    epaint::{Color32, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
+    emath::{Align2, Rot2},
+    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
 
 use crate::{
@@ -140,6 +140,7 @@ impl CanvasPhoto {
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
                 last_frame_rotation: None,
+                scale: Vec2::splat(1.0),
             },
             id,
             set_initial_position: false,
@@ -298,6 +299,7 @@ impl CanvasState {
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
                 last_frame_rotation: None,
+                scale: Vec2::splat(1.0),
             },
             id: 0,
             set_initial_position: false,
@@ -369,38 +371,113 @@ impl CanvasState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MultiSelect {
     transformable_state: TransformableState,
-    selected_layers: Vec<usize>,
+    selected_layers: Vec<MultiSelectChild>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MultiSelectChild {
+    transformable_state: TransformableState,
+    id: usize,
 }
 
 impl MultiSelect {
     fn new(layers: &[Layer]) -> Self {
-        let mut res = Self {
-            transformable_state: TransformableState {
-                rect: Rect::ZERO,
-                active_handle: None,
-                is_moving: false,
-                handle_mode: TransformHandleMode::default(),
-                rotation: 0.0,
-                last_frame_rotation: None,
-            },
+        let selected_ids = layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.selected)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        let rect = Self::compute_rect(layers, &selected_ids);
+        let transformable_state = TransformableState {
+            rect,
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::default(),
+            rotation: 0.0,
+            last_frame_rotation: None,
+            scale: Vec2::splat(1.0),
+        };
+
+        let res = Self {
+            transformable_state: transformable_state.clone(),
             selected_layers: layers
                 .iter()
                 .filter(|x| x.selected)
                 .enumerate()
-                .map(|(i, _)| i)
+                .map(|(i, transform)| MultiSelectChild {
+                    transformable_state: transform
+                        .photo
+                        .transform_state
+                        .to_local_space(&transformable_state),
+                    id: i,
+                })
                 .collect(),
         };
-        res.transformable_state.rect = res.compute_rect(layers);
         res
+    }
+
+    fn update_selected<'a>(&'a mut self, layers: &'a [Layer]) {
+        let selected_layer_ids = layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.selected)
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        let added_layers = layers
+            .iter()
+            .enumerate()
+            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, layer)| {
+                !self
+                    .selected_layers
+                    .iter()
+                    .any(|child| child.id == layer.photo.id)
+            })
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        let removed_layers = self
+            .selected_layers
+            .iter()
+            .filter(|child| !selected_layer_ids.iter().any(|id| child.id == *id))
+            .map(|child| child.id)
+            .collect::<Vec<_>>();
+
+        for layer_id in removed_layers {
+            self.selected_layers.retain(|child| child.id != layer_id);
+        }
+
+        let joined_selected_ids: Vec<usize> = selected_layer_ids
+            .iter()
+            .chain(self.selected_layers.iter().map(|child| &child.id))
+            .map(|x| *x)
+            .collect();
+
+        let new_rect = Self::compute_rect(layers, &joined_selected_ids);
+
+        self.transformable_state.rect = new_rect;
+
+        for layer in added_layers {
+            self.selected_layers.push(MultiSelectChild {
+                transformable_state: layers[layer]
+                    .photo
+                    .transform_state
+                    .to_local_space(&self.transformable_state),
+                id: layer,
+            });
+        }
     }
 }
 
 impl MultiSelect {
-    fn compute_rect(&self, layers: &[Layer]) -> Rect {
+    fn compute_rect(layers: &[Layer], selected_layers: &[usize]) -> Rect {
         let mut min = Vec2::splat(std::f32::MAX);
         let mut max = Vec2::splat(std::f32::MIN);
 
-        for layer_id in &self.selected_layers {
+        for layer_id in selected_layers {
             let layer = &layers[*layer_id];
 
             let rect = layer.photo.transform_state.rect;
@@ -513,6 +590,12 @@ impl<'a> Canvas<'a> {
             }
         }
 
+        self.draw_multi_select(ui, rect);
+
+        None
+    }
+
+    fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
         let selected_layer_ids = self
             .state
             .layers
@@ -524,9 +607,8 @@ impl<'a> Canvas<'a> {
 
         if selected_layer_ids.len() > 1 {
             if let Some(multi_select) = &mut self.state.multi_select {
-                multi_select.selected_layers = selected_layer_ids;
+                multi_select.update_selected(&self.state.layers);
             } else {
-                println!("Creating multi select");
                 self.state.multi_select = Some(MultiSelect::new(&self.state.layers));
             }
         } else {
@@ -540,6 +622,7 @@ impl<'a> Canvas<'a> {
                 let mut transform_state = multi_select.transformable_state.clone();
 
                 let pre_transform_rect = transform_state.rect;
+                let pre_transform_rotation = transform_state.rotation;
 
                 let transform_response =
                     TransformableWidget::new(&mut transform_state).show(
@@ -550,8 +633,8 @@ impl<'a> Canvas<'a> {
                         true,
                         |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                             // Apply transformation to the transformable_state of each layer in the multi select
-                            for layer_id in &multi_select.selected_layers {
-                                let layer = &mut self.state.layers[*layer_id];
+                            for child in &multi_select.selected_layers {
+                                let layer = &mut self.state.layers[child.id];
 
                                 let delta_left =
                                     transformable_state.rect.left() - pre_transform_rect.left();
@@ -629,6 +712,93 @@ impl<'a> Canvas<'a> {
                                             - relative_bottom * transformable_state.rect.height(),
                                     );
                                 }
+
+                                let layer_center_relative_to_group =
+                                    layer.photo.transform_state.rect.center()
+                                        - transformable_state.rect.center().to_vec2();
+
+                                let pre_vec_x = Vec2::new(
+                                    pre_transform_rotation.cos(),
+                                    pre_transform_rotation.sin(),
+                                );
+
+                                let pre_vec_y = Vec2::new(
+                                    pre_transform_rotation.sin(),
+                                    -pre_transform_rotation.cos(),
+                                );
+
+                                let pre_rot_vec = Vec2::new(
+                                    pre_transform_rotation.cos() * layer_center_relative_to_group.x,
+                                    pre_transform_rotation.sin() * layer_center_relative_to_group.y,
+                                );
+
+                                let pre_rotated_center = layer_center_relative_to_group.x
+                                    * pre_vec_x
+                                    + layer_center_relative_to_group.y * pre_vec_y;
+
+                                let rotation = transformable_state.rotation;
+
+                                let vec_x = Vec2::new(rotation.cos(), rotation.sin());
+                                let vec_y = Vec2::new(-rotation.sin(), rotation.cos());
+
+                                let painter = ui.painter();
+
+                                painter.line_segment(
+                                    [
+                                        transformable_state.rect.center(),
+                                        (transformable_state.rect.center() + (vec_x * 1000.0)),
+                                    ],
+                                    Stroke::new(2.0, Color32::RED),
+                                );
+
+                                painter.line_segment(
+                                    [
+                                        transformable_state.rect.center(),
+                                        (transformable_state.rect.center() + (vec_y * 1000.0)),
+                                    ],
+                                    Stroke::new(2.0, Color32::GREEN),
+                                );
+
+                                painter.line_segment(
+                                    [
+                                        transformable_state.rect.center(),
+                                        (transformable_state.rect.center() + (pre_rot_vec)),
+                                    ],
+                                    Stroke::new(5.0, Color32::LIGHT_BLUE),
+                                );
+
+                                painter.text(
+                                    transformable_state.rect.center(),
+                                    Align2::CENTER_CENTER,
+                                    format!(
+                                        "Rotation: {}\n VecX: {:?} VecY: {:?}",
+                                        rotation.to_degrees(),
+                                        vec_x,
+                                        vec_y
+                                    ),
+                                    FontId::default(),
+                                    Color32::BLUE,
+                                );
+
+                                let rotated_center = layer_center_relative_to_group.x * vec_x
+                                    + layer_center_relative_to_group.y * vec_y;
+
+                                painter.line_segment(
+                                    [
+                                        transformable_state.rect.center(),
+                                        transformable_state.rect.center()
+                                            - rotated_center.to_pos2().to_vec2(),
+                                    ],
+                                    Stroke::new(3.0, Color32::YELLOW),
+                                );
+
+                                let rotation_offset = rotated_center - pre_rotated_center;
+
+                                layer.photo.transform_state.rect.set_center(
+                                    (transformable_state.rect.center() + (pre_rot_vec)),
+                                );
+
+                                layer.photo.transform_state.rotation = rotation;
                             }
                         },
                     );
@@ -643,8 +813,6 @@ impl<'a> Canvas<'a> {
                 }
             }
         }
-
-        None
     }
 
     fn draw_layer(
@@ -654,7 +822,7 @@ impl<'a> Canvas<'a> {
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
         let layer = &mut self.state.layers[layer_id];
-        let active = layer.selected && self.state.multi_select.is_none();
+        let active = true; //layer.selected && self.state.multi_select.is_none();
 
         ui.push_id(format!("CanvasPhoto_{}", layer.photo.id), |ui| {
             self.photo_manager.with_lock_mut(|photo_manager| {
@@ -692,7 +860,8 @@ impl<'a> Canvas<'a> {
 
                             mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
 
-                            let mesh_center = mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
+                            let mesh_center: Pos2 =
+                                mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
 
                             mesh.rotate(
                                 Rot2::from_angle(layer.photo.photo.metadata.rotation().radians()),
@@ -874,6 +1043,24 @@ pub struct TransformableState {
     pub handle_mode: TransformHandleMode,
     pub rotation: f32,
     pub last_frame_rotation: Option<f32>,
+    pub scale: Vec2,
+}
+
+impl TransformableState {
+    fn to_local_space(&self, parent: &TransformableState) -> Self {
+        let mut new_rect = self.rect;
+        new_rect.set_center(parent.rect.center() - self.rect.center().to_vec2());
+
+        TransformableState {
+            rect: new_rect,
+            active_handle: self.active_handle,
+            is_moving: self.is_moving,
+            handle_mode: self.handle_mode,
+            rotation: 0.0,
+            last_frame_rotation: None,
+            scale: Vec2::splat(1.0),
+        }
+    }
 }
 
 pub struct TransformableWidget<'a> {
@@ -927,7 +1114,7 @@ impl<'a> TransformableWidget<'a> {
         let translated_rect_center = container_rect.center() + global_offset - scaled_photo_center;
 
         // Scale the size of the photo
-        let scaled_photo_size = self.state.rect.size() * global_scale;
+        let scaled_photo_size = self.state.rect.size() * global_scale * self.state.scale;
 
         // Create the new scaled and translated rect for the photo
         let pre_rotated_inner_content_rect = Rect::from_min_size(
@@ -1029,10 +1216,14 @@ impl<'a> TransformableWidget<'a> {
                         .ctx()
                         .input(|input| (input.modifiers.shift, input.modifiers.alt));
 
+                    let mut scaled_rect = self.state.rect;
+                    scaled_rect.set_width(self.state.rect.width() * self.state.scale.x);
+                    scaled_rect.set_height(self.state.rect.height() * self.state.scale.y);
+
                     match (self.state.handle_mode, shift_pressed, alt_pressed) {
                         (TransformHandleMode::Resize(ResizeMode::MirrorAxis), _, _)
                         | (TransformHandleMode::Resize(ResizeMode::Free), false, true) => {
-                            let mut new_rect = self.state.rect;
+                            let mut new_rect = scaled_rect;
 
                             match handle {
                                 TransformHandle::TopLeft => {
@@ -1082,11 +1273,14 @@ impl<'a> TransformableWidget<'a> {
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
+                            self.state.scale = Vec2::new(
+                                new_rect.width() / self.state.rect.width(),
+                                new_rect.height() / self.state.rect.height(),
+                            );
                         }
                         (TransformHandleMode::Resize(ResizeMode::ConstrainedAspectRatio), _, _)
                         | (TransformHandleMode::Resize(ResizeMode::Free), true, false) => {
-                            let mut new_rect = self.state.rect;
+                            let mut new_rect = scaled_rect;
 
                             let (ratio_x, ratio_y) = if new_rect.width() > new_rect.height() {
                                 (new_rect.width() / new_rect.height(), 1.0)
@@ -1141,25 +1335,40 @@ impl<'a> TransformableWidget<'a> {
                                     new_rect.max.x += delta_x;
                                     new_rect.max.y += delta_y;
                                 }
-                                TransformHandle::MiddleTop | TransformHandle::MiddleBottom => {
+                                TransformHandle::MiddleTop => {
                                     new_rect.min.y -= delta.y * ratio_y * -1.0;
                                     new_rect.max.y += delta.y * ratio_y * -1.0;
                                     new_rect.min.x -= delta.y * ratio_x * -1.0;
                                     new_rect.max.x += delta.y * ratio_x * -1.0;
                                 }
-                                TransformHandle::MiddleLeft | TransformHandle::MiddleRight => {
+                                TransformHandle::MiddleLeft => {
                                     new_rect.min.y += delta.x * ratio_y;
                                     new_rect.max.y -= delta.x * ratio_y;
                                     new_rect.min.x += delta.x * ratio_x;
                                     new_rect.max.x -= delta.x * ratio_x;
                                 }
+                                TransformHandle::MiddleRight => {
+                                    new_rect.min.y -= delta.x * ratio_y;
+                                    new_rect.max.y += delta.x * ratio_y;
+                                    new_rect.min.x -= delta.x * ratio_x;
+                                    new_rect.max.x += delta.x * ratio_x;
+                                }
+                                TransformHandle::MiddleBottom => {
+                                    new_rect.min.y -= delta.y * ratio_y;
+                                    new_rect.max.y += delta.y * ratio_y;
+                                    new_rect.min.x -= delta.y * ratio_x;
+                                    new_rect.max.x += delta.y * ratio_x;
+                                }
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
+                            self.state.scale = Vec2::new(
+                                new_rect.width() / self.state.rect.width(),
+                                new_rect.height() / self.state.rect.height(),
+                            );
                         }
                         (TransformHandleMode::Resize(ResizeMode::Free), _, _) => {
-                            let mut new_rect = self.state.rect;
+                            let mut new_rect = scaled_rect;
 
                             match handle {
                                 TransformHandle::TopLeft => {
@@ -1193,7 +1402,15 @@ impl<'a> TransformableWidget<'a> {
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
+                            self.state.scale = Vec2::new(
+                                new_rect.width() / self.state.rect.width(),
+                                new_rect.height() / self.state.rect.height(),
+                            );
+
+                            self.state.rect = self
+                                .state
+                                .rect
+                                .translate((scaled_rect.center() - new_rect.center()) * -1.0);
                         }
                         (TransformHandleMode::Rotate, _, _) => {
                             if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
