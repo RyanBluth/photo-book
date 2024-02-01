@@ -139,8 +139,8 @@ impl CanvasPhoto {
                 is_moving: false,
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
-                last_frame_rotation: None,
-                scale: Vec2::splat(1.0),
+                last_frame_rotation: 0.0,
+                last_frame_change_in_rotation: None,
             },
             id,
             set_initial_position: false,
@@ -298,8 +298,8 @@ impl CanvasState {
                 is_moving: false,
                 handle_mode: TransformHandleMode::default(),
                 rotation: 0.0,
-                last_frame_rotation: None,
-                scale: Vec2::splat(1.0),
+                last_frame_rotation: 0.0,
+                last_frame_change_in_rotation: None,
             },
             id: 0,
             set_initial_position: false,
@@ -396,8 +396,8 @@ impl MultiSelect {
             is_moving: false,
             handle_mode: TransformHandleMode::default(),
             rotation: 0.0,
-            last_frame_rotation: None,
-            scale: Vec2::splat(1.0),
+            last_frame_rotation: 0.0,
+            last_frame_change_in_rotation: None,
         };
 
         let res = Self {
@@ -596,6 +596,7 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
+        
         let selected_layer_ids = self
             .state
             .layers
@@ -622,7 +623,6 @@ impl<'a> Canvas<'a> {
                 let mut transform_state = multi_select.transformable_state.clone();
 
                 let pre_transform_rect = transform_state.rect;
-                let pre_transform_rotation = transform_state.rotation;
 
                 let transform_response =
                     TransformableWidget::new(&mut transform_state).show(
@@ -636,169 +636,114 @@ impl<'a> Canvas<'a> {
                             for child in &multi_select.selected_layers {
                                 let layer = &mut self.state.layers[child.id];
 
-                                let delta_left =
-                                    transformable_state.rect.left() - pre_transform_rect.left();
-                                let delta_top =
-                                    transformable_state.rect.top() - pre_transform_rect.top();
-                                let delta_right =
-                                    transformable_state.rect.right() - pre_transform_rect.right();
-                                let delta_bottom =
-                                    transformable_state.rect.bottom() - pre_transform_rect.bottom();
+                                // Compute the relative position of the layer in the group so we can apply transformations
+                                // to each side as they are adjusted at the group level
+                                // This accounts for scaling and translation
+                                {
+                                    let delta_left =
+                                        transformable_state.rect.left() - pre_transform_rect.left();
+                                    let delta_top =
+                                        transformable_state.rect.top() - pre_transform_rect.top();
+                                    let delta_right = transformable_state.rect.right()
+                                        - pre_transform_rect.right();
+                                    let delta_bottom = transformable_state.rect.bottom()
+                                        - pre_transform_rect.bottom();
 
-                                let relative_top = (pre_transform_rect.top()
-                                    - layer.photo.transform_state.rect.top())
-                                .abs()
-                                    / pre_transform_rect.height();
+                                    let relative_top = (pre_transform_rect.top()
+                                        - layer.photo.transform_state.rect.top())
+                                    .abs()
+                                        / pre_transform_rect.height();
 
-                                let relative_left = (pre_transform_rect.left()
-                                    - layer.photo.transform_state.rect.left())
-                                .abs()
-                                    / pre_transform_rect.width();
+                                    let relative_left = (pre_transform_rect.left()
+                                        - layer.photo.transform_state.rect.left())
+                                    .abs()
+                                        / pre_transform_rect.width();
 
-                                let relative_right = (pre_transform_rect.right()
-                                    - layer.photo.transform_state.rect.right())
-                                .abs()
-                                    / pre_transform_rect.width();
+                                    let relative_right = (pre_transform_rect.right()
+                                        - layer.photo.transform_state.rect.right())
+                                    .abs()
+                                        / pre_transform_rect.width();
 
-                                let relative_bottom = (pre_transform_rect.bottom()
-                                    - layer.photo.transform_state.rect.bottom())
-                                .abs()
-                                    / pre_transform_rect.height();
+                                    let relative_bottom = (pre_transform_rect.bottom()
+                                        - layer.photo.transform_state.rect.bottom())
+                                    .abs()
+                                        / pre_transform_rect.height();
 
-                                layer
-                                    .photo
-                                    .transform_state
-                                    .rect
-                                    .set_left(layer.photo.transform_state.rect.left() + delta_left);
-
-                                layer
-                                    .photo
-                                    .transform_state
-                                    .rect
-                                    .set_top(layer.photo.transform_state.rect.top() + delta_top);
-
-                                layer.photo.transform_state.rect.set_right(
-                                    layer.photo.transform_state.rect.right() + delta_right,
-                                );
-
-                                layer.photo.transform_state.rect.set_bottom(
-                                    layer.photo.transform_state.rect.bottom() + delta_bottom,
-                                );
-
-                                if relative_top > 0.0 {
-                                    layer.photo.transform_state.rect.set_top(
-                                        transformable_state.rect.top()
-                                            + relative_top * transformable_state.rect.height(),
-                                    );
-                                }
-
-                                if relative_left > 0.0 {
                                     layer.photo.transform_state.rect.set_left(
-                                        transformable_state.rect.left()
-                                            + relative_left * transformable_state.rect.width(),
+                                        layer.photo.transform_state.rect.left() + delta_left,
                                     );
-                                }
 
-                                if relative_right > 0.0 {
+                                    layer.photo.transform_state.rect.set_top(
+                                        layer.photo.transform_state.rect.top() + delta_top,
+                                    );
+
                                     layer.photo.transform_state.rect.set_right(
-                                        transformable_state.rect.right()
-                                            - relative_right * transformable_state.rect.width(),
+                                        layer.photo.transform_state.rect.right() + delta_right,
                                     );
-                                }
 
-                                if relative_bottom > 0.0 {
                                     layer.photo.transform_state.rect.set_bottom(
-                                        transformable_state.rect.bottom()
-                                            - relative_bottom * transformable_state.rect.height(),
+                                        layer.photo.transform_state.rect.bottom() + delta_bottom,
                                     );
+
+                                    if relative_top > 0.0 {
+                                        layer.photo.transform_state.rect.set_top(
+                                            transformable_state.rect.top()
+                                                + relative_top * transformable_state.rect.height(),
+                                        );
+                                    }
+
+                                    if relative_left > 0.0 {
+                                        layer.photo.transform_state.rect.set_left(
+                                            transformable_state.rect.left()
+                                                + relative_left * transformable_state.rect.width(),
+                                        );
+                                    }
+
+                                    if relative_right > 0.0 {
+                                        layer.photo.transform_state.rect.set_right(
+                                            transformable_state.rect.right()
+                                                - relative_right * transformable_state.rect.width(),
+                                        );
+                                    }
+
+                                    if relative_bottom > 0.0 {
+                                        layer.photo.transform_state.rect.set_bottom(
+                                            transformable_state.rect.bottom()
+                                                - relative_bottom
+                                                    * transformable_state.rect.height(),
+                                        );
+                                    }
                                 }
 
-                                let layer_center_relative_to_group =
-                                    layer.photo.transform_state.rect.center()
-                                        - transformable_state.rect.center().to_vec2();
+                                // Now rotate the layer while maintaining the relative position of the layer in the group
+                                {
+                                    let last_frame_rotation =
+                                        transformable_state.last_frame_rotation;
 
-                                let pre_vec_x = Vec2::new(
-                                    pre_transform_rotation.cos(),
-                                    pre_transform_rotation.sin(),
-                                );
+                                    // Get the relative vec from the center of the group to the center of the layer
+                                    // We can treat this a rotation of 0
+                                    let layer_center_relative_to_group =
+                                        transformable_state.rect.center().to_vec2()
+                                            - layer.photo.transform_state.rect.center().to_vec2();
 
-                                let pre_vec_y = Vec2::new(
-                                    pre_transform_rotation.sin(),
-                                    -pre_transform_rotation.cos(),
-                                );
+                                    // Since we're treating the layer as if it's not rotated we can just
+                                    // rotate the layer_center_relative_to_group by the change in rotation
+                                    let rotation =
+                                        transformable_state.rotation - last_frame_rotation;
 
-                                let pre_rot_vec = Vec2::new(
-                                    pre_transform_rotation.cos() * layer_center_relative_to_group.x,
-                                    pre_transform_rotation.sin() * layer_center_relative_to_group.y,
-                                );
+                                    let vec_x = Vec2::new(rotation.cos(), rotation.sin());
+                                    let vec_y = Vec2::new(-rotation.sin(), rotation.cos());
 
-                                let pre_rotated_center = layer_center_relative_to_group.x
-                                    * pre_vec_x
-                                    + layer_center_relative_to_group.y * pre_vec_y;
+                                    let rotated_center = layer_center_relative_to_group.x * (vec_x)
+                                        + layer_center_relative_to_group.y * (vec_y);
 
-                                let rotation = transformable_state.rotation;
+                                    layer.photo.transform_state.rect.set_center(
+                                        transformable_state.rect.center() + rotated_center,
+                                    );
 
-                                let vec_x = Vec2::new(rotation.cos(), rotation.sin());
-                                let vec_y = Vec2::new(-rotation.sin(), rotation.cos());
-
-                                let painter = ui.painter();
-
-                                painter.line_segment(
-                                    [
-                                        transformable_state.rect.center(),
-                                        (transformable_state.rect.center() + (vec_x * 1000.0)),
-                                    ],
-                                    Stroke::new(2.0, Color32::RED),
-                                );
-
-                                painter.line_segment(
-                                    [
-                                        transformable_state.rect.center(),
-                                        (transformable_state.rect.center() + (vec_y * 1000.0)),
-                                    ],
-                                    Stroke::new(2.0, Color32::GREEN),
-                                );
-
-                                painter.line_segment(
-                                    [
-                                        transformable_state.rect.center(),
-                                        (transformable_state.rect.center() + (pre_rot_vec)),
-                                    ],
-                                    Stroke::new(5.0, Color32::LIGHT_BLUE),
-                                );
-
-                                painter.text(
-                                    transformable_state.rect.center(),
-                                    Align2::CENTER_CENTER,
-                                    format!(
-                                        "Rotation: {}\n VecX: {:?} VecY: {:?}",
-                                        rotation.to_degrees(),
-                                        vec_x,
-                                        vec_y
-                                    ),
-                                    FontId::default(),
-                                    Color32::BLUE,
-                                );
-
-                                let rotated_center = layer_center_relative_to_group.x * vec_x
-                                    + layer_center_relative_to_group.y * vec_y;
-
-                                painter.line_segment(
-                                    [
-                                        transformable_state.rect.center(),
-                                        transformable_state.rect.center()
-                                            - rotated_center.to_pos2().to_vec2(),
-                                    ],
-                                    Stroke::new(3.0, Color32::YELLOW),
-                                );
-
-                                let rotation_offset = rotated_center - pre_rotated_center;
-
-                                layer.photo.transform_state.rect.set_center(
-                                    (transformable_state.rect.center() + (pre_rot_vec)),
-                                );
-
-                                layer.photo.transform_state.rotation = rotation;
+                                    layer.photo.transform_state.rotation +=
+                                        transformable_state.rotation - last_frame_rotation;
+                                }
                             }
                         },
                     );
@@ -822,7 +767,7 @@ impl<'a> Canvas<'a> {
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
         let layer = &mut self.state.layers[layer_id];
-        let active = true; //layer.selected && self.state.multi_select.is_none();
+        let active = layer.selected && self.state.multi_select.is_none();
 
         ui.push_id(format!("CanvasPhoto_{}", layer.photo.id), |ui| {
             self.photo_manager.with_lock_mut(|photo_manager| {
@@ -1042,8 +987,8 @@ pub struct TransformableState {
     pub is_moving: bool,
     pub handle_mode: TransformHandleMode,
     pub rotation: f32,
-    pub last_frame_rotation: Option<f32>,
-    pub scale: Vec2,
+    pub last_frame_rotation: f32,
+    pub last_frame_change_in_rotation: Option<f32>,
 }
 
 impl TransformableState {
@@ -1057,8 +1002,8 @@ impl TransformableState {
             is_moving: self.is_moving,
             handle_mode: self.handle_mode,
             rotation: 0.0,
-            last_frame_rotation: None,
-            scale: Vec2::splat(1.0),
+            last_frame_rotation: 0.0,
+            last_frame_change_in_rotation: None,
         }
     }
 }
@@ -1105,6 +1050,8 @@ impl<'a> TransformableWidget<'a> {
         let initial_active_handle = self.state.active_handle;
         let initial_mode = self.state.handle_mode;
 
+        self.state.last_frame_rotation = self.state.rotation;
+
         let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
 
         // Scale the position of the center of the photo
@@ -1114,7 +1061,7 @@ impl<'a> TransformableWidget<'a> {
         let translated_rect_center = container_rect.center() + global_offset - scaled_photo_center;
 
         // Scale the size of the photo
-        let scaled_photo_size = self.state.rect.size() * global_scale * self.state.scale;
+        let scaled_photo_size = self.state.rect.size() * global_scale;
 
         // Create the new scaled and translated rect for the photo
         let pre_rotated_inner_content_rect = Rect::from_min_size(
@@ -1200,14 +1147,15 @@ impl<'a> TransformableWidget<'a> {
                 if !interact_response.is_pointer_button_down_on()
                     && self.state.active_handle == Some(*handle)
                 {
+                    self.state.last_frame_change_in_rotation = None;
                     self.state.active_handle = None;
-                    self.state.last_frame_rotation = None;
                 }
 
-                if interact_response
+                if (interact_response
                     .interact_pointer_pos()
                     .map(|pos| handle_rect.contains(pos))
                     .unwrap_or(false)
+                    && self.state.active_handle.is_none())
                     || self.state.active_handle == Some(*handle)
                 {
                     let delta = interact_response.drag_delta() / global_scale;
@@ -1216,14 +1164,10 @@ impl<'a> TransformableWidget<'a> {
                         .ctx()
                         .input(|input| (input.modifiers.shift, input.modifiers.alt));
 
-                    let mut scaled_rect = self.state.rect;
-                    scaled_rect.set_width(self.state.rect.width() * self.state.scale.x);
-                    scaled_rect.set_height(self.state.rect.height() * self.state.scale.y);
-
                     match (self.state.handle_mode, shift_pressed, alt_pressed) {
                         (TransformHandleMode::Resize(ResizeMode::MirrorAxis), _, _)
                         | (TransformHandleMode::Resize(ResizeMode::Free), false, true) => {
-                            let mut new_rect = scaled_rect;
+                            let mut new_rect = self.state.rect;
 
                             match handle {
                                 TransformHandle::TopLeft => {
@@ -1273,14 +1217,11 @@ impl<'a> TransformableWidget<'a> {
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.scale = Vec2::new(
-                                new_rect.width() / self.state.rect.width(),
-                                new_rect.height() / self.state.rect.height(),
-                            );
+                            self.state.rect = new_rect;
                         }
                         (TransformHandleMode::Resize(ResizeMode::ConstrainedAspectRatio), _, _)
                         | (TransformHandleMode::Resize(ResizeMode::Free), true, false) => {
-                            let mut new_rect = scaled_rect;
+                            let mut new_rect = self.state.rect;
 
                             let (ratio_x, ratio_y) = if new_rect.width() > new_rect.height() {
                                 (new_rect.width() / new_rect.height(), 1.0)
@@ -1362,13 +1303,10 @@ impl<'a> TransformableWidget<'a> {
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.scale = Vec2::new(
-                                new_rect.width() / self.state.rect.width(),
-                                new_rect.height() / self.state.rect.height(),
-                            );
+                            self.state.rect = new_rect;
                         }
                         (TransformHandleMode::Resize(ResizeMode::Free), _, _) => {
-                            let mut new_rect = scaled_rect;
+                            let mut new_rect = self.state.rect;
 
                             match handle {
                                 TransformHandle::TopLeft => {
@@ -1402,15 +1340,7 @@ impl<'a> TransformableWidget<'a> {
                             };
 
                             self.state.active_handle = Some(*handle);
-                            self.state.scale = Vec2::new(
-                                new_rect.width() / self.state.rect.width(),
-                                new_rect.height() / self.state.rect.height(),
-                            );
-
-                            self.state.rect = self
-                                .state
-                                .rect
-                                .translate((scaled_rect.center() - new_rect.center()) * -1.0);
+                            self.state.rect = new_rect;
                         }
                         (TransformHandleMode::Rotate, _, _) => {
                             if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
@@ -1430,9 +1360,12 @@ impl<'a> TransformableWidget<'a> {
                                         );
 
                                 self.state.rotation += rotated_signed_angle
-                                    - self.state.last_frame_rotation.unwrap_or(0.0);
+                                    - self.state.last_frame_change_in_rotation.unwrap_or(0.0);
+                                self.state.last_frame_change_in_rotation =
+                                    Some(rotated_signed_angle);
+
                                 self.state.active_handle = Some(*handle);
-                                self.state.last_frame_rotation = Some(rotated_signed_angle);
+                                
                             }
                         }
                     }
@@ -1470,6 +1403,7 @@ impl<'a> TransformableWidget<'a> {
         } else {
             self.state.is_moving = false;
             self.state.active_handle = None;
+            self.state.last_frame_change_in_rotation = None;
         }
 
         let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
@@ -1542,12 +1476,16 @@ impl<'a> TransformableWidget<'a> {
             .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
 
         // Draw the resize handles
-        for (_, handle_pos) in handles {
+        for (handle, handle_pos) in handles {
             let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
             ui.painter().rect(
                 handle_rect,
                 1.0,
-                Color32::WHITE,
+                if Some(handle) == self.state.active_handle.as_ref() {
+                    Color32::RED
+                } else {
+                    Color32::WHITE
+                },
                 Stroke::new(2.0, Color32::BLACK),
             );
         }
