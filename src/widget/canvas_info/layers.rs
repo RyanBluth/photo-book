@@ -1,10 +1,11 @@
-use std::hash::Hasher;
+use std::{hash::Hasher, sync::Mutex};
 
 use eframe::{
     egui::{CursorIcon, Image},
     epaint::Color32,
     epaint::Vec2,
 };
+use indexmap::{IndexMap, IndexSet};
 
 use crate::{
     cursor_manager::CursorManager,
@@ -13,41 +14,61 @@ use crate::{
     photo_manager::PhotoManager,
     widget::{page_canvas::CanvasPhoto, placeholder::RectPlaceholder},
 };
-use egui_dnd::dnd;
+use egui_dnd::{dnd, utils::shift_vec};
 
 use core::hash::Hash;
 
+use once_cell::sync::Lazy;
+
+struct LayerIdGenerator {
+    next_id: LayerId,
+}
+
+pub fn next_layer_id() -> LayerId {
+    static LAYER_ID_GENERATOR: Lazy<Mutex<LayerIdGenerator>> =
+        Lazy::new(|| Mutex::new(LayerIdGenerator { next_id: 0 }));
+    let mut layer_id_generator = LAYER_ID_GENERATOR.lock().unwrap();
+    let id = layer_id_generator.next_id;
+    layer_id_generator.next_id += 1;
+    id
+}
+
+pub type LayerId = usize;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Layer {
+
     pub photo: CanvasPhoto,
     pub name: String,
     pub visible: bool,
     pub locked: bool,
     pub selected: bool,
+    pub id: LayerId,
 }
 
 impl Layer {
-    pub fn with_photo(photo: Photo, id: usize) -> Self {
+    pub fn with_photo(photo: Photo) -> Self {
         let name = photo.file_name().to_string();
         Self {
-            photo: CanvasPhoto::new(photo, id),
+            photo: CanvasPhoto::new(photo),
             name,
             visible: true,
             locked: false,
             selected: false,
+            id: next_layer_id(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct Layers<'a> {
-    layers: &'a mut Vec<Layer>,
+    layers: &'a mut IndexMap<LayerId, Layer>,
     photo_manager: Singleton<PhotoManager>,
 }
 
 impl Hash for Layer {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.photo.id.hash(state);
+        self.id.hash(state);
     }
 }
 
@@ -56,7 +77,7 @@ pub struct LayersResponse {
 }
 
 impl<'a> Layers<'a> {
-    pub fn new(layers: &'a mut Vec<Layer>) -> Self {
+    pub fn new(layers: &'a mut IndexMap<LayerId, Layer>) -> Self {
         Self {
             layers,
             photo_manager: Dependency::get(),
@@ -67,8 +88,9 @@ impl<'a> Layers<'a> {
         let mut selected_layer = None;
 
         ui.vertical(|ui| {
-            let dnd_response =
-                dnd(ui, "layers_dnd").show(self.layers.iter(), |ui, layer, handle, state| {
+            let dnd_response = dnd(ui, "layers_dnd").show(
+                self.layers.iter(),
+                |ui, (layer_id, layer), handle, state| {
                     // for layer in self.layers.iter_mut() {
                     let _layer_response = ui.horizontal(|ui| {
                         handle.ui(ui, |ui| {
@@ -122,15 +144,21 @@ impl<'a> Layers<'a> {
                             if ui.input(|i| i.pointer.primary_clicked())
                                 && ui.rect_contains_pointer(ui.max_rect())
                             {
-                                selected_layer = Some(layer.photo.id);
+                                selected_layer = Some(layer.id);
                             }
                         });
                     });
                     ui.separator();
-                });
+                },
+            );
 
-            if dnd_response.is_drag_finished() {
-                dnd_response.update_vec(&mut self.layers);
+            if let Some(drag_update) = dnd_response.final_update() {
+                let mut shifted_values = self.layers.values().collect::<Vec<_>>();
+                shift_vec(drag_update.from, drag_update.to, &mut shifted_values);
+                *self.layers = shifted_values
+                    .into_iter()
+                    .map(|layer| (layer.id, layer.clone()))
+                    .collect();
             }
         });
 

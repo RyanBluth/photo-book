@@ -1,10 +1,11 @@
 use eframe::egui::{self, Response};
+use indexmap::IndexMap;
 
-use super::layers::{Layer, Layers};
+use super::layers::{Layer, LayerId, Layers};
 
 #[derive(Debug, PartialEq)]
 pub struct CanvasInfo<'a> {
-    pub layers: &'a mut Vec<Layer>,
+    pub layers: &'a mut IndexMap<LayerId, Layer>,
 }
 
 pub struct CanvasInfoResponse {

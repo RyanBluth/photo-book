@@ -8,6 +8,7 @@ use eframe::{
     emath::{Align2, Rot2},
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
+use indexmap::{indexmap, IndexMap};
 
 use crate::{
     assets::Asset,
@@ -19,7 +20,10 @@ use crate::{
 };
 
 use super::{
-    canvas_info::{layers::Layer, panel::CanvasInfo},
+    canvas_info::{
+        layers::{next_layer_id, Layer, LayerId},
+        panel::CanvasInfo,
+    },
     image_gallery::{self, ImageGallery, ImageGalleryState},
 };
 
@@ -101,7 +105,7 @@ impl<'a> CanvasScene<'a> {
             });
 
         if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
-            self.state.select_photo(selected_layer, ctx);
+            self.state.select_photo(&selected_layer, ctx);
         }
 
         canvas_response
@@ -114,14 +118,13 @@ pub enum CanvasResponse {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
-    pub id: usize,
     pub photo: Photo,
     pub transform_state: TransformableState,
     set_initial_position: bool,
 }
 
 impl CanvasPhoto {
-    pub fn new(photo: Photo, id: usize) -> Self {
+    pub fn new(photo: Photo) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
@@ -142,7 +145,6 @@ impl CanvasPhoto {
                 last_frame_rotation: 0.0,
                 change_in_rotation: None,
             },
-            id,
             set_initial_position: false,
         }
     }
@@ -171,7 +173,7 @@ impl Display for CanvasHistoryKind {
 
 #[derive(Debug, Clone, PartialEq)]
 struct CanvasHistory {
-    layers: Vec<Layer>,
+    layers: IndexMap<LayerId, Layer>,
     multi_select: Option<MultiSelect>,
 }
 
@@ -221,7 +223,7 @@ where
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
-    layers: Vec<Layer>,
+    layers: IndexMap<LayerId, Layer>,
     zoom: f32,
     offset: Vec2,
     history_manager: HistoryManager<CanvasHistoryKind, CanvasHistory>,
@@ -262,14 +264,14 @@ impl CanvasState {
 impl CanvasState {
     pub fn new() -> Self {
         Self {
-            layers: Vec::new(),
+            layers: IndexMap::new(),
             zoom: 1.0,
             offset: Vec2::ZERO,
             history_manager: HistoryManager {
                 history: vec![(
                     CanvasHistoryKind::Initial,
                     CanvasHistory {
-                        layers: vec![],
+                        layers: IndexMap::new(),
                         multi_select: None,
                     },
                 )],
@@ -301,7 +303,6 @@ impl CanvasState {
                 last_frame_rotation: 0.0,
                 change_in_rotation: None,
             },
-            id: 0,
             set_initial_position: false,
         };
 
@@ -312,17 +313,18 @@ impl CanvasState {
             visible: true,
             locked: false,
             selected: false,
+            id: next_layer_id(),
         };
 
         Self {
-            layers: vec![layer.clone()],
+            layers: indexmap! { layer.id => layer.clone() },
             zoom: 1.0,
             offset: Vec2::ZERO,
             history_manager: HistoryManager {
                 history: vec![(
                     CanvasHistoryKind::Initial,
                     CanvasHistory {
-                        layers: vec![layer],
+                        layers: indexmap! { layer.id => layer },
                         multi_select: None,
                     },
                 )],
@@ -334,37 +336,37 @@ impl CanvasState {
     }
 
     pub fn add_photo(&mut self, photo: Photo) {
-        self.layers
-            .push(Layer::with_photo(photo, self.layers.len()));
+        let layer = Layer::with_photo(photo);
+        self.layers.insert(layer.id, layer);
         self.save_history(CanvasHistoryKind::AddPhoto);
     }
 
-    fn select_photo(&mut self, layer_id: usize, ctx: &Context) {
+    fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {
         if ctx.input(|input| input.modifiers.ctrl) {
-            self.layers[layer_id].selected.toggle();
+            self.layers.get_mut(layer_id).unwrap().selected.toggle();
         } else {
-            for layer in &mut self.layers {
-                layer.selected = layer.photo.id == layer_id;
+            for (_, layer) in &mut self.layers {
+                layer.selected = layer.id == *layer_id;
             }
         }
     }
 
-    fn deselect_photo(&mut self, layer_id: usize) {
-        self.layers[layer_id].selected = false;
+    fn deselect_photo(&mut self, layer_id: &LayerId) {
+        self.layers.get_mut(layer_id).unwrap().selected = false;
     }
 
     fn deselect_all_photos(&mut self) {
-        for layer in &mut self.layers {
+        for (_, layer) in &mut self.layers {
             layer.selected = false;
         }
     }
 
-    fn is_layer_selected(&self, layer_id: usize) -> bool {
-        self.layers[layer_id].selected
+    fn is_layer_selected(&self, layer_id: &LayerId) -> bool {
+        self.layers.get(layer_id).unwrap().selected
     }
 
     fn selected_layers_iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
-        self.layers.iter_mut().filter(|layer| layer.selected)
+        self.layers.values_mut().filter(|layer| layer.selected)
     }
 }
 
@@ -377,15 +379,15 @@ pub struct MultiSelect {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MultiSelectChild {
     transformable_state: TransformableState,
-    id: usize,
+    id: LayerId,
 }
 
 impl MultiSelect {
-    fn new(layers: &[Layer]) -> Self {
+    fn new(layers: &IndexMap<LayerId, Layer>) -> Self {
         let selected_ids = layers
             .iter()
             .enumerate()
-            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, (_, layer))| layer.selected)
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
@@ -403,7 +405,7 @@ impl MultiSelect {
         let res = Self {
             transformable_state: transformable_state.clone(),
             selected_layers: layers
-                .iter()
+                .values()
                 .filter(|x| x.selected)
                 .enumerate()
                 .map(|(i, transform)| MultiSelectChild {
@@ -418,23 +420,23 @@ impl MultiSelect {
         res
     }
 
-    fn update_selected<'a>(&'a mut self, layers: &'a [Layer]) {
+    fn update_selected<'a>(&'a mut self, layers: &'a IndexMap<LayerId, Layer>) {
         let selected_layer_ids = layers
             .iter()
             .enumerate()
-            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, (_, layer))| layer.selected)
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
         let added_layers = layers
             .iter()
             .enumerate()
-            .filter(|(_, layer)| layer.selected)
-            .filter(|(_, layer)| {
+            .filter(|(_, (_, layer))| layer.selected)
+            .filter(|(_, (layer_id, _))| {
                 !self
                     .selected_layers
                     .iter()
-                    .any(|child| child.id == layer.photo.id)
+                    .any(|child| child.id == **layer_id)
             })
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
@@ -462,7 +464,7 @@ impl MultiSelect {
 
         for layer in added_layers {
             self.selected_layers.push(MultiSelectChild {
-                transformable_state: layers[layer]
+                transformable_state: layers.get(&layer).unwrap()
                     .photo
                     .transform_state
                     .to_local_space(&self.transformable_state),
@@ -473,12 +475,12 @@ impl MultiSelect {
 }
 
 impl MultiSelect {
-    fn compute_rect(layers: &[Layer], selected_layers: &[usize]) -> Rect {
+    fn compute_rect(layers: &IndexMap<LayerId, Layer>, selected_layers: &[usize]) -> Rect {
         let mut min = Vec2::splat(std::f32::MAX);
         let mut max = Vec2::splat(std::f32::MIN);
 
         for layer_id in selected_layers {
-            let layer = &layers[*layer_id];
+            let layer = &layers.get(layer_id).unwrap();
 
             // TODO: we should be rotating the rect here as well, but that messes things up
             let rect = layer.photo.transform_state.rect;
@@ -553,9 +555,19 @@ impl<'a> Canvas<'a> {
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
         }
 
-        for layer_id in 0..self.state.layers.len() {
+
+        // Draw the layers by iterating over the layers and drawing them
+        // We collect the ids into a map to avoid borrowing issues
+        // TODO: Is there a better way?
+        for layer_id in self
+            .state
+            .layers
+            .keys()
+            .map(|x| *x)
+            .collect::<Vec<LayerId>>()
+        {
             {
-                let layer = &mut self.state.layers[layer_id];
+                let  layer = &mut self.state.layers.get_mut(&layer_id).unwrap();
 
                 // Move the photo to the center of the canvas if it hasn't been moved yet
                 if !layer.photo.set_initial_position {
@@ -564,8 +576,8 @@ impl<'a> Canvas<'a> {
                 }
             }
 
-            if let Some(transform_response) = self.draw_layer(layer_id, self.available_rect, ui) {
-                let transform_state = &self.state.layers[layer_id].photo.transform_state;
+            if let Some(transform_response) = self.draw_layer(&layer_id, self.available_rect, ui) {
+                let transform_state = &self.state.layers.get(&layer_id).unwrap().photo.transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
 
@@ -575,11 +587,11 @@ impl<'a> Canvas<'a> {
                         .rect
                         .contains(canvas_response.interact_pointer_pos().unwrap_or(Pos2::ZERO))
                     && self.is_pointer_on_canvas(ui)
-                    && self.state.is_layer_selected(layer_id)
+                    && self.state.is_layer_selected(&layer_id)
                 {
                     self.state.deselect_all_photos();
                 } else if transform_response.mouse_down && primary_pointer_pressed {
-                    self.state.select_photo(layer_id, ui.ctx());
+                    self.state.select_photo(&layer_id, ui.ctx());
                 }
 
                 if transform_response.ended_moving
@@ -602,7 +614,7 @@ impl<'a> Canvas<'a> {
             .layers
             .iter()
             .enumerate()
-            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, (_, layer))| layer.selected)
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
@@ -633,7 +645,7 @@ impl<'a> Canvas<'a> {
                     |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child in &multi_select.selected_layers {
-                            let layer: &mut Layer = &mut self.state.layers[child.id];
+                            let layer: &mut Layer = &mut self.state.layers.get_mut(&child.id).unwrap();
 
                             // Compute the relative position of the layer in the group so we can apply transformations
                             // to each side as they are adjusted at the group level
@@ -725,7 +737,8 @@ impl<'a> Canvas<'a> {
                                     // Get the relative vec from the center of the group to the center of the layer
                                     // We can treat this a rotation of 0
                                     let layer_center_relative_to_group =
-                                    layer.photo.transform_state.rect.center().to_vec2() - transformable_state.rect.center().to_vec2();
+                                        layer.photo.transform_state.rect.center().to_vec2()
+                                            - transformable_state.rect.center().to_vec2();
 
                                     // Since we're treating the layer as if it's not rotated we can just
                                     // rotate the layer_center_relative_to_group by the change in rotation
@@ -764,14 +777,14 @@ impl<'a> Canvas<'a> {
 
     fn draw_layer(
         &mut self,
-        layer_id: usize,
+        layer_id: &LayerId,
         available_rect: Rect,
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
-        let layer = &mut self.state.layers[layer_id];
+        let layer = &mut self.state.layers.get_mut(layer_id).unwrap();
         let active = layer.selected && self.state.multi_select.is_none();
 
-        ui.push_id(format!("CanvasPhoto_{}", layer.photo.id), |ui| {
+        ui.push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
             self.photo_manager.with_lock_mut(|photo_manager| {
                 if let Ok(Some(texture)) = photo_manager
                     .texture_for_photo_with_thumbail_backup(&layer.photo.photo, ui.ctx())
@@ -848,13 +861,7 @@ impl<'a> Canvas<'a> {
 
             // Delete the selected photo
             if input.key_pressed(egui::Key::Delete) {
-                self.state.layers.retain(|layer| !layer.selected);
-
-                // Update the ids of the photos since they are just indices
-                for (i, photo) in self.state.layers.iter_mut().enumerate() {
-                    photo.photo.id = i;
-                }
-
+                self.state.layers.retain(|_, layer| !layer.selected);
                 self.state.save_history(CanvasHistoryKind::DeletePhoto);
             }
 
