@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     canvas_info::{
-        layers::{next_layer_id, Layer, LayerId},
+        layers::{next_layer_id, Layer, LayerId, LayerTransformEditState},
         panel::CanvasInfo,
     },
     image_gallery::{self, ImageGallery, ImageGalleryState},
@@ -306,7 +306,8 @@ impl CanvasState {
             set_initial_position: false,
         };
 
-        let name = photo.photo.file_name().to_string();
+        let name: String = photo.photo.file_name().to_string();
+        let transform_edit_state = LayerTransformEditState::from(&photo.transform_state);
         let layer = Layer {
             photo,
             name,
@@ -314,6 +315,7 @@ impl CanvasState {
             locked: false,
             selected: false,
             id: next_layer_id(),
+            transform_edit_state: transform_edit_state,
         };
 
         Self {
@@ -464,7 +466,9 @@ impl MultiSelect {
 
         for layer in added_layers {
             self.selected_layers.push(MultiSelectChild {
-                transformable_state: layers.get(&layer).unwrap()
+                transformable_state: layers
+                    .get(&layer)
+                    .unwrap()
                     .photo
                     .transform_state
                     .to_local_space(&self.transformable_state),
@@ -555,7 +559,6 @@ impl<'a> Canvas<'a> {
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
         }
 
-
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
         // TODO: Is there a better way?
@@ -567,7 +570,7 @@ impl<'a> Canvas<'a> {
             .collect::<Vec<LayerId>>()
         {
             {
-                let  layer = &mut self.state.layers.get_mut(&layer_id).unwrap();
+                let layer = &mut self.state.layers.get_mut(&layer_id).unwrap();
 
                 // Move the photo to the center of the canvas if it hasn't been moved yet
                 if !layer.photo.set_initial_position {
@@ -577,7 +580,13 @@ impl<'a> Canvas<'a> {
             }
 
             if let Some(transform_response) = self.draw_layer(&layer_id, self.available_rect, ui) {
-                let transform_state = &self.state.layers.get(&layer_id).unwrap().photo.transform_state;
+                let transform_state = &self
+                    .state
+                    .layers
+                    .get(&layer_id)
+                    .unwrap()
+                    .photo
+                    .transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
 
@@ -645,7 +654,8 @@ impl<'a> Canvas<'a> {
                     |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child in &multi_select.selected_layers {
-                            let layer: &mut Layer = &mut self.state.layers.get_mut(&child.id).unwrap();
+                            let layer: &mut Layer =
+                                &mut self.state.layers.get_mut(&child.id).unwrap();
 
                             // Compute the relative position of the layer in the group so we can apply transformations
                             // to each side as they are adjusted at the group level

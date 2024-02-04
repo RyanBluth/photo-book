@@ -1,4 +1,4 @@
-use std::{hash::Hasher, sync::Mutex};
+use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::{
     egui::{CursorIcon, Image},
@@ -10,9 +10,12 @@ use indexmap::{IndexMap, IndexSet};
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    photo::Photo,
+    photo::{self, Photo},
     photo_manager::PhotoManager,
-    widget::{page_canvas::CanvasPhoto, placeholder::RectPlaceholder},
+    widget::{
+        page_canvas::{CanvasPhoto, TransformableState},
+        placeholder::RectPlaceholder,
+    },
 };
 use egui_dnd::{dnd, utils::shift_vec};
 
@@ -36,26 +39,116 @@ pub fn next_layer_id() -> LayerId {
 pub type LayerId = usize;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Layer {
+pub struct EditableValue<T> {
+    value: T,
+    editable_value: String,
+    editing: bool,
+}
 
+impl<T> EditableValue<T>
+where
+    T: Display,
+    T: FromStr,
+    T: Clone,
+{
+    pub fn new(value: T) -> Self {
+        let editable_value = value.to_string();
+        Self {
+            value,
+            editable_value: editable_value,
+            editing: false,
+        }
+    }
+
+    pub fn update_if_not_active(&mut self, value: T) {
+        if !self.editing {
+            self.value = value;
+            self.editable_value = self.value.to_string();
+        }
+    }
+
+    pub fn editable_value(&mut self) -> &mut String {
+        if self.editable_value != self.value.to_string() {
+            self.editing = true;
+        }
+        &mut self.editable_value
+    }
+
+    pub fn apply_edit(&mut self) {
+        self.value = self.editable_value.parse().unwrap_or(self.value.clone());
+        self.editing = false;
+    }
+
+    pub fn value(&self) -> T {
+        self.value.clone()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LayerTransformEditState {
+    pub x: EditableValue<f32>,
+    pub y: EditableValue<f32>,
+    pub width: EditableValue<f32>,
+    pub height: EditableValue<f32>,
+    pub rotation: EditableValue<f32>,
+}
+
+impl<T> Display for EditableValue<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.editable_value)
+    }
+}
+
+impl From<&TransformableState> for LayerTransformEditState {
+    fn from(state: &TransformableState) -> Self {
+        Self {
+            x: EditableValue::new(state.rect.left_top().x),
+            y: EditableValue::new(state.rect.left_top().y),
+            width: EditableValue::new(state.rect.width()),
+            height: EditableValue::new(state.rect.height()),
+            rotation: EditableValue::new(state.rotation.to_degrees()),
+        }
+    }
+}
+
+impl LayerTransformEditState {
+    pub fn update(&mut self, state: &TransformableState) {
+        self.x.update_if_not_active(state.rect.left_top().x);
+        self.y.update_if_not_active(state.rect.left_top().y);
+        self.width.update_if_not_active(state.rect.width());
+        self.height.update_if_not_active(state.rect.height());
+        self.rotation
+            .update_if_not_active(state.rotation.to_degrees());
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Layer {
     pub photo: CanvasPhoto,
     pub name: String,
     pub visible: bool,
     pub locked: bool,
     pub selected: bool,
     pub id: LayerId,
+    pub transform_edit_state: LayerTransformEditState,
 }
 
 impl Layer {
     pub fn with_photo(photo: Photo) -> Self {
         let name = photo.file_name().to_string();
+        let photo = CanvasPhoto::new(photo);
+        let transform_edit_state = LayerTransformEditState::from(&photo.transform_state);
         Self {
-            photo: CanvasPhoto::new(photo),
+            photo: photo,
             name,
             visible: true,
             locked: false,
             selected: false,
             id: next_layer_id(),
+            transform_edit_state: transform_edit_state,
         }
     }
 }
