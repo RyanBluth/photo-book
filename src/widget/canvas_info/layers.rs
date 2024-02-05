@@ -68,13 +68,14 @@ where
     }
 
     pub fn editable_value(&mut self) -> &mut String {
-        if self.editable_value != self.value.to_string() {
-            self.editing = true;
-        }
         &mut self.editable_value
     }
 
-    pub fn apply_edit(&mut self) {
+    pub fn begin_editing(&mut self) {
+        self.editing = true;
+    }
+
+    pub fn end_editing(&mut self) {
         self.value = self.editable_value.parse().unwrap_or(self.value.clone());
         self.editing = false;
     }

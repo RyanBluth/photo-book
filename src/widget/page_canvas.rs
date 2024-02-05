@@ -12,7 +12,7 @@ use indexmap::{indexmap, IndexMap};
 
 use crate::{
     assets::Asset,
-    cursor_manager::CursorManager,
+    cursor_manager::{self, CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
@@ -388,9 +388,8 @@ impl MultiSelect {
     fn new(layers: &IndexMap<LayerId, Layer>) -> Self {
         let selected_ids = layers
             .iter()
-            .enumerate()
-            .filter(|(_, (_, layer))| layer.selected)
-            .map(|(i, _)| i)
+            .filter(|((_, layer))| layer.selected)
+            .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
         let rect = Self::compute_rect(layers, &selected_ids);
@@ -407,15 +406,14 @@ impl MultiSelect {
         let res = Self {
             transformable_state: transformable_state.clone(),
             selected_layers: layers
-                .values()
-                .filter(|x| x.selected)
-                .enumerate()
-                .map(|(i, transform)| MultiSelectChild {
+                .iter()
+                .filter(|(_, layer)| layer.selected)
+                .map(|(id, transform)| MultiSelectChild {
                     transformable_state: transform
                         .photo
                         .transform_state
                         .to_local_space(&transformable_state),
-                    id: i,
+                    id: *id,
                 })
                 .collect(),
         };
@@ -425,22 +423,20 @@ impl MultiSelect {
     fn update_selected<'a>(&'a mut self, layers: &'a IndexMap<LayerId, Layer>) {
         let selected_layer_ids = layers
             .iter()
-            .enumerate()
-            .filter(|(_, (_, layer))| layer.selected)
-            .map(|(i, _)| i)
+            .filter(|((_, layer))| layer.selected)
+            .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
         let added_layers = layers
             .iter()
-            .enumerate()
-            .filter(|(_, (_, layer))| layer.selected)
-            .filter(|(_, (layer_id, _))| {
+            .filter(|(_, layer)| layer.selected)
+            .filter(|(layer_id, _)| {
                 !self
                     .selected_layers
                     .iter()
                     .any(|child| child.id == **layer_id)
             })
-            .map(|(i, _)| i)
+            .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
         let removed_layers = self
@@ -539,6 +535,9 @@ impl<'a> Canvas<'a> {
         ui.input(|input| {
             if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
                 self.state.offset += input.pointer.delta();
+                Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                    cursor_manager.set_cursor(CursorIcon::Grabbing);
+                });
                 true
             } else {
                 false
@@ -622,9 +621,8 @@ impl<'a> Canvas<'a> {
             .state
             .layers
             .iter()
-            .enumerate()
-            .filter(|(_, (_, layer))| layer.selected)
-            .map(|(i, _)| i)
+            .filter(|((_, layer))| layer.selected)
+            .map(|(id, _)| id)
             .collect::<Vec<_>>();
 
         if selected_layer_ids.len() > 1 {
