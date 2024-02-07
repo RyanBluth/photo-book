@@ -2,12 +2,13 @@ use std::fmt::Display;
 
 use eframe::{
     egui::{
-        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image, Response, Sense,
-        SidePanel, Ui,
+        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, FontSelection, Image,
+        Response, RichText, Sense, SidePanel, TextEdit, TextStyle, Ui,
     },
     emath::{Align2, Rot2},
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
+use egui::epaint::TextShape;
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -21,7 +22,7 @@ use crate::{
 
 use super::{
     canvas_info::{
-        layers::{next_layer_id, Layer, LayerId, LayerTransformEditState},
+        layers::{next_layer_id, Layer, LayerContent, LayerId, LayerTransformEditState},
         panel::CanvasInfo,
     },
     image_gallery::{self, ImageGallery, ImageGalleryState},
@@ -119,32 +120,13 @@ pub enum CanvasResponse {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
     pub photo: Photo,
-    pub transform_state: TransformableState,
     set_initial_position: bool,
 }
 
 impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
-        let initial_rect = match photo.max_dimension() {
-            crate::photo::MaxPhotoDimension::Width => {
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
-            }
-            crate::photo::MaxPhotoDimension::Height => {
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0 * photo.aspect_ratio(), 1000.0))
-            }
-        };
-
         Self {
             photo,
-            transform_state: TransformableState {
-                rect: initial_rect,
-                active_handle: None,
-                is_moving: false,
-                handle_mode: TransformHandleMode::default(),
-                rotation: 0.0,
-                last_frame_rotation: 0.0,
-                change_in_rotation: None,
-            },
             set_initial_position: false,
         }
     }
@@ -292,30 +274,31 @@ impl CanvasState {
             }
         };
 
-        let photo = CanvasPhoto {
+        let canvas_photo = CanvasPhoto {
             photo,
-            transform_state: TransformableState {
-                rect: initial_rect,
-                active_handle: None,
-                is_moving: false,
-                handle_mode: TransformHandleMode::default(),
-                rotation: 0.0,
-                last_frame_rotation: 0.0,
-                change_in_rotation: None,
-            },
             set_initial_position: false,
         };
 
-        let name: String = photo.photo.file_name().to_string();
-        let transform_edit_state = LayerTransformEditState::from(&photo.transform_state);
+        let name: String = canvas_photo.photo.file_name().to_string();
+        let transform_state = TransformableState {
+            rect: initial_rect,
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::default(),
+            rotation: 0.0,
+            last_frame_rotation: 0.0,
+            change_in_rotation: None,
+        };
+        let transform_edit_state = LayerTransformEditState::from(&transform_state);
         let layer = Layer {
-            photo,
+            content: LayerContent::Photo(canvas_photo),
             name,
             visible: true,
             locked: false,
             selected: false,
             id: next_layer_id(),
             transform_edit_state: transform_edit_state,
+            transform_state: transform_state,
         };
 
         Self {
@@ -410,7 +393,6 @@ impl MultiSelect {
                 .filter(|(_, layer)| layer.selected)
                 .map(|(id, transform)| MultiSelectChild {
                     transformable_state: transform
-                        .photo
                         .transform_state
                         .to_local_space(&transformable_state),
                     id: *id,
@@ -465,7 +447,6 @@ impl MultiSelect {
                 transformable_state: layers
                     .get(&layer)
                     .unwrap()
-                    .photo
                     .transform_state
                     .to_local_space(&self.transformable_state),
                 id: layer,
@@ -483,7 +464,7 @@ impl MultiSelect {
             let layer = &layers.get(layer_id).unwrap();
 
             // TODO: we should be rotating the rect here as well, but that messes things up
-            let rect = layer.photo.transform_state.rect;
+            let rect = layer.transform_state.rect;
 
             min.x = min.x.min(rect.min.x);
             min.y = min.y.min(rect.min.y);
@@ -526,7 +507,7 @@ impl<'a> Canvas<'a> {
         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
-                    self.state.zoom += input.scroll_delta.y * 0.005;
+                    self.state.zoom += input.smooth_scroll_delta.y * 0.005;
                     self.state.zoom = self.state.zoom.max(0.1);
                 });
             }
@@ -546,17 +527,15 @@ impl<'a> Canvas<'a> {
 
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
 
-        {
-            // TEMP: page placeholder
+        // TEMP: page placeholder
 
-            let page_rect = Rect::from_center_size(rect.center(), Vec2::new(1000.0, 1500.0));
-            let page_rect = page_rect.translate(self.state.offset);
+        let page_rect = Rect::from_center_size(rect.center(), Vec2::new(1000.0, 1500.0));
+        let page_rect = page_rect.translate(self.state.offset);
 
-            let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
-            let page_rect = page_rect.expand2(expansion);
+        let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
+        let page_rect = page_rect.expand2(expansion);
 
-            ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
-        }
+        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
@@ -572,20 +551,16 @@ impl<'a> Canvas<'a> {
                 let layer = &mut self.state.layers.get_mut(&layer_id).unwrap();
 
                 // Move the photo to the center of the canvas if it hasn't been moved yet
-                if !layer.photo.set_initial_position {
-                    layer.photo.transform_state.rect.set_center(rect.center());
-                    layer.photo.set_initial_position = true;
+                if let LayerContent::Photo(photo) = &mut layer.content {
+                    if !photo.set_initial_position {
+                        layer.transform_state.rect.set_center(rect.center());
+                        photo.set_initial_position = true;
+                    }
                 }
             }
 
             if let Some(transform_response) = self.draw_layer(&layer_id, self.available_rect, ui) {
-                let transform_state = &self
-                    .state
-                    .layers
-                    .get(&layer_id)
-                    .unwrap()
-                    .photo
-                    .transform_state;
+                let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
 
@@ -669,68 +644,68 @@ impl<'a> Canvas<'a> {
                                     transformable_state.rect.bottom() - pre_transform_rect.bottom();
 
                                 let relative_top = (pre_transform_rect.top()
-                                    - layer.photo.transform_state.rect.top())
+                                    - layer.transform_state.rect.top())
                                 .abs()
                                     / pre_transform_rect.height();
 
                                 let relative_left = (pre_transform_rect.left()
-                                    - layer.photo.transform_state.rect.left())
+                                    - layer.transform_state.rect.left())
                                 .abs()
                                     / pre_transform_rect.width();
 
                                 let relative_right = (pre_transform_rect.right()
-                                    - layer.photo.transform_state.rect.right())
+                                    - layer.transform_state.rect.right())
                                 .abs()
                                     / pre_transform_rect.width();
 
                                 let relative_bottom = (pre_transform_rect.bottom()
-                                    - layer.photo.transform_state.rect.bottom())
+                                    - layer.transform_state.rect.bottom())
                                 .abs()
                                     / pre_transform_rect.height();
 
                                 layer
-                                    .photo
                                     .transform_state
                                     .rect
-                                    .set_left(layer.photo.transform_state.rect.left() + delta_left);
+                                    .set_left(layer.transform_state.rect.left() + delta_left);
 
                                 layer
-                                    .photo
                                     .transform_state
                                     .rect
-                                    .set_top(layer.photo.transform_state.rect.top() + delta_top);
+                                    .set_top(layer.transform_state.rect.top() + delta_top);
 
-                                layer.photo.transform_state.rect.set_right(
-                                    layer.photo.transform_state.rect.right() + delta_right,
-                                );
+                                layer
+                                    .transform_state
+                                    .rect
+                                    .set_right(layer.transform_state.rect.right() + delta_right);
 
-                                layer.photo.transform_state.rect.set_bottom(
-                                    layer.photo.transform_state.rect.bottom() + delta_bottom,
-                                );
+                                layer
+                                    .transform_state
+                                    .rect
+                                    .set_bottom(layer.transform_state.rect.bottom() + delta_bottom);
 
                                 if relative_top > 0.0 {
-                                    layer.photo.transform_state.rect.set_top(
+                                    layer.transform_state.rect.set_top(
                                         transformable_state.rect.top()
                                             + relative_top * transformable_state.rect.height(),
                                     );
                                 }
 
                                 if relative_left > 0.0 {
-                                    layer.photo.transform_state.rect.set_left(
+                                    layer.transform_state.rect.set_left(
                                         transformable_state.rect.left()
                                             + relative_left * transformable_state.rect.width(),
                                     );
                                 }
 
                                 if relative_right > 0.0 {
-                                    layer.photo.transform_state.rect.set_right(
+                                    layer.transform_state.rect.set_right(
                                         transformable_state.rect.right()
                                             - relative_right * transformable_state.rect.width(),
                                     );
                                 }
 
                                 if relative_bottom > 0.0 {
-                                    layer.photo.transform_state.rect.set_bottom(
+                                    layer.transform_state.rect.set_bottom(
                                         transformable_state.rect.bottom()
                                             - relative_bottom * transformable_state.rect.height(),
                                     );
@@ -745,7 +720,7 @@ impl<'a> Canvas<'a> {
                                     // Get the relative vec from the center of the group to the center of the layer
                                     // We can treat this a rotation of 0
                                     let layer_center_relative_to_group =
-                                        layer.photo.transform_state.rect.center().to_vec2()
+                                        layer.transform_state.rect.center().to_vec2()
                                             - transformable_state.rect.center().to_vec2();
 
                                     // Since we're treating the layer as if it's not rotated we can just
@@ -759,11 +734,11 @@ impl<'a> Canvas<'a> {
                                     let rotated_center = layer_center_relative_to_group.x * (vec_x)
                                         + layer_center_relative_to_group.y * (vec_y);
 
-                                    layer.photo.transform_state.rect.set_center(
+                                    layer.transform_state.rect.set_center(
                                         transformable_state.rect.center() + rotated_center,
                                     );
 
-                                    layer.photo.transform_state.rotation +=
+                                    layer.transform_state.rotation +=
                                         transformable_state.rotation - last_frame_rotation;
                                 }
                             }
@@ -792,67 +767,113 @@ impl<'a> Canvas<'a> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap();
         let active = layer.selected && self.state.multi_select.is_none();
 
-        ui.push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
-            self.photo_manager.with_lock_mut(|photo_manager| {
-                if let Ok(Some(texture)) = photo_manager
-                    .texture_for_photo_with_thumbail_backup(&layer.photo.photo, ui.ctx())
-                {
-                    let mut transform_state = layer.photo.transform_state.clone();
+        match &mut layer.content {
+            LayerContent::Photo(ref mut photo) => {
+                ui.push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
+                    self.photo_manager.with_lock_mut(|photo_manager| {
+                        if let Ok(Some(texture)) = photo_manager
+                            .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
+                        {
+                            let mut transform_state = layer.transform_state.clone();
 
-                    let transform_response = TransformableWidget::new(&mut transform_state).show(
-                        ui,
-                        available_rect,
-                        self.state.zoom,
-                        self.state.offset,
-                        active,
-                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
-                            let uv =
-                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
+                            let transform_response = TransformableWidget::new(&mut transform_state)
+                                .show(
+                                    ui,
+                                    available_rect,
+                                    self.state.zoom,
+                                    self.state.offset,
+                                    active,
+                                    |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
+                                        let uv = Rect::from_min_max(
+                                            Pos2::new(0.0, 0.0),
+                                            Pos2 { x: 1.0, y: 1.0 },
+                                        );
 
-                            let painter = ui.painter();
-                            let mut mesh = Mesh::with_texture(texture.id);
+                                        let painter = ui.painter();
+                                        let mut mesh = Mesh::with_texture(texture.id);
 
-                            // If the photo is rotated swap the width and height
-                            let mesh_rect = if layer.photo.photo.metadata.rotation().radians()
-                                == 0.0
-                                || layer.photo.photo.metadata.rotation().radians()
-                                    == std::f32::consts::PI
-                            {
-                                transformed_rect
-                            } else {
-                                Rect::from_center_size(
-                                    transformed_rect.center(),
-                                    Vec2::new(transformed_rect.height(), transformed_rect.width()),
-                                )
-                            };
+                                        // If the photo is rotated swap the width and height
+                                        let mesh_rect = if photo.photo.metadata.rotation().radians()
+                                            == 0.0
+                                            || photo.photo.metadata.rotation().radians()
+                                                == std::f32::consts::PI
+                                        {
+                                            transformed_rect
+                                        } else {
+                                            Rect::from_center_size(
+                                                transformed_rect.center(),
+                                                Vec2::new(
+                                                    transformed_rect.height(),
+                                                    transformed_rect.width(),
+                                                ),
+                                            )
+                                        };
 
-                            mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
+                                        mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
 
-                            let mesh_center: Pos2 =
-                                mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
+                                        let mesh_center: Pos2 =
+                                            mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
 
-                            mesh.rotate(
-                                Rot2::from_angle(layer.photo.photo.metadata.rotation().radians()),
-                                mesh_center,
-                            );
-                            mesh.rotate(
-                                Rot2::from_angle(layer.photo.transform_state.rotation),
-                                mesh_center,
-                            );
+                                        mesh.rotate(
+                                            Rot2::from_angle(
+                                                photo.photo.metadata.rotation().radians(),
+                                            ),
+                                            mesh_center,
+                                        );
+                                        mesh.rotate(
+                                            Rot2::from_angle(layer.transform_state.rotation),
+                                            mesh_center,
+                                        );
 
-                            painter.add(Shape::mesh(mesh));
-                        },
-                    );
+                                        painter.add(Shape::mesh(mesh));
+                                    },
+                                );
 
-                    layer.photo.transform_state = transform_state;
+                            layer.transform_state = transform_state;
 
-                    Some(transform_response)
-                } else {
-                    None
-                }
-            })
-        })
-        .inner
+                            Some(transform_response)
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .inner
+            }
+            LayerContent::Text(text) => {
+                let mut transform_state = layer.transform_state.clone();
+
+                let transform_response = TransformableWidget::new(&mut transform_state).show(
+                    ui,
+                    available_rect,
+                    self.state.zoom,
+                    self.state.offset,
+                    active,
+                    |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                        let painter = ui.painter();
+
+                        let galley = painter.layout(
+                            text.text.clone(),
+                            FontId::default(),
+                            Color32::BLUE,
+                            transformed_rect.width() as f32,
+                        );
+
+                        let text_shape = TextShape::new(
+                            transformed_rect.left_top(),
+                            galley.clone(),
+                            Color32::BLACK,
+                        )
+                        .with_angle(transformable_state.rotation);
+
+                        painter.add(text_shape);
+                    },
+                );
+
+                layer.transform_state = transform_state;
+
+                Some(transform_response)
+            }
+        }
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
@@ -880,7 +901,7 @@ impl<'a> Canvas<'a> {
                 {
                     let distance = if input.modifiers.shift { 10.0 } else { 1.0 };
 
-                    let transform_state = &mut layer.photo.transform_state;
+                    let transform_state = &mut layer.transform_state;
 
                     if input.key_pressed(egui::Key::ArrowLeft) {
                         transform_state.rect =
@@ -916,13 +937,13 @@ impl<'a> Canvas<'a> {
                 if input.key_pressed(egui::Key::S) {
                     // TODO should the resize mode be persisted? Probably.
 
-                    layer.photo.transform_state.handle_mode =
+                    layer.transform_state.handle_mode =
                         TransformHandleMode::Resize(ResizeMode::Free);
                 }
 
                 // Switch to rotate mode
                 if input.key_pressed(egui::Key::R) {
-                    layer.photo.transform_state.handle_mode = TransformHandleMode::Rotate;
+                    layer.transform_state.handle_mode = TransformHandleMode::Rotate;
                 };
             }
 

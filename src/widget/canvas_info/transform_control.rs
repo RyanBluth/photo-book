@@ -72,9 +72,7 @@ impl<'a> TransformControl<'a> {
                 return;
             }
             Some(layer) => {
-                layer
-                    .transform_edit_state
-                    .update(&layer.photo.transform_state);
+                layer.transform_edit_state.update(&layer.transform_state);
 
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
@@ -88,10 +86,9 @@ impl<'a> TransformControl<'a> {
                         ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.x,
                             |value| {
-                                let current_left = layer.photo.transform_state.rect.left_top().x;
+                                let current_left = layer.transform_state.rect.left_top().x;
 
-                                layer.photo.transform_state.rect = layer
-                                    .photo
+                                layer.transform_state.rect = layer
                                     .transform_state
                                     .rect
                                     .translate(Vec2::new(value.value() - current_left, 0.0));
@@ -103,10 +100,9 @@ impl<'a> TransformControl<'a> {
                         ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.y,
                             |value| {
-                                let current_top = layer.photo.transform_state.rect.left_top().y;
+                                let current_top = layer.transform_state.rect.left_top().y;
 
-                                layer.photo.transform_state.rect = layer
-                                    .photo
+                                layer.transform_state.rect = layer
                                     .transform_state
                                     .rect
                                     .translate(Vec2::new(0.0, value.value() - current_top));
@@ -124,7 +120,7 @@ impl<'a> TransformControl<'a> {
                         ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.width,
                             |value| {
-                                layer.photo.transform_state.rect.set_width(value.value());
+                                layer.transform_state.rect.set_width(value.value());
                             },
                         );
 
@@ -133,7 +129,7 @@ impl<'a> TransformControl<'a> {
                         ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.height,
                             |value| {
-                                layer.photo.transform_state.rect.set_height(value.value());
+                                layer.transform_state.rect.set_height(value.value());
                             },
                         );
                     });
@@ -148,7 +144,7 @@ impl<'a> TransformControl<'a> {
                         ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.rotation,
                             |value| {
-                                layer.photo.transform_state.rotation = value.value().to_radians();
+                                layer.transform_state.rotation = value.value().to_radians();
                             },
                         );
                     });

@@ -37,6 +37,11 @@ impl<'a> CanvasInfo<'a> {
 
                 let selected_layer_id = Layers::new(self.layers).show(ui).selected_layer;
 
+                if ui.button("Add Text").clicked() {
+                    let layer = Layer::new_text_layer();
+                    self.layers.insert(layer.id, layer);
+                }
+
                 Response { selected_layer_id }
             })
         });

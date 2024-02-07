@@ -155,16 +155,16 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         ui.input(|i| {
-            if i.pointer.hover_pos().is_some() && i.scroll_delta.y != 0.0 {
+            if i.pointer.hover_pos().is_some() && i.raw_scroll_delta.y != 0.0 {
                 let mouse_pos = i.pointer.hover_pos().unwrap();
 
                 let rel_mouse_pos_before = image_rect.center() - mouse_pos;
 
                 let mut scale_delta = 1.0;
 
-                if i.scroll_delta.y > 0.0 {
+                if i.raw_scroll_delta.y > 0.0 {
                     scale_delta = 1.1;
-                } else if i.scroll_delta.y < 0.0 {
+                } else if i.raw_scroll_delta.y < 0.0 {
                     scale_delta = 0.9;
                 }
 
