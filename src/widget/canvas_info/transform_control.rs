@@ -5,7 +5,7 @@ use eframe::{
     epaint::{FontFamily, FontId, Vec2},
 };
 
-use crate::widget::page_canvas::TransformableState;
+use crate::{utils::EditableValueTextEdit, widget::page_canvas::TransformableState};
 
 use super::layers::{EditableValue, Layer};
 
@@ -21,43 +21,6 @@ impl<'a> TransformControlState<'a> {
 
 pub struct TransformControl<'a> {
     state: TransformControlState<'a>,
-}
-
-trait EditableValueTextEdit {
-    fn text_edit_editable_value_singleline<'a, T>(
-        &mut self,
-        value: &'a mut EditableValue<T>,
-        apply: impl FnOnce(&'a EditableValue<T>) -> (),
-    ) -> egui::Response
-    where
-        T: Display,
-        T: FromStr,
-        T: Clone;
-}
-
-impl EditableValueTextEdit for Ui {
-    fn text_edit_editable_value_singleline<'a, T>(
-        &mut self,
-        value: &'a mut EditableValue<T>,
-        apply: impl FnOnce(&'a EditableValue<T>) -> (),
-    ) -> egui::Response
-    where
-        T: Display,
-        T: FromStr,
-        T: Clone,
-    {
-        let text_edit_response = self.text_edit_singleline(value.editable_value());
-
-        if text_edit_response.gained_focus() {
-            value.begin_editing();
-        } else if text_edit_response.lost_focus() {
-            value.end_editing();
-
-            apply(value);
-        }
-
-        text_edit_response
-    }
 }
 
 impl<'a> TransformControl<'a> {
@@ -83,31 +46,27 @@ impl<'a> TransformControl<'a> {
                     ui.horizontal(|ui| {
                         ui.label("x:");
 
-                        ui.text_edit_editable_value_singleline(
-                            &mut layer.transform_edit_state.x,
-                            |value| {
-                                let current_left = layer.transform_state.rect.left_top().x;
+                        let new_x = ui
+                            .text_edit_editable_value_singleline(&mut layer.transform_edit_state.x);
 
-                                layer.transform_state.rect = layer
-                                    .transform_state
-                                    .rect
-                                    .translate(Vec2::new(value.value() - current_left, 0.0));
-                            },
-                        );
+                        let current_left = layer.transform_state.rect.left_top().x;
+
+                        layer.transform_state.rect = layer
+                            .transform_state
+                            .rect
+                            .translate(Vec2::new(new_x - current_left, 0.0));
 
                         ui.label("y:");
 
-                        ui.text_edit_editable_value_singleline(
-                            &mut layer.transform_edit_state.y,
-                            |value| {
-                                let current_top = layer.transform_state.rect.left_top().y;
+                        let new_y = ui
+                            .text_edit_editable_value_singleline(&mut layer.transform_edit_state.y);
 
-                                layer.transform_state.rect = layer
-                                    .transform_state
-                                    .rect
-                                    .translate(Vec2::new(0.0, value.value() - current_top));
-                            },
-                        );
+                        let current_top = layer.transform_state.rect.left_top().y;
+
+                        layer.transform_state.rect = layer
+                            .transform_state
+                            .rect
+                            .translate(Vec2::new(0.0, new_y - current_top));
                     });
 
                     ui.separator();
@@ -117,21 +76,19 @@ impl<'a> TransformControl<'a> {
                     ui.horizontal(|ui| {
                         ui.label("Width:");
 
-                        ui.text_edit_editable_value_singleline(
+                        let new_width = ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.width,
-                            |value| {
-                                layer.transform_state.rect.set_width(value.value());
-                            },
                         );
+
+                        layer.transform_state.rect.set_width(new_width);
 
                         ui.label("Height:");
 
-                        ui.text_edit_editable_value_singleline(
+                        let new_height = ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.height,
-                            |value| {
-                                layer.transform_state.rect.set_height(value.value());
-                            },
                         );
+
+                        layer.transform_state.rect.set_height(new_height);
                     });
 
                     ui.separator();
@@ -141,12 +98,11 @@ impl<'a> TransformControl<'a> {
                     ui.horizontal(|ui| {
                         ui.label("Degrees:");
 
-                        ui.text_edit_editable_value_singleline(
+                        let new_rotation = ui.text_edit_editable_value_singleline(
                             &mut layer.transform_edit_state.rotation,
-                            |value| {
-                                layer.transform_state.rotation = value.value().to_radians();
-                            },
                         );
+
+                        layer.transform_state.rotation = new_rotation.to_radians();
                     });
                 });
             }

@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, str::FromStr};
 
 use eframe::{
     egui::{
@@ -22,7 +22,7 @@ use crate::{
 
 use super::{
     canvas_info::{
-        layers::{next_layer_id, Layer, LayerContent, LayerId, LayerTransformEditState},
+        layers::{next_layer_id, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState},
         panel::CanvasInfo,
     },
     image_gallery::{self, ImageGallery, ImageGalleryState},
@@ -101,6 +101,7 @@ impl<'a> CanvasScene<'a> {
             .show(ctx, |ui| {
                 CanvasInfo {
                     layers: &mut self.state.layers,
+                    page: &mut self.state.page,
                 }
                 .show(ui)
             });
@@ -203,6 +204,116 @@ where
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum Unit {
+    Pixels,
+    Inches,
+    Centimeters,
+}
+
+impl Display for Unit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Unit::Pixels => write!(f, "Pixels"),
+            Unit::Inches => write!(f, "Inches"),
+            Unit::Centimeters => write!(f, "Centimeters"),
+        }
+    }
+}
+
+impl FromStr for Unit {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pixels" => Ok(Unit::Pixels),
+            "Inches" => Ok(Unit::Inches),
+            "Centimeters" => Ok(Unit::Centimeters),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageEditState {
+    pub width: EditableValue<f32>,
+    pub height: EditableValue<f32>,
+    pub ppi: EditableValue<i32>,
+    pub unit: EditableValue<Unit>
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Page {
+    size: Vec2,
+    ppi: i32,
+    unit: Unit,
+
+    pub edit_state: PageEditState,
+}
+
+impl Page {
+    fn a4() -> Self {
+        let ppi = 300;
+        let unit = Unit::Inches;
+
+        Self {
+            size: Vec2::new(8.27, 11.69),
+            ppi,
+            unit,
+            edit_state: PageEditState {
+                width: EditableValue::new(8.27),
+                height: EditableValue::new(11.69),
+                ppi: EditableValue::new(ppi),
+                unit: EditableValue::new(unit),
+            },
+        }
+    }
+
+    fn size_pixels(&self) -> Vec2 {
+        match self.unit {
+            Unit::Pixels => self.size,
+            Unit::Inches => self.size * self.ppi as f32,
+            Unit::Centimeters => self.size * (self.ppi as f32 / 2.54),
+        }
+    }
+
+    pub fn size(&self) -> Vec2 {
+        self.size
+    }
+
+    pub fn ppi(&self) -> i32 {
+        self.ppi
+    }
+
+    pub fn unit(&self) -> Unit {
+        self.unit
+    }
+
+    pub fn set_size(&mut self, size: Vec2) {
+        self.size = size;
+    }
+
+    pub fn set_unit(&mut self, unit: Unit) {
+        let size = self.size_pixels();
+        match unit {
+            Unit::Pixels => self.size = size,
+            Unit::Inches => self.size = size / self.ppi as f32,
+            Unit::Centimeters => self.size = size / (self.ppi as f32 / 2.54),
+        }
+        self.unit = unit;
+    }
+
+    pub fn set_ppi(&mut self, ppi: i32) {
+        self.ppi = ppi;
+    }
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self::a4()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
     layers: IndexMap<LayerId, Layer>,
@@ -211,6 +322,7 @@ pub struct CanvasState {
     history_manager: HistoryManager<CanvasHistoryKind, CanvasHistory>,
     gallery_state: ImageGalleryState,
     multi_select: Option<MultiSelect>,
+    page: Page,
 }
 
 // History Stuff
@@ -261,6 +373,7 @@ impl CanvasState {
             },
             gallery_state: ImageGalleryState::default(),
             multi_select: None,
+            page: Page::default(),
         }
     }
 
@@ -317,6 +430,7 @@ impl CanvasState {
             },
             gallery_state,
             multi_select: None,
+            page: Page::default(),
         }
     }
 
@@ -529,7 +643,7 @@ impl<'a> Canvas<'a> {
 
         // TEMP: page placeholder
 
-        let page_rect = Rect::from_center_size(rect.center(), Vec2::new(1000.0, 1500.0));
+        let page_rect = Rect::from_center_size(rect.center(), self.state.page.size_pixels());
         let page_rect = page_rect.translate(self.state.offset);
 
         let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
@@ -858,12 +972,10 @@ impl<'a> Canvas<'a> {
                             transformed_rect.width() as f32,
                         );
 
-                        let text_shape = TextShape::new(
-                            transformed_rect.left_top(),
-                            galley.clone(),
-                            Color32::BLACK,
-                        )
-                        .with_angle(transformable_state.rotation);
+                        let text_pos = transformed_rect.center() - galley.size() * 0.5;
+
+                        let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK)
+                            .with_angle(transformable_state.rotation);
 
                         painter.add(text_shape);
                     },

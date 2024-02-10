@@ -1,7 +1,12 @@
+use std::{fmt::Display, str::FromStr};
+
 use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
+use egui::Ui;
+
+use crate::widget::canvas_info::layers::EditableValue;
 
 macro_rules! guard_let {
     ($x:ident, $y:expr) => {
@@ -129,5 +134,40 @@ pub trait Toggle {
 impl Toggle for bool {
     fn toggle(&mut self) {
         *self = !*self;
+    }
+}
+
+pub trait EditableValueTextEdit {
+    fn text_edit_editable_value_singleline<'a, T>(
+        &mut self,
+        value: &'a mut EditableValue<T>,
+    ) -> T
+    where
+        T: Display,
+        T: FromStr,
+        T: Clone;
+}
+
+impl EditableValueTextEdit for Ui {
+    fn text_edit_editable_value_singleline<'a, T>(
+        &mut self,
+        value: &'a mut EditableValue<T>,
+    ) -> T
+    where
+        T: Display,
+        T: FromStr,
+        T: Clone,
+    {
+        let text_edit_response = self.text_edit_singleline(value.editable_value());
+
+        if text_edit_response.gained_focus() {
+            value.begin_editing();
+        } else if text_edit_response.lost_focus() {
+            value.end_editing();
+
+            return value.value().clone();
+        }
+
+        return value.value();
     }
 }

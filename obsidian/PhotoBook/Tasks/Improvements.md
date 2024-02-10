@@ -9,6 +9,9 @@
 	- [ ] Add UI for text tool
 	- [ ] Add alignment UI
 - [ ] Support multi select
+	- [x] Support basic implementation
+	- [ ] Fix bugs
+	- [ ] Make more generic in order to support groups
 - [ ]  Rotate bounding box instead of expanding to contain the rotated photo
 - [ ] Add crop tool
 - [ ] Add text support

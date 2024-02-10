@@ -1,6 +1,11 @@
 use eframe::egui::{self, Response};
 use indexmap::IndexMap;
 
+use crate::widget::{
+    canvas_info::page_info::{PageInfo, PageInfoState},
+    page_canvas::Page,
+};
+
 use super::{
     layers::{Layer, LayerId, Layers},
     transform_control::{TransformControl, TransformControlState},
@@ -9,6 +14,7 @@ use super::{
 #[derive(Debug, PartialEq)]
 pub struct CanvasInfo<'a> {
     pub layers: &'a mut IndexMap<LayerId, Layer>,
+    pub page: &'a mut Page,
 }
 
 pub struct CanvasInfoResponse {
@@ -20,6 +26,8 @@ impl<'a> CanvasInfo<'a> {
     pub fn show(&mut self, ui: &mut egui::Ui) -> CanvasInfoResponse {
         let response = ui.allocate_ui(ui.available_size(), |ui| {
             ui.vertical(|ui| {
+                PageInfo::new(&mut PageInfoState::new(self.page)).show(ui);
+
                 struct Response {
                     selected_layer_id: Option<usize>,
                 }
