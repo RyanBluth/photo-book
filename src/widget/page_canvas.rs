@@ -8,8 +8,9 @@ use eframe::{
     emath::{Align2, Rot2},
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
-use egui::epaint::TextShape;
+use egui::{epaint::TextShape, FontFamily};
 use indexmap::{indexmap, IndexMap};
+use strum_macros::EnumIter;
 
 use crate::{
     assets::Asset,
@@ -22,7 +23,9 @@ use crate::{
 
 use super::{
     canvas_info::{
-        layers::{next_layer_id, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState},
+        layers::{
+            next_layer_id, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState,
+        },
         panel::CanvasInfo,
     },
     image_gallery::{self, ImageGallery, ImageGalleryState},
@@ -121,15 +124,11 @@ pub enum CanvasResponse {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
     pub photo: Photo,
-    set_initial_position: bool,
 }
 
 impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
-        Self {
-            photo,
-            set_initial_position: false,
-        }
+        Self { photo }
     }
 }
 
@@ -204,8 +203,8 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-enum Unit {
+#[derive(Debug, Clone, PartialEq, Copy, EnumIter)]
+pub enum Unit {
     Pixels,
     Inches,
     Centimeters,
@@ -239,7 +238,7 @@ pub struct PageEditState {
     pub width: EditableValue<f32>,
     pub height: EditableValue<f32>,
     pub ppi: EditableValue<i32>,
-    pub unit: EditableValue<Unit>
+    pub unit: EditableValue<Unit>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -294,17 +293,24 @@ impl Page {
     }
 
     pub fn set_unit(&mut self, unit: Unit) {
-        let size = self.size_pixels();
+        let size_pixels = self.size_pixels();
         match unit {
-            Unit::Pixels => self.size = size,
-            Unit::Inches => self.size = size / self.ppi as f32,
-            Unit::Centimeters => self.size = size / (self.ppi as f32 / 2.54),
+            Unit::Pixels => self.size = size_pixels,
+            Unit::Inches => self.size = size_pixels / self.ppi as f32,
+            Unit::Centimeters => self.size = size_pixels / (self.ppi as f32 / 2.54),
         }
         self.unit = unit;
     }
 
     pub fn set_ppi(&mut self, ppi: i32) {
         self.ppi = ppi;
+    }
+
+    pub fn update_edit_state(&mut self) {
+        self.edit_state.width.update_if_not_active(self.size.x);
+        self.edit_state.height.update_if_not_active(self.size.y);
+        self.edit_state.ppi.update_if_not_active(self.ppi);
+        self.edit_state.unit.update_if_not_active(self.unit);
     }
 }
 
@@ -387,10 +393,7 @@ impl CanvasState {
             }
         };
 
-        let canvas_photo = CanvasPhoto {
-            photo,
-            set_initial_position: false,
-        };
+        let canvas_photo = CanvasPhoto { photo };
 
         let name: String = canvas_photo.photo.file_name().to_string();
         let transform_state = TransformableState {
@@ -661,19 +664,7 @@ impl<'a> Canvas<'a> {
             .map(|x| *x)
             .collect::<Vec<LayerId>>()
         {
-            {
-                let layer = &mut self.state.layers.get_mut(&layer_id).unwrap();
-
-                // Move the photo to the center of the canvas if it hasn't been moved yet
-                if let LayerContent::Photo(photo) = &mut layer.content {
-                    if !photo.set_initial_position {
-                        layer.transform_state.rect.set_center(rect.center());
-                        photo.set_initial_position = true;
-                    }
-                }
-            }
-
-            if let Some(transform_response) = self.draw_layer(&layer_id, self.available_rect, ui) {
+            if let Some(transform_response) = self.draw_layer(&layer_id, page_rect, ui) {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
@@ -700,7 +691,7 @@ impl<'a> Canvas<'a> {
             }
         }
 
-        self.draw_multi_select(ui, rect);
+        self.draw_multi_select(ui, page_rect);
 
         None
     }
@@ -710,7 +701,7 @@ impl<'a> Canvas<'a> {
             .state
             .layers
             .iter()
-            .filter(|((_, layer))| layer.selected)
+            .filter(|(_, layer)| layer.selected)
             .map(|(id, _)| id)
             .collect::<Vec<_>>();
 
@@ -736,7 +727,6 @@ impl<'a> Canvas<'a> {
                     ui,
                     rect,
                     self.state.zoom,
-                    self.state.offset,
                     true,
                     |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
@@ -895,7 +885,6 @@ impl<'a> Canvas<'a> {
                                     ui,
                                     available_rect,
                                     self.state.zoom,
-                                    self.state.offset,
                                     active,
                                     |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                                         let uv = Rect::from_min_max(
@@ -960,14 +949,16 @@ impl<'a> Canvas<'a> {
                     ui,
                     available_rect,
                     self.state.zoom,
-                    self.state.offset,
                     active,
                     |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
                         let painter = ui.painter();
 
                         let galley = painter.layout(
                             text.text.clone(),
-                            FontId::default(),
+                            FontId {
+                                size: 50.0 * self.state.zoom,
+                                family: FontFamily::Proportional,
+                            },
                             Color32::BLUE,
                             transformed_rect.width() as f32,
                         );
@@ -1190,9 +1181,8 @@ impl<'a> TransformableWidget<'a> {
     pub fn show<R>(
         &mut self,
         ui: &mut Ui,
-        container_rect: Rect,
+        pre_scaled_container_rect: Rect,
         global_scale: f32,
-        global_offset: Vec2,
         active: bool,
         add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
     ) -> TransformableWidgetResponse<R> {
@@ -1202,22 +1192,16 @@ impl<'a> TransformableWidget<'a> {
 
         self.state.last_frame_rotation = self.state.rotation;
 
-        let photo_center_relative_to_page = container_rect.center() - self.state.rect.center();
-
-        // Scale the position of the center of the photo
-        let scaled_photo_center = photo_center_relative_to_page * global_scale;
-
-        // Translate photo to the new center position, adjusted for the global offset
-        let translated_rect_center = container_rect.center() + global_offset - scaled_photo_center;
+        // Translate photo to the new left_top position, adjusted for the global offset
+        let translated_rect_left_top =
+            pre_scaled_container_rect.left_top() + (self.state.rect.left_top() * global_scale).to_vec2();
 
         // Scale the size of the photo
         let scaled_photo_size = self.state.rect.size() * global_scale;
 
         // Create the new scaled and translated rect for the photo
-        let pre_rotated_inner_content_rect = Rect::from_min_size(
-            translated_rect_center - scaled_photo_size / 2.0,
-            scaled_photo_size,
-        );
+        let pre_rotated_inner_content_rect =
+            Rect::from_min_size(translated_rect_left_top, scaled_photo_size);
 
         let rotated_inner_content_rect =
             pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);

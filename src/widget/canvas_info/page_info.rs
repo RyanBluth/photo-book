@@ -1,8 +1,12 @@
 use eframe::egui::{self, Response};
-use egui::Vec2;
+use egui::{ComboBox, RichText, Vec2};
 use indexmap::IndexMap;
+use strum::IntoEnumIterator;
 
-use crate::{utils::EditableValueTextEdit, widget::page_canvas::Page};
+use crate::{
+    utils::EditableValueTextEdit,
+    widget::page_canvas::{Page, Unit},
+};
 
 use super::{
     layers::{Layer, LayerId, Layers},
@@ -31,22 +35,49 @@ impl<'a> PageInfo<'a> {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> () {
+    
+        self.state.page.update_edit_state();
+
         ui.vertical(|ui| {
-            ui.label("Document Info");
+            ui.style_mut().spacing.text_edit_width = 80.0;
+
+            ui.label(RichText::new("Document Info").heading());
 
             ui.horizontal(|ui| {
+                let page = &mut self.state.page;
+
                 ui.label("Width:");
 
-                let page = &mut self.state.page;
-                
                 let new_width = ui.text_edit_editable_value_singleline(&mut page.edit_state.width);
                 page.set_size(Vec2::new(new_width, page.size().y));
 
-                ui.label("height:");
+                ui.label("Height:");
 
-                let new_height = ui.text_edit_editable_value_singleline(&mut page.edit_state.height);
+                let new_height =
+                    ui.text_edit_editable_value_singleline(&mut page.edit_state.height);
                 page.set_size(Vec2::new(page.size().x, new_height));
             });
+
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                let page = &mut self.state.page;
+
+                ui.label("Unit:");
+
+                let mut page_unit = page.unit();
+
+                ComboBox::from_label("Units")
+                    .selected_text(format!("{}", page.unit()))
+                    .show_ui(ui, |ui| {
+                        for unit in Unit::iter() {
+                            ui.selectable_value(&mut page_unit, unit, unit.to_string());
+                        }
+                    });
+
+                page.set_unit(page_unit);
+            });
+            ui.separator();
         });
     }
 }
