@@ -631,46 +631,65 @@ impl<'a> Canvas<'a> {
                     );
                     if input.raw_scroll_delta.y != 0.0 {
 
-                        /////////////////////////
-                        
-                        let pointer_rel_doc_center = pointer_pos - rect.center();
+                        let pointer_direction = (pointer_pos - rect.center()).normalized();
 
-                        let pointer_pos = pointer_pos + self.state.offset + rect.left_top().to_vec2();
+                        println!("Pointer direction: {:?}", pointer_direction);
 
-                        let page_rect: Rect = Rect::from_center_size(
-                            rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * self.state.zoom,
-                        );
+                        let pre_zoom_width = rect.width() * self.state.zoom;
 
-                        let mouse_to_page_left = pointer_pos.x - page_rect.left();
-                        let mouse_to_page_top = pointer_pos.y - page_rect.top();
-
-                        println!("Mouse to page left: {}, Mouse to page top: {}", mouse_to_page_left, mouse_to_page_top);
-
-                        let mut scale_delta = 1.0;
-
-                        if input.raw_scroll_delta.y > 0.0 {
-                            scale_delta = 1.1;
-                        } else if input.raw_scroll_delta.y < 0.0 {
-                            scale_delta = 0.9;
-                        }
+                        let scale_delta = if input.raw_scroll_delta.y > 0.0 {
+                            1.1
+                        } else {
+                            0.9
+                        };
 
                         self.state.zoom *= scale_delta;
 
-                        let page_rect: Rect = Rect::from_center_size(
-                            rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * self.state.zoom,
-                        );
+                        let post_zoom_width = rect.width() * self.state.zoom;
 
-                        let post_mouse_to_page_left = pointer_pos.x - page_rect.left();
-                        let post_mouse_to_page_top = pointer_pos.y  - page_rect.top();
+                        self.state.offset -= ((pointer_direction * (post_zoom_width - pre_zoom_width) * 0.5) ) ;
 
-                        println!("Offseting by: {}, {}", (post_mouse_to_page_left - mouse_to_page_left), (post_mouse_to_page_top - mouse_to_page_top));
 
-                        println!("");
+                        /////////////////////////
+                        
+                        // let pointer_rel_doc_center = pointer_pos - rect.center();
 
-                        self.state.offset.x += (post_mouse_to_page_left - mouse_to_page_left);
-                        self.state.offset.y += (post_mouse_to_page_top - mouse_to_page_top);
+                        // let pointer_pos = pointer_pos + self.state.offset + rect.left_top().to_vec2();
+
+                        // let page_rect: Rect = Rect::from_center_size(
+                        //     rect.center() + self.state.offset,
+                        //     self.state.page.size_pixels() * self.state.zoom,
+                        // );
+
+                        // let mouse_to_page_left = pointer_pos.x - page_rect.left();
+                        // let mouse_to_page_top = pointer_pos.y - page_rect.top();
+
+                        // println!("Mouse to page left: {}, Mouse to page top: {}", mouse_to_page_left, mouse_to_page_top);
+
+                        // let mut scale_delta = 1.0;
+
+                        // if input.raw_scroll_delta.y > 0.0 {
+                        //     scale_delta = 1.1;
+                        // } else if input.raw_scroll_delta.y < 0.0 {
+                        //     scale_delta = 0.9;
+                        // }
+
+                        // self.state.zoom *= scale_delta;
+
+                        // let page_rect: Rect = Rect::from_center_size(
+                        //     rect.center() + self.state.offset,
+                        //     self.state.page.size_pixels() * self.state.zoom,
+                        // );
+
+                        // let post_mouse_to_page_left = pointer_pos.x - page_rect.left();
+                        // let post_mouse_to_page_top = pointer_pos.y  - page_rect.top();
+
+                        // println!("Offseting by: {}, {}", (post_mouse_to_page_left - mouse_to_page_left), (post_mouse_to_page_top - mouse_to_page_top));
+
+                        // println!("");
+
+                        // self.state.offset.x += (post_mouse_to_page_left - mouse_to_page_left);
+                        // self.state.offset.y += (post_mouse_to_page_top - mouse_to_page_top);
 
                         //////////////////////////////////////
 
