@@ -5,6 +5,7 @@ use eframe::{
         self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, FontSelection, Image,
         Response, RichText, Sense, SidePanel, TextEdit, TextStyle, Ui,
     },
+    egui_glow::painter,
     emath::{Align2, Rot2},
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
@@ -623,12 +624,89 @@ impl<'a> Canvas<'a> {
 
         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
             if is_pointer_on_canvas {
-                ui.input(|input| {
-                    self.state.zoom += input.smooth_scroll_delta.y * 0.005;
-                    self.state.zoom = self.state.zoom.max(0.1);
+                let debug = ui.input(|input| {
+                    let page_rect: Rect = Rect::from_center_size(
+                        rect.center() + self.state.offset,
+                        self.state.page.size_pixels() * self.state.zoom,
+                    );
+                    if input.raw_scroll_delta.y != 0.0 {
+
+                        /////////////////////////
+                        
+                        let pointer_rel_doc_center = pointer_pos - rect.center();
+
+                        let pointer_pos = pointer_pos + self.state.offset + rect.left_top().to_vec2();
+
+                        let page_rect: Rect = Rect::from_center_size(
+                            rect.center() + self.state.offset,
+                            self.state.page.size_pixels() * self.state.zoom,
+                        );
+
+                        let mouse_to_page_left = pointer_pos.x - page_rect.left();
+                        let mouse_to_page_top = pointer_pos.y - page_rect.top();
+
+                        println!("Mouse to page left: {}, Mouse to page top: {}", mouse_to_page_left, mouse_to_page_top);
+
+                        let mut scale_delta = 1.0;
+
+                        if input.raw_scroll_delta.y > 0.0 {
+                            scale_delta = 1.1;
+                        } else if input.raw_scroll_delta.y < 0.0 {
+                            scale_delta = 0.9;
+                        }
+
+                        self.state.zoom *= scale_delta;
+
+                        let page_rect: Rect = Rect::from_center_size(
+                            rect.center() + self.state.offset,
+                            self.state.page.size_pixels() * self.state.zoom,
+                        );
+
+                        let post_mouse_to_page_left = pointer_pos.x - page_rect.left();
+                        let post_mouse_to_page_top = pointer_pos.y  - page_rect.top();
+
+                        println!("Offseting by: {}, {}", (post_mouse_to_page_left - mouse_to_page_left), (post_mouse_to_page_top - mouse_to_page_top));
+
+                        println!("");
+
+                        self.state.offset.x += (post_mouse_to_page_left - mouse_to_page_left);
+                        self.state.offset.y += (post_mouse_to_page_top - mouse_to_page_top);
+
+                        //////////////////////////////////////
+
+                        // let mut scale_delta = 1.0;
+
+                        // let pre_zoom_width = rect.width() * self.state.zoom;
+                        // let pre_zoom_height = rect.height() * self.state.zoom;
+
+                        // if input.raw_scroll_delta.y > 0.0 {
+                        //     scale_delta = 1.1;
+                        // } else if input.raw_scroll_delta.y < 0.0 {
+                        //     scale_delta = 0.9;
+                        // }
+
+                        // self.state.zoom *= scale_delta;
+
+                        // let post_zoom_width = rect.width() * self.state.zoom;
+                        // let post_zoom_height = rect.height() * self.state.zoom;
+
+                        // let multiplier_x = (pointer_pos.x - rect.center().x) / rect.center().x;
+                        // let multiplier_y = (pointer_pos.y - rect.center().y) / rect.center().y;
+
+                        // let offset_x = (post_zoom_width - pre_zoom_width) * (multiplier_x);
+                        // let offset_y = (post_zoom_height - pre_zoom_height) * (multiplier_y);
+
+                        // self.state.offset.x -= offset_x / self.state.zoom;
+                        // self.state.offset.y -= offset_y / self.state.zoom;
+                    }
                 });
             }
         }
+
+        let page_rect: Rect = Rect::from_center_size(
+            rect.center() + self.state.offset,
+            self.state.page.size_pixels() * self.state.zoom,
+        );
 
         ui.input(|input| {
             if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
@@ -644,15 +722,8 @@ impl<'a> Canvas<'a> {
 
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
 
-        // TEMP: page placeholder
-
-        let page_rect = Rect::from_center_size(rect.center(), self.state.page.size_pixels());
-        let page_rect = page_rect.translate(self.state.offset);
-
-        let expansion = ((page_rect.size() * self.state.zoom) - page_rect.size()) * 0.5;
-        let page_rect = page_rect.expand2(expansion);
-
-        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+        ui.painter()
+            .rect_stroke(page_rect, 0.0, Stroke::new(3.0, Color32::WHITE));
 
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
@@ -1193,8 +1264,8 @@ impl<'a> TransformableWidget<'a> {
         self.state.last_frame_rotation = self.state.rotation;
 
         // Translate photo to the new left_top position, adjusted for the global offset
-        let translated_rect_left_top =
-            pre_scaled_container_rect.left_top() + (self.state.rect.left_top() * global_scale).to_vec2();
+        let translated_rect_left_top = pre_scaled_container_rect.left_top()
+            + (self.state.rect.left_top() * global_scale).to_vec2();
 
         // Scale the size of the photo
         let scaled_photo_size = self.state.rect.size() * global_scale;

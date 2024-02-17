@@ -50,6 +50,7 @@ pub trait RectExt {
     fn rotate_bb_around_center(&self, angle: f32) -> Rect;
     fn to_local_space(&self, parent: Rect) -> Rect;
     fn to_world_space(&self, parent: Rect) -> Rect;
+    fn scale(&self, scale: f32) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -124,6 +125,13 @@ impl RectExt for Rect {
         world.min += parent.min.to_vec2();
         world.max += parent.min.to_vec2();
         world
+    }
+
+    fn scale(&self, scale: f32) -> Rect {
+        let center = self.center();
+        let half_size = self.size() / 2.0;
+        let new_half_size = half_size * scale;
+        Rect::from_min_max(center - new_half_size, center + new_half_size)
     }
 }
 
