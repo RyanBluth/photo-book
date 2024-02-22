@@ -99,20 +99,27 @@ impl<'a> CanvasScene<'a> {
             None => {}
         }
 
-        let canvas_info_response = SidePanel::right("canvas_info_panel")
-            .default_width(300.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                CanvasInfo {
-                    layers: &mut self.state.layers,
-                    page: &mut self.state.page,
-                }
-                .show(ui)
+        let canvas_info_response = self
+            .state
+            .capturing_history(CanvasHistoryKind::Page, |state| {
+                SidePanel::right("canvas_info_panel")
+                    .default_width(300.0)
+                    .resizable(true)
+                    .show(ctx, |ui| {
+                        CanvasInfo {
+                            layers: &mut state.layers,
+                            page: &mut state.page,
+                        }
+                        .show(ui)
+                    })
             });
 
-        if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
-            self.state.select_photo(&selected_layer, ctx);
-        }
+        self.state
+            .capturing_history(CanvasHistoryKind::Select, |state| {
+                if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
+                    state.select_photo(&selected_layer, ctx);
+                }
+            });
 
         canvas_response
     }
@@ -140,6 +147,7 @@ enum CanvasHistoryKind {
     AddPhoto,
     DeletePhoto,
     Select,
+    Page, // TODO Add specific cases for things within the page settings
 }
 
 impl Display for CanvasHistoryKind {
@@ -150,6 +158,7 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
             CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
             CanvasHistoryKind::Select => write!(f, "Select"),
+            CanvasHistoryKind::Page => write!(f, "Page"),
         }
     }
 }
@@ -158,6 +167,7 @@ impl Display for CanvasHistoryKind {
 struct CanvasHistory {
     layers: IndexMap<LayerId, Layer>,
     multi_select: Option<MultiSelect>,
+    page: Page,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -350,15 +360,31 @@ impl CanvasState {
             CanvasHistory {
                 layers: self.layers.clone(),
                 multi_select: self.multi_select.clone(),
+                page: self.page.clone(),
             },
         );
-
-        println!("History len = {}", self.history_manager.history.len());
     }
 
     fn apply_history(&mut self, history: CanvasHistory) {
         self.layers = history.layers;
         self.multi_select = history.multi_select;
+        self.page = history.page;
+
+        // self.page.update_edit_state();
+    }
+
+    pub fn capturing_history<T>(
+        &mut self,
+        kind: CanvasHistoryKind,
+        perform: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let mut modified = self.clone();
+        let res = perform(&mut modified);
+        if modified != *self {
+            self.save_history(kind);
+        }
+        *self = modified;
+        res
     }
 }
 
@@ -374,6 +400,7 @@ impl CanvasState {
                     CanvasHistory {
                         layers: IndexMap::new(),
                         multi_select: None,
+                        page: Page::default(),
                     },
                 )],
                 index: 0,
@@ -428,6 +455,7 @@ impl CanvasState {
                     CanvasHistory {
                         layers: indexmap! { layer.id => layer },
                         multi_select: None,
+                        page: Page::default(),
                     },
                 )],
                 index: 0,
@@ -626,43 +654,52 @@ impl<'a> Canvas<'a> {
             if is_pointer_on_canvas {
                 let debug = ui.input(|input| {
                     let page_rect: Rect = Rect::from_center_size(
-                        rect.center() + self.state.offset,
+                        rect.center() + self.state.offset * self.state.zoom,
                         self.state.page.size_pixels() * self.state.zoom,
                     );
                     if input.raw_scroll_delta.y != 0.0 {
+                        // let pointer_direction = (pointer_pos - rect.center()).normalized();
 
-                        let pointer_direction = (pointer_pos - rect.center()).normalized();
+                        // println!("Pointer direction: {:?}", pointer_direction);
 
-                        println!("Pointer direction: {:?}", pointer_direction);
+                        // let pre_zoom_width = rect.width() * self.state.zoom;
 
-                        let pre_zoom_width = rect.width() * self.state.zoom;
+                        // let scale_delta = if input.raw_scroll_delta.y > 0.0 {
+                        //     1.1
+                        // } else {
+                        //     0.9
+                        // };
 
-                        let scale_delta = if input.raw_scroll_delta.y > 0.0 {
-                            1.1
-                        } else {
-                            0.9
-                        };
+                        // self.state.zoom *= scale_delta;
 
-                        self.state.zoom *= scale_delta;
+                        // let post_zoom_width = rect.width() * self.state.zoom;
 
-                        let post_zoom_width = rect.width() * self.state.zoom;
+                        // let multiplier_x = (pointer_pos.x - rect.center().x) / rect.center().x;
+                        // let multiplier_y = (pointer_pos.y - rect.center().y) / rect.center().y;
 
-                        self.state.offset -= ((pointer_direction * (post_zoom_width - pre_zoom_width) * 0.5) ) ;
-
+                        // self.state.offset.x -= ((post_zoom_width - pre_zoom_width) / self.state.zoom ) * multiplier_x / self.state.zoom;
+                        // self.state.offset.y -= ((post_zoom_width - pre_zoom_width) / self.state.zoom ) * multiplier_y / self.state.zoom;
 
                         /////////////////////////
-                        
+
                         // let pointer_rel_doc_center = pointer_pos - rect.center();
 
-                        // let pointer_pos = pointer_pos + self.state.offset + rect.left_top().to_vec2();
+                        // let pointer_pos = pointer_pos;// + self.state.offset; //- rect.center().to_vec2();
+
+                        // println!("Offset: {:?}", self.state.offset);
+                        // println!("Pointer pos: {:?}", pointer_pos);
 
                         // let page_rect: Rect = Rect::from_center_size(
                         //     rect.center() + self.state.offset,
                         //     self.state.page.size_pixels() * self.state.zoom,
                         // );
 
-                        // let mouse_to_page_left = pointer_pos.x - page_rect.left();
-                        // let mouse_to_page_top = pointer_pos.y - page_rect.top();
+                        // println!("Page rect: {:?}", page_rect);
+
+                        // let mouse_to_page_left =  page_rect.left() - pointer_pos.x;
+                        // let mouse_to_page_top =  page_rect.top() - pointer_pos.y;
+
+                        // let mouse_to_page_center =  page_rect.center() - pointer_pos;
 
                         // println!("Mouse to page left: {}, Mouse to page top: {}", mouse_to_page_left, mouse_to_page_top);
 
@@ -681,15 +718,20 @@ impl<'a> Canvas<'a> {
                         //     self.state.page.size_pixels() * self.state.zoom,
                         // );
 
-                        // let post_mouse_to_page_left = pointer_pos.x - page_rect.left();
-                        // let post_mouse_to_page_top = pointer_pos.y  - page_rect.top();
+                        // let post_mouse_to_page_left = page_rect.left() - pointer_pos.x;
+                        // let post_mouse_to_page_top =  page_rect.top() - pointer_pos.y;
+
+                        // let post_mouse_to_page_center =  page_rect.center() - pointer_pos;
 
                         // println!("Offseting by: {}, {}", (post_mouse_to_page_left - mouse_to_page_left), (post_mouse_to_page_top - mouse_to_page_top));
 
                         // println!("");
 
-                        // self.state.offset.x += (post_mouse_to_page_left - mouse_to_page_left);
-                        // self.state.offset.y += (post_mouse_to_page_top - mouse_to_page_top);
+                        // self.state.offset.x += (mouse_to_page_left - post_mouse_to_page_left);
+                        // self.state.offset.y += ( mouse_to_page_top - post_mouse_to_page_top);
+
+                        // self.state.offset.x += (post_mouse_to_page_center.x - mouse_to_page_center.x) * self.state.zoom;
+                        // self.state.offset.y += (post_mouse_to_page_center.y - mouse_to_page_center.y) * self.state.zoom;
 
                         //////////////////////////////////////
 
@@ -697,6 +739,9 @@ impl<'a> Canvas<'a> {
 
                         // let pre_zoom_width = rect.width() * self.state.zoom;
                         // let pre_zoom_height = rect.height() * self.state.zoom;
+
+                        // let pre_page_width = self.state.page.size_pixels().x * self.state.zoom;
+                        // let pre_page_height = self.state.page.size_pixels().y * self.state.zoom;
 
                         // if input.raw_scroll_delta.y > 0.0 {
                         //     scale_delta = 1.1;
@@ -709,14 +754,45 @@ impl<'a> Canvas<'a> {
                         // let post_zoom_width = rect.width() * self.state.zoom;
                         // let post_zoom_height = rect.height() * self.state.zoom;
 
+                        // let post_page_width = self.state.page.size_pixels().x * self.state.zoom;
+                        // let post_page_height = self.state.page.size_pixels().y * self.state.zoom;
+
                         // let multiplier_x = (pointer_pos.x - rect.center().x) / rect.center().x;
                         // let multiplier_y = (pointer_pos.y - rect.center().y) / rect.center().y;
 
-                        // let offset_x = (post_zoom_width - pre_zoom_width) * (multiplier_x);
-                        // let offset_y = (post_zoom_height - pre_zoom_height) * (multiplier_y);
+                        // let offset_x = (post_page_width - pre_page_width) * (multiplier_x * 0.5);
+                        // let offset_y = (post_page_height - pre_page_height) * (multiplier_y * 0.5);
 
-                        // self.state.offset.x -= offset_x / self.state.zoom;
-                        // self.state.offset.y -= offset_y / self.state.zoom;
+                        // self.state.offset.x -= offset_x;
+                        // self.state.offset.y -= offset_y;
+
+                        ////////////////////////////////////////////
+
+                        // let mut factor = 0.95;
+                        // if input.raw_scroll_delta.y > 0.0 {
+                        //     factor = 1.0/factor;
+                        // }
+
+                        // self.state.zoom += factor - 1.0;
+
+                        // let page_rect = Rect::from_center_size(
+                        //     rect.center() + self.state.offset,
+                        //     self.state.page.size_pixels() * self.state.zoom,
+                        // );
+
+                        // let dx = (pointer_pos.x - page_rect.left()) * (factor - 1.0);
+                        // let dy = (pointer_pos.y - page_rect.top()) * (factor - 1.0);
+
+                        // self.state.offset.x -= dx* 2.0;
+                        // self.state.offset.y -= dy * 2.0;
+
+                        //////////////////////////
+
+                        if input.raw_scroll_delta.y > 0.0 {
+                            self.state.zoom *= 1.1;
+                        } else if input.raw_scroll_delta.y < 0.0 {
+                            self.state.zoom *= 0.9;
+                        }
                     }
                 });
             }

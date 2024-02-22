@@ -8,6 +8,7 @@ use crate::widget::{
 
 use super::{
     layers::{Layer, LayerId, Layers},
+    text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},
 };
 
@@ -32,16 +33,24 @@ impl<'a> CanvasInfo<'a> {
                     selected_layer_id: Option<usize>,
                 }
 
-                let mut selected_layer = self
+                // TODO: Handle multi select
+                let selected_layer = self
                     .layers
                     .iter_mut()
                     .filter(|x| x.1.selected)
                     .map(|(_, layer)| layer)
                     .next();
 
-                TransformControl::new(TransformControlState::new(&mut selected_layer)).show(ui);
+                if let Some(layer) = selected_layer {
+                    TransformControl::new(TransformControlState::new(layer)).show(ui);
 
-                ui.separator();
+                    ui.separator();
+
+                    if matches!(layer.content, super::layers::LayerContent::Text(_)) {
+                        TextControl::new(TextControlState::new(layer)).show(ui);
+                        ui.separator();
+                    }
+                }
 
                 let selected_layer_id = Layers::new(self.layers).show(ui).selected_layer;
 
