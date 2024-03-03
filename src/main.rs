@@ -4,10 +4,9 @@ use std::{collections::HashSet, path::PathBuf, sync::Arc};
 
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
-use eframe::egui::{
-    self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget,
-};
+use eframe::egui::{self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget};
 
+use font_manager::FontManager;
 use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
 use tokio::runtime;
@@ -22,17 +21,16 @@ use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
 mod assets;
+mod cursor_manager;
 mod dependencies;
 mod error_sink;
+mod font_manager;
 mod persistence;
 mod photo;
 mod photo_manager;
 mod string_log;
 mod utils;
 mod widget;
-mod cursor_manager;
-
-const AUTO_LOAD_PHOTOS: bool = true;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -67,10 +65,6 @@ async fn main() -> anyhow::Result<()> {
 
     let app_log = Arc::clone(&log);
 
-    if AUTO_LOAD_PHOTOS {
-        PhotoManager::load_directory(PathBuf::from("/home/ryan/Desktop/Aug-5-2023")).unwrap();
-    }
-
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
@@ -84,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
                         current_dir: None,
                     },
                 }],
+                loaded_fonts: false,
             })
         }),
     )
@@ -132,6 +127,7 @@ struct MyApp {
     log: Arc<StringLog>,
     photo_manager: Singleton<PhotoManager>,
     nav_stack: Vec<PrimaryComponent>,
+    loaded_fonts: bool,
 }
 
 enum NavAction {
@@ -140,8 +136,18 @@ enum NavAction {
 }
 
 impl eframe::App for MyApp {
+    
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
+
+        if !self.loaded_fonts {
+            self.loaded_fonts = true;
+            // Just load all fonts at start up. Maybe there's a better time to do this?
+            let font_manager: Singleton<FontManager> = Dependency::get();
+            font_manager.with_lock_mut(|font_manager| {
+                font_manager.load_fonts(&ctx);
+            });
+        }
 
         Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
             cursor_manager.begin_frame(ctx);

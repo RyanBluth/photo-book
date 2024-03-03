@@ -3,9 +3,10 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
+use font_kit::font::Font;
+
 use crate::{
-    cursor_manager::CursorManager,
-    photo_manager::PhotoManager,
+    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager
 };
 
 macro_rules! singleton {
@@ -63,3 +64,5 @@ pub struct Dependency<T>(PhantomData<T>);
 singleton!(PHOTO_MANAGER_INSTANCE, PhotoManager, PhotoManager::new());
 
 singleton!(CURSOR_MANAGER, CursorManager, CursorManager::new());
+
+singleton!(FONT_MANAGER, FontManager, FontManager::new());

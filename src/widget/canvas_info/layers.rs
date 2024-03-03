@@ -1,7 +1,7 @@
 use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::epaint::Color32;
-use egui::{CursorIcon, Image, Pos2, Rect, Vec2};
+use egui::{CursorIcon, FontId, Image, Pos2, Rect, Vec2};
 use indexmap::{IndexMap, IndexSet};
 
 use crate::{
@@ -124,8 +124,40 @@ impl LayerTransformEditState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CanvasTextEditState {
+    pub font_size: EditableValue<f32>,
+}
+
+impl CanvasTextEditState {
+    pub fn new(font_size: f32) -> Self {
+        Self {
+            font_size: EditableValue::new(font_size),
+        }
+    }
+
+    pub fn update(&mut self, font_size: f32) {
+        self.font_size.update_if_not_active(font_size);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CanvasText {
     pub text: String,
+    pub font_size: f32,
+    pub font_id: FontId,
+
+    pub edit_state: CanvasTextEditState,
+}
+
+impl CanvasText {
+    pub fn new(text: String, font_size: f32, font_family: FontId) -> Self {
+        Self {
+            text,
+            font_size,
+            font_id: font_family,
+            edit_state: CanvasTextEditState::new(font_size),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -184,9 +216,7 @@ impl Layer {
     }
 
     pub fn new_text_layer() -> Self {
-        let text = CanvasText {
-            text: "New Text Layer".to_string(),
-        };
+        let text = CanvasText::new("New Text Layer".to_string(), 20.0, FontId::default());
         let transform_state = TransformableState {
             rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
             active_handle: None,
@@ -259,8 +289,10 @@ impl<'a> Layers<'a> {
                                 LayerContent::Photo(canvas_photo) => {
                                     let texture_id =
                                         self.photo_manager.with_lock_mut(|photo_manager| {
-                                            photo_manager
-                                                .thumbnail_texture_for(&canvas_photo.photo, ui.ctx())
+                                            photo_manager.thumbnail_texture_for(
+                                                &canvas_photo.photo,
+                                                ui.ctx(),
+                                            )
                                         });
 
                                     let image_size =
@@ -270,7 +302,11 @@ impl<'a> Layers<'a> {
                                         Ok(Some(texture_id)) => {
                                             let image = Image::from_texture(texture_id)
                                                 .rotate(
-                                                    canvas_photo.photo.metadata.rotation().radians(),
+                                                    canvas_photo
+                                                        .photo
+                                                        .metadata
+                                                        .rotation()
+                                                        .radians(),
                                                     Vec2::splat(0.5),
                                                 )
                                                 .fit_to_exact_size(image_size);

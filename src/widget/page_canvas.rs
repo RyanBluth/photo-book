@@ -7,7 +7,7 @@ use eframe::{
     },
     egui_glow::painter,
     emath::{Align2, Rot2},
-    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
+    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2}, wgpu::Color,
 };
 use egui::{epaint::TextShape, FontFamily};
 use indexmap::{indexmap, IndexMap};
@@ -369,8 +369,6 @@ impl CanvasState {
         self.layers = history.layers;
         self.multi_select = history.multi_select;
         self.page = history.page;
-
-        // self.page.update_edit_state();
     }
 
     pub fn capturing_history<T>(
@@ -652,7 +650,7 @@ impl<'a> Canvas<'a> {
 
         if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
             if is_pointer_on_canvas {
-                let debug = ui.input(|input| {
+                ui.input(|input| {
                     let page_rect: Rect = Rect::from_center_size(
                         rect.center() + self.state.offset * self.state.zoom,
                         self.state.page.size_pixels() * self.state.zoom,
@@ -816,9 +814,7 @@ impl<'a> Canvas<'a> {
         });
 
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
-
-        ui.painter()
-            .rect_stroke(page_rect, 0.0, Stroke::new(3.0, Color32::WHITE));
+        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
@@ -1122,8 +1118,8 @@ impl<'a> Canvas<'a> {
                         let galley = painter.layout(
                             text.text.clone(),
                             FontId {
-                                size: 50.0 * self.state.zoom,
-                                family: FontFamily::Proportional,
+                                size: text.font_size * self.state.zoom,
+                                family: text.font_id.family.clone(),
                             },
                             Color32::BLUE,
                             transformed_rect.width() as f32,

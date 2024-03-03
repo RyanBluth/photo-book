@@ -1,13 +1,23 @@
-use std::{fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr, sync::Arc};
 
 use eframe::{
     egui::{self, FontTweak, Grid, RichText, Ui},
     epaint::{FontFamily, FontId, Vec2},
 };
+use egui::ComboBox;
+use font_kit::font;
 
-use crate::{utils::EditableValueTextEdit, widget::page_canvas::TransformableState};
+use crate::{
+    dependencies::{Dependency, SingletonFor},
+    font_manager::FontManager,
+    utils::EditableValueTextEdit,
+    widget::page_canvas::TransformableState,
+};
 
-use super::layers::{EditableValue, Layer};
+use super::layers::{
+    EditableValue, Layer,
+    LayerContent::{Photo, Text},
+};
 
 pub struct TextControlState<'a> {
     layer: &'a mut Layer,
@@ -30,10 +40,12 @@ impl<'a> TextControl<'a> {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let response = ui.allocate_ui(ui.available_size(), |ui| match self.state.layer.content {
-            super::layers::LayerContent::Photo(_) => {
+            Photo(_) => {
                 ui.label("No text layer selected");
             }
-            super::layers::LayerContent::Text(_) => {
+            Text(ref mut text_content) => {
+                text_content.edit_state.update(text_content.font_size);
+
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
                     ui.style_mut().spacing.text_edit_width = 80.0;
@@ -43,12 +55,61 @@ impl<'a> TextControl<'a> {
                     ui.horizontal(|ui| {
                         let text = &mut self.state.layer.content;
                         match text {
-                            super::layers::LayerContent::Photo(_) => (),
-                            super::layers::LayerContent::Text(text) => {
+                            Photo(_) => (),
+                            Text(text) => {
                                 let mut new_text = text.text.clone();
                                 ui.label("Text:");
                                 ui.text_edit_singleline(&mut new_text);
                                 text.text = new_text;
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        let text = &mut self.state.layer.content;
+                        match text {
+                            Photo(_) => (),
+                            Text(text) => {
+                                ui.label("Font Size:");
+
+                                let new_font_size = ui.text_edit_editable_value_singleline(
+                                    &mut text.edit_state.font_size,
+                                );
+                                text.font_size = new_font_size;
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        let text = &mut self.state.layer.content;
+                        match text {
+                            Photo(_) => (),
+                            Text(text) => {
+                                ui.label("Font Family:");
+
+                                ComboBox::from_label("Font Family")
+                                    .selected_text(format!("{}", text.font_id.family.to_string()))
+                                    .show_ui(ui, |ui| {
+                                        let fonts = ui.ctx().fonts(|fonts| {
+                                            fonts
+                                                .families()
+                                                .iter()
+                                                .map(|family| {
+                                                    let font_id = FontId::new(20.0, family.clone());
+                                                    font_id
+                                                })
+                                                .collect::<Vec<FontId>>()
+                                        });
+
+                                        for font_id in &fonts {
+                                            ui.selectable_value(
+                                                &mut text.font_id,
+                                                font_id.clone(),
+                                                RichText::new(font_id.family.to_string())
+                                                    .font(font_id.clone()),
+                                            );
+                                        }
+                                    });
                             }
                         }
                     });
