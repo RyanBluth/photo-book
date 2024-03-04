@@ -146,9 +146,9 @@ impl Toggle for bool {
 }
 
 pub trait EditableValueTextEdit {
-    fn text_edit_editable_value_singleline<'a, T>(
+    fn text_edit_editable_value_singleline<T>(
         &mut self,
-        value: &'a mut EditableValue<T>,
+        value: &mut EditableValue<T>,
     ) -> T
     where
         T: Display,
@@ -157,9 +157,9 @@ pub trait EditableValueTextEdit {
 }
 
 impl EditableValueTextEdit for Ui {
-    fn text_edit_editable_value_singleline<'a, T>(
+    fn text_edit_editable_value_singleline<T>(
         &mut self,
-        value: &'a mut EditableValue<T>,
+        value: &mut EditableValue<T>,
     ) -> T
     where
         T: Display,
@@ -176,6 +176,6 @@ impl EditableValueTextEdit for Ui {
             return value.value().clone();
         }
 
-        return value.value();
+        value.value()
     }
 }

@@ -2,12 +2,12 @@ use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Image, Pos2, Rect, Vec2};
-use indexmap::{IndexMap, IndexSet};
+use indexmap::{IndexMap};
 
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    photo::{self, Photo},
+    photo::{Photo},
     photo_manager::PhotoManager,
     widget::{
         page_canvas::{CanvasPhoto, TransformHandleMode, TransformableState},
@@ -52,7 +52,7 @@ where
         let editable_value = value.to_string();
         Self {
             value,
-            editable_value: editable_value,
+            editable_value,
             editing: false,
         }
     }
@@ -210,7 +210,7 @@ impl Layer {
             locked: false,
             selected: false,
             id: next_layer_id(),
-            transform_edit_state: transform_edit_state,
+            transform_edit_state,
             transform_state,
         }
     }
@@ -270,7 +270,7 @@ impl<'a> Layers<'a> {
         ui.vertical(|ui| {
             let dnd_response = dnd(ui, "layers_dnd").show(
                 self.layers.iter().rev(),
-                |ui, (layer_id, layer), handle, state| {
+                |ui, (_layer_id, layer), handle, _state| {
                     // for layer in self.layers.iter_mut() {
                     let _layer_response = ui.horizontal(|ui| {
                         handle.ui(ui, |ui| {

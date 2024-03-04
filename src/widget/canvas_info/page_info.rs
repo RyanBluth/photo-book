@@ -1,6 +1,6 @@
-use eframe::egui::{self, Response};
+use eframe::egui::{self};
 use egui::{ComboBox, RichText, Vec2};
-use indexmap::IndexMap;
+
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -8,10 +8,7 @@ use crate::{
     widget::page_canvas::{Page, Unit},
 };
 
-use super::{
-    layers::{Layer, LayerId, Layers},
-    transform_control::{TransformControl, TransformControlState},
-};
+
 
 #[derive(Debug, PartialEq)]
 pub struct PageInfoState<'a> {
@@ -34,7 +31,7 @@ impl<'a> PageInfo<'a> {
         PageInfo { state }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui) -> () {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
     
         self.state.page.update_edit_state();
 

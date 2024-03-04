@@ -1,13 +1,13 @@
-use std::{fmt::Display, str::FromStr};
+
 
 use eframe::{
-    egui::{self, FontTweak, Grid, RichText, Ui},
-    epaint::{FontFamily, FontId, Vec2},
+    egui::{RichText, Ui},
+    epaint::{Vec2},
 };
 
-use crate::{utils::EditableValueTextEdit, widget::page_canvas::TransformableState};
+use crate::{utils::EditableValueTextEdit};
 
-use super::layers::{EditableValue, Layer};
+use super::layers::{Layer};
 
 pub struct TransformControlState<'a> {
     layer: &'a mut Layer,
@@ -29,7 +29,7 @@ impl<'a> TransformControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        let response = ui.allocate_ui(ui.available_size(), |ui| {
+        let _response = ui.allocate_ui(ui.available_size(), |ui| {
             self.state
                 .layer
                 .transform_edit_state

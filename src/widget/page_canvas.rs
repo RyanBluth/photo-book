@@ -2,20 +2,19 @@ use std::{fmt::Display, str::FromStr};
 
 use eframe::{
     egui::{
-        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, FontSelection, Image,
-        Response, RichText, Sense, SidePanel, TextEdit, TextStyle, Ui,
+        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image,
+        Response, Sense, SidePanel, Ui,
     },
-    egui_glow::painter,
-    emath::{Align2, Rot2},
-    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2}, wgpu::Color,
+    emath::{Rot2},
+    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
-use egui::{epaint::TextShape, FontFamily};
+use egui::{epaint::TextShape};
 use indexmap::{indexmap, IndexMap};
 use strum_macros::EnumIter;
 
 use crate::{
     assets::Asset,
-    cursor_manager::{self, CursorManager},
+    cursor_manager::{CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
@@ -439,8 +438,8 @@ impl CanvasState {
             locked: false,
             selected: false,
             id: next_layer_id(),
-            transform_edit_state: transform_edit_state,
-            transform_state: transform_state,
+            transform_edit_state,
+            transform_state,
         };
 
         Self {
@@ -515,7 +514,7 @@ impl MultiSelect {
     fn new(layers: &IndexMap<LayerId, Layer>) -> Self {
         let selected_ids = layers
             .iter()
-            .filter(|((_, layer))| layer.selected)
+            .filter(|(_, layer)| layer.selected)
             .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
@@ -549,7 +548,7 @@ impl MultiSelect {
     fn update_selected<'a>(&'a mut self, layers: &'a IndexMap<LayerId, Layer>) {
         let selected_layer_ids = layers
             .iter()
-            .filter(|((_, layer))| layer.selected)
+            .filter(|(_, layer)| layer.selected)
             .map(|(id, _)| *id)
             .collect::<Vec<_>>();
 
@@ -578,8 +577,7 @@ impl MultiSelect {
 
         let joined_selected_ids: Vec<usize> = selected_layer_ids
             .iter()
-            .chain(self.selected_layers.iter().map(|child| &child.id))
-            .map(|x| *x)
+            .chain(self.selected_layers.iter().map(|child| &child.id)).copied()
             .collect();
 
         let new_rect = Self::compute_rect(layers, &joined_selected_ids);
@@ -632,7 +630,7 @@ impl<'a> Canvas<'a> {
         Self {
             state,
             photo_manager: Dependency::get(),
-            available_rect: available_rect,
+            available_rect,
         }
     }
 
@@ -648,10 +646,10 @@ impl<'a> Canvas<'a> {
 
         ui.set_clip_rect(rect);
 
-        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+        if let Some(_pointer_pos) = ui.ctx().pointer_hover_pos() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
-                    let page_rect: Rect = Rect::from_center_size(
+                    let _page_rect: Rect = Rect::from_center_size(
                         rect.center() + self.state.offset * self.state.zoom,
                         self.state.page.size_pixels() * self.state.zoom,
                     );
@@ -822,8 +820,7 @@ impl<'a> Canvas<'a> {
         for layer_id in self
             .state
             .layers
-            .keys()
-            .map(|x| *x)
+            .keys().copied()
             .collect::<Vec<LayerId>>()
         {
             if let Some(transform_response) = self.draw_layer(&layer_id, page_rect, ui) {
@@ -890,11 +887,11 @@ impl<'a> Canvas<'a> {
                     rect,
                     self.state.zoom,
                     true,
-                    |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
+                    |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child in &multi_select.selected_layers {
                             let layer: &mut Layer =
-                                &mut self.state.layers.get_mut(&child.id).unwrap();
+                                self.state.layers.get_mut(&child.id).unwrap();
 
                             // Compute the relative position of the layer in the group so we can apply transformations
                             // to each side as they are adjusted at the group level
@@ -1122,7 +1119,7 @@ impl<'a> Canvas<'a> {
                                 family: text.font_id.family.clone(),
                             },
                             Color32::BLUE,
-                            transformed_rect.width() as f32,
+                            transformed_rect.width(),
                         );
 
                         let text_pos = transformed_rect.center() - galley.size() * 0.5;

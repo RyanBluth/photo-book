@@ -1,21 +1,18 @@
-use std::{fmt::Display, str::FromStr, sync::Arc};
+
 
 use eframe::{
-    egui::{self, FontTweak, Grid, RichText, Ui},
-    epaint::{FontFamily, FontId, Vec2},
+    egui::{self, RichText, Ui},
+    epaint::{FontId, Vec2},
 };
 use egui::ComboBox;
-use font_kit::font;
+
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
-    font_manager::FontManager,
     utils::EditableValueTextEdit,
-    widget::page_canvas::TransformableState,
 };
 
 use super::layers::{
-    EditableValue, Layer,
+    Layer,
     LayerContent::{Photo, Text},
 };
 
@@ -39,7 +36,7 @@ impl<'a> TextControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        let response = ui.allocate_ui(ui.available_size(), |ui| match self.state.layer.content {
+        let _response = ui.allocate_ui(ui.available_size(), |ui| match self.state.layer.content {
             Photo(_) => {
                 ui.label("No text layer selected");
             }
@@ -88,15 +85,15 @@ impl<'a> TextControl<'a> {
                                 ui.label("Font Family:");
 
                                 ComboBox::from_label("Font Family")
-                                    .selected_text(format!("{}", text.font_id.family.to_string()))
+                                    .selected_text(format!("{}", text.font_id.family))
                                     .show_ui(ui, |ui| {
                                         let fonts = ui.ctx().fonts(|fonts| {
                                             fonts
                                                 .families()
                                                 .iter()
                                                 .map(|family| {
-                                                    let font_id = FontId::new(20.0, family.clone());
-                                                    font_id
+                                                    
+                                                    FontId::new(20.0, family.clone())
                                                 })
                                                 .collect::<Vec<FontId>>()
                                         });

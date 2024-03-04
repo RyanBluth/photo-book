@@ -1,13 +1,12 @@
 use std::{
     collections::HashSet,
     ffi::OsStr,
-    panic,
     path::PathBuf,
-    sync::{Arc, Mutex},
+    sync::{Arc},
 };
 
-use egui::{epaint::text::FontsImpl, text::Fonts, FontDefinitions, FontFamily, FontId};
-use font_kit::{font, source::SystemSource};
+use egui::{text::Fonts, FontDefinitions, FontFamily, FontId};
+use font_kit::{source::SystemSource};
 use indexmap::IndexMap;
 
 #[derive(Debug, PartialEq)]
@@ -62,7 +61,7 @@ impl FontManager {
                                 };
                                 self.fonts
                                     .entry(family)
-                                    .or_insert_with(Vec::new)
+                                    .or_default()
                                     .push(font_info);
                             }
                             Err(err) => {
@@ -79,7 +78,7 @@ impl FontManager {
 
             let mut font_definitions = egui::FontDefinitions::default();
 
-            for (family, fonts) in &self.fonts {
+            for (_family, fonts) in &self.fonts {
                 for font in fonts {
                     match std::fs::read(&font.file_path) {
                         Ok(font_data) => {
@@ -110,8 +109,8 @@ impl FontManager {
                     .families()
                     .iter()
                     .map(|family| {
-                        let font_id = FontId::new(20.0, family.clone());
-                        font_id
+                        
+                        FontId::new(20.0, family.clone())
                     })
                     .filter(|font_id| fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890"))
                     .map(|font_id| font_id.family.to_string())

@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{collections::HashSet, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
@@ -145,7 +145,7 @@ impl eframe::App for MyApp {
             // Just load all fonts at start up. Maybe there's a better time to do this?
             let font_manager: Singleton<FontManager> = Dependency::get();
             font_manager.with_lock_mut(|font_manager| {
-                font_manager.load_fonts(&ctx);
+                font_manager.load_fonts(ctx);
             });
         }
 
