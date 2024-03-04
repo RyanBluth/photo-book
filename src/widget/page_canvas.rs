@@ -24,7 +24,7 @@ use crate::{
 use super::{
     canvas_info::{
         layers::{
-            next_layer_id, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState,
+            next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState
         },
         panel::CanvasInfo,
     },
@@ -1118,11 +1118,15 @@ impl<'a> Canvas<'a> {
                                 size: text.font_size * self.state.zoom,
                                 family: text.font_id.family.clone(),
                             },
-                            Color32::BLUE,
+                            text.color,
                             transformed_rect.width(),
                         );
 
-                        let text_pos = transformed_rect.center() - galley.size() * 0.5;
+                        let text_pos = match text.alignment {
+                            CanvasTextAlignment::Left => transformed_rect.left_center(),
+                            CanvasTextAlignment::Center => transformed_rect.center() - galley.size() * 0.5,
+                            CanvasTextAlignment::Right => transformed_rect.right_center() - galley.size(),
+                        };
 
                         let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK)
                             .with_angle(transformable_state.rotation);

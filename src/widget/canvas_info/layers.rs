@@ -2,12 +2,13 @@ use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Image, Pos2, Rect, Vec2};
-use indexmap::{IndexMap};
+use indexmap::IndexMap;
+use strum_macros::{Display, EnumIter, ToString};
 
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    photo::{Photo},
+    photo::Photo,
     photo_manager::PhotoManager,
     widget::{
         page_canvas::{CanvasPhoto, TransformHandleMode, TransformableState},
@@ -140,22 +141,38 @@ impl CanvasTextEditState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Display, EnumIter)]
+pub enum CanvasTextAlignment {
+    Left,
+    Center,
+    Right,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasText {
     pub text: String,
     pub font_size: f32,
     pub font_id: FontId,
-
+    pub alignment: CanvasTextAlignment,
+    pub color: Color32,
     pub edit_state: CanvasTextEditState,
 }
 
 impl CanvasText {
-    pub fn new(text: String, font_size: f32, font_family: FontId) -> Self {
+    pub fn new(
+        text: String,
+        font_size: f32,
+        font_family: FontId,
+        alignment: CanvasTextAlignment,
+        color: Color32,
+    ) -> Self {
         Self {
             text,
             font_size,
             font_id: font_family,
             edit_state: CanvasTextEditState::new(font_size),
+            alignment,
+            color,
         }
     }
 }
@@ -216,7 +233,13 @@ impl Layer {
     }
 
     pub fn new_text_layer() -> Self {
-        let text = CanvasText::new("New Text Layer".to_string(), 20.0, FontId::default());
+        let text = CanvasText::new(
+            "New Text Layer".to_string(),
+            20.0,
+            FontId::default(),
+            CanvasTextAlignment::Left,
+            Color32::BLACK,
+        );
         let transform_state = TransformableState {
             rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
             active_handle: None,

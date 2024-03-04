@@ -1,19 +1,14 @@
-
-
 use eframe::{
     egui::{self, RichText, Ui},
     epaint::{FontId, Vec2},
 };
 use egui::ComboBox;
+use strum::IntoEnumIterator;
 
-
-use crate::{
-    utils::EditableValueTextEdit,
-};
+use crate::utils::EditableValueTextEdit;
 
 use super::layers::{
-    Layer,
-    LayerContent::{Photo, Text},
+    CanvasTextAlignment, Layer, LayerContent::{Photo, Text}
 };
 
 pub struct TextControlState<'a> {
@@ -91,10 +86,7 @@ impl<'a> TextControl<'a> {
                                             fonts
                                                 .families()
                                                 .iter()
-                                                .map(|family| {
-                                                    
-                                                    FontId::new(20.0, family.clone())
-                                                })
+                                                .map(|family| FontId::new(20.0, family.clone()))
                                                 .collect::<Vec<FontId>>()
                                         });
 
@@ -104,6 +96,40 @@ impl<'a> TextControl<'a> {
                                                 font_id.clone(),
                                                 RichText::new(font_id.family.to_string())
                                                     .font(font_id.clone()),
+                                            );
+                                        }
+                                    });
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        let text = &mut self.state.layer.content;
+                        match text {
+                            Photo(_) => (),
+                            Text(text) => {
+                                ui.label("Color:");
+
+                                ui.color_edit_button_srgba(&mut text.color);
+                            }
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        let text = &mut self.state.layer.content;
+                        match text {
+                            Photo(_) => (),
+                            Text(text) => {
+                                ui.label("Alignment:");
+
+                                ComboBox::from_label("Alignment")
+                                    .selected_text(format!("{}", text.alignment))
+                                    .show_ui(ui, |ui| {
+                                        for alignment in CanvasTextAlignment::iter() {
+                                            ui.selectable_value(
+                                                &mut text.alignment,
+                                                alignment.clone(),
+                                                RichText::new(alignment.to_string()),
                                             );
                                         }
                                     });
