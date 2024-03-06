@@ -51,6 +51,10 @@ pub trait RectExt {
     fn to_local_space(&self, parent: Rect) -> Rect;
     fn to_world_space(&self, parent: Rect) -> Rect;
     fn scale(&self, scale: f32) -> Rect;
+    fn translate_left_to(&self, new_left: f32) -> Rect;
+    fn translate_right_to(&self, new_right: f32) -> Rect;
+    fn translate_top_to(&self, new_top: f32) -> Rect;
+    fn translate_bottom_to(&self, new_bottom: f32) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -132,6 +136,34 @@ impl RectExt for Rect {
         let half_size = self.size() / 2.0;
         let new_half_size = half_size * scale;
         Rect::from_min_max(center - new_half_size, center + new_half_size)
+    }
+
+    fn translate_left_to(&self, new_left: f32) -> Rect {
+        let mut translated = *self;
+        let diff = new_left - translated.left();
+        translated = translated.translate(Vec2::new(diff, 0.0));
+        translated
+    }
+
+    fn translate_right_to(&self, new_right: f32) -> Rect {
+        let mut translated = *self;
+        let diff = new_right - translated.right();
+        translated = translated.translate(Vec2::new(diff, 0.0));
+        translated
+    }
+
+    fn translate_top_to(&self, new_top: f32) -> Rect {
+        let mut translated = *self;
+        let diff = new_top - translated.top();
+        translated = translated.translate(Vec2::new(0.0, diff));
+        translated
+    }
+
+    fn translate_bottom_to(&self, new_bottom: f32) -> Rect {
+        let mut translated = *self;
+        let diff = new_bottom - translated.bottom();
+        translated = translated.translate(Vec2::new(0.0, diff));
+        translated
     }
 }
 

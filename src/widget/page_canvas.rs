@@ -278,7 +278,7 @@ impl Page {
         }
     }
 
-    fn size_pixels(&self) -> Vec2 {
+    pub fn size_pixels(&self) -> Vec2 {
         match self.unit {
             Unit::Pixels => self.size,
             Unit::Inches => self.size * self.ppi as f32,

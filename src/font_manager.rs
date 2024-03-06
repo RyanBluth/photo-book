@@ -1,12 +1,7 @@
-use std::{
-    collections::HashSet,
-    ffi::OsStr,
-    path::PathBuf,
-    sync::{Arc},
-};
+use std::{collections::HashSet, ffi::OsStr, panic::catch_unwind, path::PathBuf, sync::Arc};
 
 use egui::{text::Fonts, FontDefinitions, FontFamily, FontId};
-use font_kit::{source::SystemSource};
+use font_kit::source::SystemSource;
 use indexmap::IndexMap;
 
 #[derive(Debug, PartialEq)]
@@ -59,10 +54,7 @@ impl FontManager {
                                     full_name,
                                     file_path: path.clone(),
                                 };
-                                self.fonts
-                                    .entry(family)
-                                    .or_default()
-                                    .push(font_info);
+                                self.fonts.entry(family).or_default().push(font_info);
                             }
                             Err(err) => {
                                 log::error!("Failed to load font: {:?}", err);
@@ -98,23 +90,17 @@ impl FontManager {
                 }
             }
 
-            let fonts =  Fonts::new(
-                1.0,
-                1024,
-                font_definitions.clone(),
-            );
+            let fonts = Fonts::new(1.0, 1024, font_definitions.clone());
 
-            let valid_fonts = 
-                fonts
-                    .families()
-                    .iter()
-                    .map(|family| {
-                        
-                        FontId::new(20.0, family.clone())
-                    })
-                    .filter(|font_id| fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890"))
-                    .map(|font_id| font_id.family.to_string())
-                    .collect::<HashSet<String>>();
+            let valid_fonts = fonts
+                .families()
+                .iter()
+                .map(|family| FontId::new(20.0, family.clone()))
+                .filter(|font_id| {
+                    fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890")
+                })
+                .map(|font_id| font_id.family.to_string())
+                .collect::<HashSet<String>>();
 
             let mut valid_font_definitions = FontDefinitions::default();
 
@@ -123,11 +109,14 @@ impl FontManager {
                 .iter()
                 .filter(|(family, _)| valid_fonts.contains(&family.to_string()))
                 .for_each(|(family, font_data)| {
-                    valid_font_definitions.font_data.insert(family.clone(), font_data.clone());
-
                     valid_font_definitions
-                        .families
-                        .insert(FontFamily::Name(Arc::from(family.clone())), vec![family.clone()]);
+                        .font_data
+                        .insert(family.clone(), font_data.clone());
+
+                    valid_font_definitions.families.insert(
+                        FontFamily::Name(Arc::from(family.clone())),
+                        vec![family.clone()],
+                    );
                 });
 
             ctx.set_fonts(valid_font_definitions);

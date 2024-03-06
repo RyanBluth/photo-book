@@ -2,7 +2,10 @@ use eframe::egui::{self, Response};
 use indexmap::IndexMap;
 
 use crate::widget::{
-    canvas_info::page_info::{PageInfo, PageInfoState},
+    canvas_info::{
+        alignment::{AlignmentInfo, AlignmentInfoState},
+        page_info::{PageInfo, PageInfoState},
+    },
     page_canvas::Page,
 };
 
@@ -28,6 +31,16 @@ impl<'a> CanvasInfo<'a> {
         let response = ui.allocate_ui(ui.available_size(), |ui| {
             ui.vertical(|ui| {
                 PageInfo::new(&mut PageInfoState::new(self.page)).show(ui);
+
+                AlignmentInfo::new(&mut AlignmentInfoState::new(
+                    self.page.size_pixels(),
+                    self.layers
+                        .iter_mut()
+                        .filter(|(_, layer)| layer.selected)
+                        .map(|(_, layer)| layer)
+                        .collect(),
+                ))
+                .show(ui);
 
                 struct Response {
                     selected_layer_id: Option<usize>,
