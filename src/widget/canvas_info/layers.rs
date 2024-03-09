@@ -8,6 +8,7 @@ use strum_macros::{Display, EnumIter, ToString};
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
+    history::HistoricallyEqual,
     photo::Photo,
     photo_manager::PhotoManager,
     widget::{
@@ -260,6 +261,32 @@ impl Layer {
             transform_edit_state,
             transform_state,
         }
+    }
+}
+
+impl HistoricallyEqual for Layer {
+    fn historically_eqaul_to(&self, other: &Self) -> bool {
+        let layer_content_equal = match (&self.content, &other.content) {
+            (LayerContent::Photo(photo), LayerContent::Photo(other_photo)) => {
+                photo.photo == other_photo.photo
+            }
+            (LayerContent::Text(text), LayerContent::Text(other_text)) => {
+                text.text == other_text.text
+                    && text.font_size == other_text.font_size
+                    && text.font_id == other_text.font_id
+                    && text.alignment == other_text.alignment
+                    && text.color == other_text.color
+            }
+            _ => false,
+        };
+
+        layer_content_equal
+            && self.name == other.name
+            && self.visible == other.visible
+            && self.locked == other.locked
+            && self.selected == other.selected
+            && self.id == other.id
+            && self.transform_state == other.transform_state
     }
 }
 

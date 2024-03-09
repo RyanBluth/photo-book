@@ -2,20 +2,21 @@ use std::{fmt::Display, str::FromStr};
 
 use eframe::{
     egui::{
-        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image,
-        Response, Sense, SidePanel, Ui,
+        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image, Response, Sense,
+        SidePanel, Ui,
     },
-    emath::{Rot2},
+    emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
 };
-use egui::{epaint::TextShape};
+use egui::epaint::TextShape;
 use indexmap::{indexmap, IndexMap};
 use strum_macros::EnumIter;
 
 use crate::{
     assets::Asset,
-    cursor_manager::{CursorManager},
+    cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
+    history::{HistoricallyEqual, HistoryManager},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
     utils::{RectExt, Toggle, Truncate},
@@ -24,7 +25,8 @@ use crate::{
 use super::{
     canvas_info::{
         layers::{
-            next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId, LayerTransformEditState
+            next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId,
+            LayerTransformEditState,
         },
         panel::CanvasInfo,
     },
@@ -169,50 +171,6 @@ struct CanvasHistory {
     page: Page,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-struct HistoryManager<Kind, Value> {
-    history: Vec<(Kind, Value)>,
-    index: usize,
-}
-
-impl<Kind, Value> HistoryManager<Kind, Value>
-where
-    Kind: Display,
-    Value: Clone,
-    Value: PartialEq,
-{
-    pub fn undo(&mut self) -> Value {
-        if self.index > 0 {
-            self.index -= 1;
-            let history = &self.history[self.index];
-            history.1.clone()
-        } else {
-            self.history[self.index].1.clone()
-        }
-    }
-
-    pub fn redo(&mut self) -> Value {
-        if self.index < self.history.len() - 1 {
-            self.index += 1;
-            let history = &self.history[self.index];
-            history.1.clone()
-        } else {
-            self.history[self.index].1.clone()
-        }
-    }
-
-    pub fn save_history(&mut self, kind: Kind, value: Value) {
-        if value == self.history[self.index].1 {
-            return;
-        }
-
-        self.history.truncate(self.index + 1);
-        self.history.push((kind, value));
-
-        self.index = self.history.len() - 1;
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Copy, EnumIter)]
 pub enum Unit {
     Pixels,
@@ -341,6 +299,17 @@ pub struct CanvasState {
     page: Page,
 }
 
+impl HistoricallyEqual for CanvasHistory {
+    fn historically_eqaul_to(&self, other: &Self) -> bool {
+        self.layers
+            .values()
+            .zip(other.layers.values())
+            .all(|(a, b)| a.historically_eqaul_to(b))
+            && self.page == other.page
+            && self.multi_select == other.multi_select
+    }
+}
+
 // History Stuff
 impl CanvasState {
     pub fn undo(&mut self) {
@@ -375,12 +344,13 @@ impl CanvasState {
         kind: CanvasHistoryKind,
         perform: impl FnOnce(&mut Self) -> T,
     ) -> T {
-        let mut modified = self.clone();
-        let res = perform(&mut modified);
-        if modified != *self {
+        let mut self_clone = self.clone();
+        let res: T = perform(&mut self_clone);
+        let changed = self_clone != *self;
+        *self = self_clone;
+        if changed {
             self.save_history(kind);
         }
-        *self = modified;
         res
     }
 }
@@ -577,7 +547,8 @@ impl MultiSelect {
 
         let joined_selected_ids: Vec<usize> = selected_layer_ids
             .iter()
-            .chain(self.selected_layers.iter().map(|child| &child.id)).copied()
+            .chain(self.selected_layers.iter().map(|child| &child.id))
+            .copied()
             .collect();
 
         let new_rect = Self::compute_rect(layers, &joined_selected_ids);
@@ -817,12 +788,7 @@ impl<'a> Canvas<'a> {
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
         // TODO: Is there a better way?
-        for layer_id in self
-            .state
-            .layers
-            .keys().copied()
-            .collect::<Vec<LayerId>>()
-        {
+        for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
             if let Some(transform_response) = self.draw_layer(&layer_id, page_rect, ui) {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
@@ -890,8 +856,7 @@ impl<'a> Canvas<'a> {
                     |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child in &multi_select.selected_layers {
-                            let layer: &mut Layer =
-                                self.state.layers.get_mut(&child.id).unwrap();
+                            let layer: &mut Layer = self.state.layers.get_mut(&child.id).unwrap();
 
                             // Compute the relative position of the layer in the group so we can apply transformations
                             // to each side as they are adjusted at the group level
@@ -1124,8 +1089,12 @@ impl<'a> Canvas<'a> {
 
                         let text_pos = match text.alignment {
                             CanvasTextAlignment::Left => transformed_rect.left_center(),
-                            CanvasTextAlignment::Center => transformed_rect.center() - galley.size() * 0.5,
-                            CanvasTextAlignment::Right => transformed_rect.right_center() - galley.size(),
+                            CanvasTextAlignment::Center => {
+                                transformed_rect.center() - galley.size() * 0.5
+                            }
+                            CanvasTextAlignment::Right => {
+                                transformed_rect.right_center() - galley.size()
+                            }
                         };
 
                         let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK)

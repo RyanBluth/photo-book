@@ -26,11 +26,6 @@ pub struct ImageGallery<'a> {
     state: &'a mut ImageGalleryState,
 }
 
-pub enum Request {
-    LoadDirectory(std::path::PathBuf),
-    ViewImageAt(usize),
-}
-
 pub enum ImageGalleryResponse {
     ViewPhotoAt(usize),
     EditPhotoAt(usize),
@@ -43,21 +38,6 @@ impl<'a> ImageGallery<'a> {
 
         let current_dir = &mut state.current_dir;
         let selected_images = &mut state.selected_images;
-
-        menu::bar(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("Open").clicked() {
-                    *current_dir = native_dialog::FileDialog::new()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
-                        .show_open_single_dir()
-                        .unwrap();
-
-                    info!("Opened {:?}", current_dir);
-
-                    PhotoManager::load_directory(current_dir.clone().unwrap());
-                }
-            });
-        });
 
         match current_dir {
             Some(ref path) => {
