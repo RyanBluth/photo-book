@@ -6,7 +6,7 @@ use std::{
 
 
 use crate::{
-    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager
+    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager, scene::SceneManager
 };
 
 macro_rules! singleton {

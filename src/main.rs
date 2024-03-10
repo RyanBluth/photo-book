@@ -7,11 +7,12 @@ use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget};
 
 use egui::{accesskit::Tree, menu};
-use egui_tiles::{Behavior, Tile};
+use egui_tiles::{Behavior, Tile, UiResponse};
 use font_manager::FontManager;
 use log::info;
 use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
+use scene::{SceneManager, SceneState};
 use tokio::runtime;
 use widget::{
     gallery_image::GalleryImage,
@@ -33,6 +34,7 @@ mod history;
 mod persistence;
 mod photo;
 mod photo_manager;
+mod scene;
 mod string_log;
 mod utils;
 mod widget;
@@ -76,31 +78,6 @@ async fn main() -> anyhow::Result<()> {
         Box::new(|_cc| Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log))),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
-}
-
-struct TreeHolder {
-    tree: egui_tiles::Tree<PrimaryComponent>,
-}
-
-impl TreeHolder {
-    fn new() -> Self {
-        let mut tiles = egui_tiles::Tiles::default();
-
-        let gallery = PrimaryComponent::Gallery {
-            state: ImageGalleryState {
-                selected_images: HashSet::new(),
-                current_dir: None,
-            },
-        };
-
-        let mut tabs = vec![];
-
-        tabs.push(tiles.insert_pane(gallery));
-
-        Self {
-            tree: egui_tiles::Tree::new("root_tree", tiles.insert_tab_tile(tabs), tiles),
-        }
-    }
 }
 
 struct TreeBehavior {}
@@ -237,12 +214,6 @@ enum PrimaryComponent {
     },
 }
 
-enum AppState {
-    Gallery,
-    Canvas,
-    Viewer,
-}
-
 impl PrimaryComponent {
     fn title(&self) -> String {
         match self {
@@ -279,7 +250,7 @@ struct PhotoBookApp {
     photo_manager: Singleton<PhotoManager>,
     nav_stack: Vec<PrimaryComponent>,
     loaded_fonts: bool,
-    tree: TreeHolder,
+    scene_manager: SceneManager,
 }
 
 impl PhotoBookApp {
@@ -294,7 +265,7 @@ impl PhotoBookApp {
                 },
             }],
             loaded_fonts: false,
-            tree: TreeHolder::new(),
+            scene_manager: SceneManager::default(),
         }
     }
 }
@@ -325,35 +296,8 @@ impl eframe::App for PhotoBookApp {
 
         let mut nav_actions = vec![];
 
-        let ref mut current_dir = None;
-
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.tree.tree.tiles.iter_mut().for_each(|tile| {
-                if let Tile::Pane(PrimaryComponent::Gallery { state: gallery_state }) = tile.1 {
-                    menu::bar(ui, |ui| {
-                        ui.menu_button("File", |ui| {
-                            if ui.button("Open").clicked() {
-                                *current_dir = native_dialog::FileDialog::new()
-                                    .add_filter("Images", &["png", "jpg", "jpeg"])
-                                    .show_open_single_dir()
-                                    .unwrap();
-
-                                info!("Opened {:?}", current_dir);
-
-                                gallery_state.current_dir = current_dir.clone();
-
-                                PhotoManager::load_directory(current_dir.clone().unwrap());
-                            }
-                        });
-
-                        // Temp way to go between gallery and pages
-                        ui.menu_button("View", |ui| if ui.button("Gallery").clicked() {});
-                    });
-                }
-            });
-
-            let mut tree_behaviour = TreeBehavior {};
-            self.tree.tree.ui(&mut tree_behaviour, ui);
+            self.scene_manager.ui(ui);
         });
 
         // if let Some(center_nav_action) = center_nav_action {
