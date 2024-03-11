@@ -8,9 +8,10 @@ use crate::{
 };
 use std::collections::HashSet;
 
-use self::organize::GalleryScene;
+use self::organize_scene::GalleryScene;
 
-pub mod organize;
+pub mod organize_scene;
+pub mod viewer_scene;
 
 enum SceneResponse {
     None,
@@ -78,9 +79,10 @@ impl SceneManager {
                 photo,
                 index,
                 state,
-            }) => {
-                todo!();
-            }
+            }) => Some(Box::new(viewer_scene::ViewerScene::new(
+                photo.clone(),
+                *index,
+            ))),
             Some(SceneState::Canvas { state }) => {
                 // todo!();
                 Some(Box::new(Test {}))
@@ -130,37 +132,6 @@ impl Navigator {
 
     pub fn process_pending_request(self) -> Option<NavigationRequest> {
         self.request
-    }
-}
-
-pub struct GallerySceneState {
-    image_gallery_state: ImageGalleryState,
-}
-
-impl GallerySceneState {
-    fn new() -> Self {
-        Self {
-            image_gallery_state: ImageGalleryState {
-                selected_images: HashSet::new(),
-                current_dir: None,
-            },
-        }
-    }
-}
-
-pub struct ViewerSceneState {
-    photo: Photo,
-    index: usize,
-    state: ImageViewerState,
-}
-
-impl ViewerSceneState {
-    fn new(photo: Photo, index: usize) -> Self {
-        Self {
-            photo,
-            index,
-            state: ImageViewerState::default(),
-        }
     }
 }
 

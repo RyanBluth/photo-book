@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::collections::HashSet;
 
 use egui::menu;
 use egui_tiles::UiResponse;
@@ -15,14 +15,26 @@ use crate::{
     NavAction, PrimaryComponent,
 };
 
-use super::{
-    GallerySceneState, NavigationRequest, Navigator, Scene, SceneManager, SceneResponse, SceneState,
-};
+use super::{NavigationRequest, Navigator, Scene, SceneResponse, SceneState};
+
+pub struct GallerySceneState {
+    image_gallery_state: ImageGalleryState,
+}
+
+impl GallerySceneState {
+    fn new() -> Self {
+        Self {
+            image_gallery_state: ImageGalleryState {
+                selected_images: HashSet::new(),
+                current_dir: None,
+            },
+        }
+    }
+}
 
 pub enum GalleryScenePane {
     Gallery,
 }
-
 pub struct GalleryScene {
     state: GallerySceneState,
     tree: egui_tiles::Tree<GalleryScenePane>,
@@ -40,81 +52,8 @@ impl GalleryScene {
 
         Self {
             state: GallerySceneState::new(),
-            tree: egui_tiles::Tree::new("root_tree", tiles.insert_tab_tile(tabs), tiles),
+            tree: egui_tiles::Tree::new("organize_scene_tree", tiles.insert_tab_tile(tabs), tiles),
         }
-    }
-}
-
-struct GalleryTreeBehavior<'a> {
-    scene_state: &'a mut GallerySceneState,
-    navigator: &'a mut Navigator,
-}
-
-impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
-    fn tab_title_for_pane(&mut self, component: &GalleryScenePane) -> egui::WidgetText {
-        "Gallery".into()
-    }
-
-    fn pane_ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        _tile_id: egui_tiles::TileId,
-        component: &mut GalleryScenePane,
-    ) -> egui_tiles::UiResponse {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let mut nav_action = None;
-
-        match component {
-            GalleryScenePane::Gallery => {
-                let gallery_response =
-                    ImageGallery::show(ui, &mut self.scene_state.image_gallery_state);
-
-                if let Some(gallery_response) = gallery_response {
-                    match gallery_response {
-                        ImageGalleryResponse::ViewPhotoAt(index) => {
-                            photo_manager.with_lock(|photo_manager| {
-                                // TODO: Allow clicking on a pending photo
-                                if let PhotoLoadResult::Ready(photo) =
-                                    photo_manager.photos[index].clone()
-                                {
-                                    nav_action = Some(NavAction::Push(PrimaryComponent::Viewer {
-                                        photo: photo.clone(),
-                                        index,
-                                        state: ImageViewerState::default(),
-                                    }))
-                                }
-                            });
-                        }
-                        ImageGalleryResponse::EditPhotoAt(index) => {
-                            photo_manager.with_lock(|photo_manager| {
-                                // TODO: Allow clicking on a pending photo
-                                if let PhotoLoadResult::Ready(photo) =
-                                    photo_manager.photos[index].clone()
-                                {
-                                    self.navigator.push(SceneState::Canvas {
-                                        state: CanvasState::with_photo(
-                                            photo,
-                                            ImageGalleryState::default(),
-                                        ),
-                                    });
-
-                                    // let gallery_state = match component {
-                                    //     PrimaryComponent::Gallery { state } => state.clone(),
-                                    //     _ => ImageGalleryState::default(),
-                                    // };
-
-                                    // nav_action = Some(NavAction::Push(PrimaryComponent::Canvas {
-                                    //     state: CanvasState::with_photo(photo, gallery_state),
-                                    // }));
-                                }
-                            });
-                        }
-                    }
-                }
-            }
-        }
-
-        UiResponse::None
     }
 }
 
@@ -155,5 +94,77 @@ impl Scene for GalleryScene {
             Some(NavigationRequest::Pop) => SceneResponse::Pop,
             None => SceneResponse::None,
         }
+    }
+}
+
+struct GalleryTreeBehavior<'a> {
+    scene_state: &'a mut GallerySceneState,
+    navigator: &'a mut Navigator,
+}
+
+impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
+    fn tab_title_for_pane(&mut self, _pane: &GalleryScenePane) -> egui::WidgetText {
+        "Gallery".into()
+    }
+
+    fn pane_ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        _tile_id: egui_tiles::TileId,
+        component: &mut GalleryScenePane,
+    ) -> egui_tiles::UiResponse {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+        match component {
+            GalleryScenePane::Gallery => {
+                let gallery_response =
+                    ImageGallery::show(ui, &mut self.scene_state.image_gallery_state);
+
+                if let Some(gallery_response) = gallery_response {
+                    match gallery_response {
+                        ImageGalleryResponse::ViewPhotoAt(index) => {
+                            photo_manager.with_lock(|photo_manager| {
+                                // TODO: Allow clicking on a pending photo
+                                if let PhotoLoadResult::Ready(photo) =
+                                    photo_manager.photos[index].clone()
+                                {
+                                    self.navigator.push(SceneState::Viewer {
+                                        photo: photo.clone(),
+                                        index,
+                                        state: ImageViewerState::default(),
+                                    });
+                                }
+                            });
+                        }
+                        ImageGalleryResponse::EditPhotoAt(index) => {
+                            photo_manager.with_lock(|photo_manager| {
+                                // TODO: Allow clicking on a pending photo
+                                if let PhotoLoadResult::Ready(photo) =
+                                    photo_manager.photos[index].clone()
+                                {
+                                    self.navigator.push(SceneState::Canvas {
+                                        state: CanvasState::with_photo(
+                                            photo,
+                                            ImageGalleryState::default(),
+                                        ),
+                                    });
+
+                                    // let gallery_state = match component {
+                                    //     PrimaryComponent::Gallery { state } => state.clone(),
+                                    //     _ => ImageGalleryState::default(),
+                                    // };
+
+                                    // nav_action = Some(NavAction::Push(PrimaryComponent::Canvas {
+                                    //     state: CanvasState::with_photo(photo, gallery_state),
+                                    // }));
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        UiResponse::None
     }
 }
