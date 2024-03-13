@@ -1,12 +1,12 @@
 use std::{collections::HashSet, path::PathBuf};
 
 use eframe::{
-    egui::{menu, Key, Ui},
+    egui::{Key, Ui},
     epaint::Vec2,
 };
 use egui_extras::Column;
 
-use log::info;
+
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},

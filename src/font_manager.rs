@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ffi::OsStr, panic::catch_unwind, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, ffi::OsStr, path::PathBuf, sync::Arc};
 
 use egui::{text::Fonts, FontDefinitions, FontFamily, FontId};
 use font_kit::source::SystemSource;

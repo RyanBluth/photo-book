@@ -1,22 +1,17 @@
-use std::collections::HashSet;
-
-use egui::menu;
+use egui::Widget;
 use egui_tiles::UiResponse;
-use log::info;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
-    photo_manager::{self, PhotoLoadResult, PhotoManager},
+    photo_manager::PhotoManager,
     widget::{
-        image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         image_viewer::{self, ImageViewer, ImageViewerState},
-        page_canvas::CanvasState,
+        photo_info::PhotoInfo,
     },
-    NavAction, PrimaryComponent,
 };
 
-use super::{NavigationRequest, Navigator, Scene, SceneResponse, SceneState};
+use super::{NavigationRequest, Navigator, Scene, SceneResponse};
 
 pub struct ViewerSceneState {
     photo: Photo,
@@ -48,14 +43,22 @@ impl ViewerScene {
     pub fn new(photo: Photo, index: usize) -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
-        let mut tabs = vec![];
+        let viewer_id = tiles.insert_pane(ViewerScenePane::Viewer);
+        let photo_info_id = tiles.insert_pane(ViewerScenePane::PhotoInfo);
 
-        tabs.push(tiles.insert_pane(ViewerScenePane::Viewer));
-        tabs.push(tiles.insert_pane(ViewerScenePane::PhotoInfo));
+        let children = vec![viewer_id, photo_info_id];
+
+        let mut linear_layout =
+            egui_tiles::Linear::new(egui_tiles::LinearDir::Horizontal, children);
+        linear_layout.shares.set_share(photo_info_id, 0.2);
 
         Self {
             state: ViewerSceneState::new(photo, index),
-            tree: egui_tiles::Tree::new("viewer_scene_tree", tiles.insert_tab_tile(tabs), tiles),
+            tree: egui_tiles::Tree::new(
+                "viewer_scene_tree",
+                tiles.insert_container(linear_layout),
+                tiles,
+            ),
         }
     }
 }
@@ -90,43 +93,52 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
         &mut self,
         ui: &mut egui::Ui,
         _tile_id: egui_tiles::TileId,
-        _pane: &mut ViewerScenePane,
+        pane: &mut ViewerScenePane,
     ) -> UiResponse {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
-        let viewer_response =
-            ImageViewer::new(&self.scene_state.photo, &mut self.scene_state.viewer_state).show(ui);
-        match viewer_response.request {
-            Some(request) => match request {
-                image_viewer::Request::Exit => {
-                    self.navigator.pop();
-                }
-                image_viewer::Request::Previous => {
-                    photo_manager.with_lock_mut(|photo_manager| {
-                        let (prev_photo, new_index) = photo_manager
-                            .previous_photo(self.scene_state.index, ui.ctx())
-                            .unwrap()
-                            .unwrap();
+        match pane {
+            ViewerScenePane::Viewer => {
+                let viewer_response =
+                    ImageViewer::new(&self.scene_state.photo, &mut self.scene_state.viewer_state)
+                        .show(ui);
+                match viewer_response.request {
+                    Some(request) => match request {
+                        image_viewer::Request::Exit => {
+                            self.navigator.pop();
+                        }
+                        image_viewer::Request::Previous => {
+                            photo_manager.with_lock_mut(|photo_manager| {
+                                let (prev_photo, new_index) = photo_manager
+                                    .previous_photo(self.scene_state.index, ui.ctx())
+                                    .unwrap()
+                                    .unwrap();
 
-                        self.scene_state.photo = prev_photo;
-                        self.scene_state.index = new_index;
-                        self.scene_state.viewer_state = ImageViewerState::default();
-                    });
-                }
-                image_viewer::Request::Next => {
-                    photo_manager.with_lock_mut(|photo_manager| {
-                        let (next_photo, new_index) = photo_manager
-                            .next_photo(self.scene_state.index, ui.ctx())
-                            .unwrap()
-                            .unwrap();
+                                self.scene_state.photo = prev_photo;
+                                self.scene_state.index = new_index;
+                                self.scene_state.viewer_state = ImageViewerState::default();
+                            });
+                        }
+                        image_viewer::Request::Next => {
+                            photo_manager.with_lock_mut(|photo_manager| {
+                                let (next_photo, new_index) = photo_manager
+                                    .next_photo(self.scene_state.index, ui.ctx())
+                                    .unwrap()
+                                    .unwrap();
 
-                        self.scene_state.photo = next_photo;
-                        self.scene_state.index = new_index;
-                        self.scene_state.viewer_state = ImageViewerState::default();
-                    });
+                                self.scene_state.photo = next_photo;
+                                self.scene_state.index = new_index;
+                                self.scene_state.viewer_state = ImageViewerState::default();
+                            });
+                        }
+                    },
+                    None => {}
                 }
-            },
-            None => {}
+            }
+            ViewerScenePane::PhotoInfo => {
+                ui.set_max_width(600.0);
+                PhotoInfo::new(&self.scene_state.photo).ui(ui);
+            }
         }
 
         UiResponse::None

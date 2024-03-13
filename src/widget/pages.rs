@@ -1,13 +1,10 @@
 use eframe::egui::{self};
-use egui::{ComboBox, RichText, Vec2};
+use egui::{Vec2};
 
 use egui_extras::Column;
-use strum::IntoEnumIterator;
 
-use crate::{
-    utils::EditableValueTextEdit,
-    widget::page_canvas::{Page, Unit},
-};
+
+
 
 use super::{
     page_canvas::{Canvas, CanvasState},

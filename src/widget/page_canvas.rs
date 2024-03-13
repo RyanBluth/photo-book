@@ -19,7 +19,7 @@ use crate::{
     history::{HistoricallyEqual, HistoryManager},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
-    utils::{RectExt, Toggle, Truncate},
+    utils::{RectExt, Toggle},
 };
 
 use super::{

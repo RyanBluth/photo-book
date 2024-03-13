@@ -3,7 +3,7 @@ use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Image, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
-use strum_macros::{Display, EnumIter, ToString};
+use strum_macros::{Display, EnumIter};
 
 use crate::{
     cursor_manager::CursorManager,

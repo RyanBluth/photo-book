@@ -1,14 +1,13 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{emath::align, layers, ComboBox, Pos2, RichText, Vec2};
+use egui::{Pos2, RichText, Vec2};
 
 use strum::IntoEnumIterator;
-use strum_macros::{EnumIs, EnumIter};
+use strum_macros::{EnumIter};
 
 use crate::{
-    utils::{EditableValueTextEdit, RectExt},
-    widget::page_canvas::{Page, Unit},
+    utils::{RectExt},
 };
 
 use super::layers::Layer;

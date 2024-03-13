@@ -1,5 +1,3 @@
-use eframe::wgpu::Label;
-
 use crate::{
     photo::Photo,
     widget::{
@@ -12,54 +10,42 @@ use self::organize_scene::GalleryScene;
 
 pub mod organize_scene;
 pub mod viewer_scene;
+pub mod canvas_scene;
 
-enum SceneResponse {
+pub enum SceneResponse {
     None,
     Pop,
-    Push(SceneState),
+    Push(Box<dyn Scene>),
 }
 
-trait Scene: Send + Sync {
+pub trait Scene: Send + Sync {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse;
 }
 
-struct Test {}
-impl<'a> Scene for Test {
-    fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
-        ui.label("Hello");
-        SceneResponse::None
-    }
-}
-
 pub struct SceneManager {
-    scenes: Vec<SceneState>,
-    scene: Option<Box<dyn Scene>>,
+    scenes: Vec<Box<dyn Scene>>,
 }
 
 impl SceneManager {
     pub fn empty() -> Self {
-        Self {
-            scenes: vec![],
-            scene: None,
-        }
+        Self { scenes: vec![] }
     }
 
-    pub fn push(&mut self, scene: SceneState) {
+    pub fn push(&mut self, scene: Box<dyn Scene>) {
         self.scenes.push(scene);
-        self.update_active_scene();
     }
 
-    pub fn pop(&mut self) -> Option<SceneState> {
-        if self.scenes.len() <= 1 {
-            return None;
-        }
-        let res = self.scenes.pop();
-        self.update_active_scene();
-        res
+    pub fn pop(&mut self) {
+        self.scenes.pop();
+    }
+
+    pub fn swap(&mut self, scene: Box<dyn Scene>) {
+        self.scenes.pop();
+        self.scenes.push(scene);
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(scene) = self.scene.as_mut() {
+        if let Some(scene) = self.scenes.last_mut() {
             match scene.ui(ui) {
                 SceneResponse::None => {}
                 SceneResponse::Pop => {
@@ -71,45 +57,18 @@ impl SceneManager {
             }
         }
     }
-
-    fn update_active_scene(&mut self) {
-        self.scene = match self.scenes.last() {
-            Some(SceneState::Gallery { state }) => Some(Box::new(GalleryScene::new())),
-            Some(SceneState::Viewer {
-                photo,
-                index,
-                state,
-            }) => Some(Box::new(viewer_scene::ViewerScene::new(
-                photo.clone(),
-                *index,
-            ))),
-            Some(SceneState::Canvas { state }) => {
-                // todo!();
-                Some(Box::new(Test {}))
-            }
-            None => None,
-        };
-    }
 }
 
 impl Default for SceneManager {
     fn default() -> Self {
-        let mut res = Self {
-            scenes: vec![SceneState::Gallery {
-                state: ImageGalleryState {
-                    selected_images: HashSet::new(),
-                    current_dir: None,
-                },
-            }],
-            scene: None,
-        };
-        res.update_active_scene();
-        res
+        Self {
+            scenes: vec![Box::new(GalleryScene::new())],
+        }
     }
 }
 
 pub enum NavigationRequest {
-    Push(SceneState),
+    Push(Box<dyn Scene>),
     Pop,
 }
 
@@ -122,7 +81,7 @@ impl Navigator {
         Self { request: None }
     }
 
-    pub fn push(&mut self, scene: SceneState) {
+    pub fn push(&mut self, scene: Box<dyn Scene>) {
         self.request = Some(NavigationRequest::Push(scene));
     }
 

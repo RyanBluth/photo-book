@@ -12,17 +12,19 @@ use crate::{
         image_viewer::ImageViewerState,
         page_canvas::CanvasState,
     },
-    NavAction, PrimaryComponent,
 };
 
-use super::{NavigationRequest, Navigator, Scene, SceneResponse, SceneState};
+use super::{
+    canvas_scene::CanvasScene, viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
+    SceneResponse, SceneState,
+};
 
 pub struct GallerySceneState {
     image_gallery_state: ImageGalleryState,
 }
 
-impl GallerySceneState {
-    fn new() -> Self {
+impl Default for GallerySceneState {
+    fn default() -> Self {
         Self {
             image_gallery_state: ImageGalleryState {
                 selected_images: HashSet::new(),
@@ -51,7 +53,7 @@ impl GalleryScene {
         tabs.push(tiles.insert_pane(gallery));
 
         Self {
-            state: GallerySceneState::new(),
+            state: GallerySceneState::default(),
             tree: egui_tiles::Tree::new("organize_scene_tree", tiles.insert_tab_tile(tabs), tiles),
         }
     }
@@ -90,7 +92,7 @@ impl Scene for GalleryScene {
         );
 
         match navigator.process_pending_request() {
-            Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),
+            Some(NavigationRequest::Push(scene)) => SceneResponse::Push(scene),
             Some(NavigationRequest::Pop) => SceneResponse::Pop,
             None => SceneResponse::None,
         }
@@ -128,11 +130,8 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    self.navigator.push(SceneState::Viewer {
-                                        photo: photo.clone(),
-                                        index,
-                                        state: ImageViewerState::default(),
-                                    });
+                                    self.navigator
+                                        .push(Box::new(ViewerScene::new(photo, index)));
                                 }
                             });
                         }
@@ -142,12 +141,8 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    self.navigator.push(SceneState::Canvas {
-                                        state: CanvasState::with_photo(
-                                            photo,
-                                            ImageGalleryState::default(),
-                                        ),
-                                    });
+                                    self.navigator
+                                        .push(Box::new(CanvasScene::with_photo(photo)));
 
                                     // let gallery_state = match component {
                                     //     PrimaryComponent::Gallery { state } => state.clone(),

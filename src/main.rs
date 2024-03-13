@@ -1,21 +1,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{borrow::BorrowMut, collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget};
 
-use egui::{accesskit::Tree, menu};
-use egui_tiles::{Behavior, Tile, UiResponse};
+
+
 use font_manager::FontManager;
-use log::info;
+
 use photo::Photo;
 use photo_manager::{PhotoLoadResult, PhotoManager};
-use scene::{SceneManager, SceneState};
+use scene::{SceneManager};
 use tokio::runtime;
 use widget::{
-    gallery_image::GalleryImage,
     image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
     image_viewer::{self, ImageViewer, ImageViewerState},
     page_canvas::{CanvasResponse, CanvasScene, CanvasState},
@@ -292,9 +291,9 @@ impl eframe::App for PhotoBookApp {
             cursor_manager.begin_frame(ctx);
         });
 
-        let component: &mut PrimaryComponent = self.nav_stack.last_mut().unwrap();
+        let _component: &mut PrimaryComponent = self.nav_stack.last_mut().unwrap();
 
-        let mut nav_actions = vec![];
+        let nav_actions = vec![];
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.scene_manager.ui(ui);
