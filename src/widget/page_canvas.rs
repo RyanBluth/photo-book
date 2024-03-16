@@ -16,9 +16,10 @@ use crate::{
     assets::Asset,
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    history::{HistoricallyEqual, HistoryManager},
+    history::{HistoricallyEqual, UndoRedoStack},
     photo::Photo,
     photo_manager::{PhotoLoadResult, PhotoManager},
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::{RectExt, Toggle},
 };
 
@@ -33,98 +34,100 @@ use super::{
     image_gallery::{self, ImageGallery, ImageGalleryState},
 };
 
-pub struct CanvasScene<'a> {
-    state: &'a mut CanvasState,
-}
+// pub struct CanvasScene<'a> {
+//     state: &'a mut CanvasState,
+// }
 
-impl<'a> CanvasScene<'a> {
-    pub fn new(canvas_state: &'a mut CanvasState) -> Self {
-        Self {
-            state: canvas_state,
-        }
-    }
+// impl<'a> CanvasScene<'a> {
+//     pub fn new(canvas_state: &'a mut CanvasState) -> Self {
+//         Self {
+//             state: canvas_state,
+//         }
+//     }
 
-    pub fn show(&mut self, ctx: &Context) -> Option<CanvasResponse> {
-        let left_panel_rect = match PanelState::load(ctx, "image_gallery_panel".into()) {
-            Some(state) => state.rect,
-            None => Rect::ZERO,
-        };
+//     pub fn show(&mut self, ctx: &Context) -> Option<CanvasResponse> {
+//         let left_panel_rect = match PanelState::load(ctx, "image_gallery_panel".into()) {
+//             Some(state) => state.rect,
+//             None => Rect::ZERO,
+//         };
 
-        let right_panel_rect = match PanelState::load(ctx, "canvas_info_panel".into()) {
-            Some(state) => state.rect,
-            None => Rect::ZERO,
-        };
+//         let right_panel_rect = match PanelState::load(ctx, "canvas_info_panel".into()) {
+//             Some(state) => state.rect,
+//             None => Rect::ZERO,
+//         };
 
-        let mut available_rect = ctx.available_rect();
+//         let mut available_rect = ctx.available_rect();
 
-        available_rect.min.x += left_panel_rect.width();
-        available_rect.max.x -= right_panel_rect.width();
+//         available_rect.min.x += left_panel_rect.width();
+//         available_rect.max.x -= right_panel_rect.width();
 
-        let canvas_response = match CentralPanel::default()
-            .show(ctx, |ui| {
-                let mut canvas = Canvas::new(self.state, available_rect);
-                canvas.show(ui)
-            })
-            .inner
-        {
-            Some(action) => match action {
-                CanvasResponse::Exit => Some(CanvasResponse::Exit),
-            },
-            None => None,
-        };
+//         let canvas_response = match CentralPanel::default()
+//             .show(ctx, |ui| {
+//                 let mut canvas = Canvas::new(self.state, available_rect);
+//                 canvas.show(ui)
+//             })
+//             .inner
+//         {
+//             Some(action) => match action {
+//                 CanvasResponse::Exit => Some(CanvasResponse::Exit),
+//             },
+//             None => None,
+//         };
 
-        match SidePanel::left("image_gallery_panel")
-            .default_width(300.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                ImageGallery::show(ui, &mut self.state.gallery_state)
-            })
-            .inner
-        {
-            Some(action) => match action {
-                image_gallery::ImageGalleryResponse::ViewPhotoAt(_index) => {
-                    // TODO
-                    return Some(CanvasResponse::Exit);
-                }
-                image_gallery::ImageGalleryResponse::EditPhotoAt(index) => {
-                    let photo_manager: Singleton<PhotoManager> = Dependency::get();
+//         match SidePanel::left("image_gallery_panel")
+//             .default_width(300.0)
+//             .resizable(true)
+//             .show(ctx, |ui| {
+//                 ImageGallery::show(ui, &mut self.state.gallery_state)
+//             })
+//             .inner
+//         {
+//             Some(action) => match action {
+//                 image_gallery::ImageGalleryResponse::ViewPhotoAt(_index) => {
+//                     // TODO
+//                     return Some(CanvasResponse::Exit);
+//                 }
+//                 image_gallery::ImageGalleryResponse::EditPhotoAt(index) => {
+//                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
-                    // TODO: Allow clicking on a pending photo
-                    if let PhotoLoadResult::Ready(photo) =
-                        photo_manager.with_lock(|photo_manager| photo_manager.photos[index].clone())
-                    {
-                        self.state.add_photo(photo.clone());
-                    };
-                }
-            },
-            None => {}
-        }
+//                     // TODO: Allow clicking on a pending photo
+//                     if let PhotoLoadResult::Ready(photo) =
+//                         photo_manager.with_lock(|photo_manager| photo_manager.photos[index].clone())
+//                     {
+//                         self.state.add_photo(photo.clone());
+//                     };
+//                 }
+//             },
+//             None => {}
+//         }
 
-        let canvas_info_response = self
-            .state
-            .capturing_history(CanvasHistoryKind::Page, |state| {
-                SidePanel::right("canvas_info_panel")
-                    .default_width(300.0)
-                    .resizable(true)
-                    .show(ctx, |ui| {
-                        CanvasInfo {
-                            layers: &mut state.layers,
-                            page: &mut state.page,
-                        }
-                        .show(ui)
-                    })
-            });
+//         let canvas_info_response =
+//             self.state
+//                 .history_manager
+//                 .capturing_history(CanvasHistoryKind::Page, |state| {
+//                     SidePanel::right("canvas_info_panel")
+//                         .default_width(300.0)
+//                         .resizable(true)
+//                         .show(ctx, |ui| {
+//                             CanvasInfo {
+//                                 layers: &mut state.layers,
+//                                 page: &mut state.page,
+//                             }
+//                             .show(ui)
+//                         })
+//                 });
 
-        self.state
-            .capturing_history(CanvasHistoryKind::Select, |state| {
-                if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
-                    state.select_photo(&selected_layer, ctx);
-                }
-            });
+//         self.state
+//             .history_manager
+//             .capturing_history(CanvasHistoryKind::Select, |state| {
+//                 if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
+//                     state.select_photo(&selected_layer, ctx);
+//                 }
+//             });
 
-        canvas_response
-    }
-}
+//         canvas_response
+//     }
+// }
 
 pub enum CanvasResponse {
     Exit,
@@ -139,36 +142,6 @@ impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
         Self { photo }
     }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum CanvasHistoryKind {
-    Initial,
-    Transform,
-    AddPhoto,
-    DeletePhoto,
-    Select,
-    Page, // TODO Add specific cases for things within the page settings
-}
-
-impl Display for CanvasHistoryKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CanvasHistoryKind::Initial => write!(f, "Initial"),
-            CanvasHistoryKind::Transform => write!(f, "Move"),
-            CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
-            CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
-            CanvasHistoryKind::Select => write!(f, "Select"),
-            CanvasHistoryKind::Page => write!(f, "Page"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-struct CanvasHistory {
-    layers: IndexMap<LayerId, Layer>,
-    multi_select: Option<MultiSelect>,
-    page: Page,
 }
 
 #[derive(Debug, Clone, PartialEq, Copy, EnumIter)]
@@ -290,69 +263,12 @@ impl Default for Page {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
-    layers: IndexMap<LayerId, Layer>,
-    zoom: f32,
-    offset: Vec2,
-    history_manager: HistoryManager<CanvasHistoryKind, CanvasHistory>,
-    gallery_state: ImageGalleryState,
-    multi_select: Option<MultiSelect>,
-    page: Page,
-}
-
-impl HistoricallyEqual for CanvasHistory {
-    fn historically_eqaul_to(&self, other: &Self) -> bool {
-        self.layers
-            .values()
-            .zip(other.layers.values())
-            .all(|(a, b)| a.historically_eqaul_to(b))
-            && self.page == other.page
-            && self.multi_select == other.multi_select
-    }
-}
-
-// History Stuff
-impl CanvasState {
-    pub fn undo(&mut self) {
-        let new_value = self.history_manager.undo();
-        self.apply_history(new_value);
-    }
-
-    pub fn redo(&mut self) {
-        let new_value = self.history_manager.redo();
-        self.apply_history(new_value);
-    }
-
-    pub fn save_history(&mut self, kind: CanvasHistoryKind) {
-        self.history_manager.save_history(
-            kind,
-            CanvasHistory {
-                layers: self.layers.clone(),
-                multi_select: self.multi_select.clone(),
-                page: self.page.clone(),
-            },
-        );
-    }
-
-    fn apply_history(&mut self, history: CanvasHistory) {
-        self.layers = history.layers;
-        self.multi_select = history.multi_select;
-        self.page = history.page;
-    }
-
-    pub fn capturing_history<T>(
-        &mut self,
-        kind: CanvasHistoryKind,
-        perform: impl FnOnce(&mut Self) -> T,
-    ) -> T {
-        let mut self_clone = self.clone();
-        let res: T = perform(&mut self_clone);
-        let changed = self_clone != *self;
-        *self = self_clone;
-        if changed {
-            self.save_history(kind);
-        }
-        res
-    }
+    pub layers: IndexMap<LayerId, Layer>,
+    pub zoom: f32,
+    pub offset: Vec2,
+    pub gallery_state: ImageGalleryState,
+    pub multi_select: Option<MultiSelect>,
+    pub page: Page,
 }
 
 impl CanvasState {
@@ -361,17 +277,6 @@ impl CanvasState {
             layers: IndexMap::new(),
             zoom: 1.0,
             offset: Vec2::ZERO,
-            history_manager: HistoryManager {
-                history: vec![(
-                    CanvasHistoryKind::Initial,
-                    CanvasHistory {
-                        layers: IndexMap::new(),
-                        multi_select: None,
-                        page: Page::default(),
-                    },
-                )],
-                index: 0,
-            },
             gallery_state: ImageGalleryState::default(),
             multi_select: None,
             page: Page::default(),
@@ -416,46 +321,9 @@ impl CanvasState {
             layers: indexmap! { layer.id => layer.clone() },
             zoom: 1.0,
             offset: Vec2::ZERO,
-            history_manager: HistoryManager {
-                history: vec![(
-                    CanvasHistoryKind::Initial,
-                    CanvasHistory {
-                        layers: indexmap! { layer.id => layer },
-                        multi_select: None,
-                        page: Page::default(),
-                    },
-                )],
-                index: 0,
-            },
             gallery_state,
             multi_select: None,
             page: Page::default(),
-        }
-    }
-
-    pub fn add_photo(&mut self, photo: Photo) {
-        let layer = Layer::with_photo(photo);
-        self.layers.insert(layer.id, layer);
-        self.save_history(CanvasHistoryKind::AddPhoto);
-    }
-
-    fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {
-        if ctx.input(|input| input.modifiers.ctrl) {
-            self.layers.get_mut(layer_id).unwrap().selected.toggle();
-        } else {
-            for (_, layer) in &mut self.layers {
-                layer.selected = layer.id == *layer_id;
-            }
-        }
-    }
-
-    fn deselect_photo(&mut self, layer_id: &LayerId) {
-        self.layers.get_mut(layer_id).unwrap().selected = false;
-    }
-
-    fn deselect_all_photos(&mut self) {
-        for (_, layer) in &mut self.layers {
-            layer.selected = false;
         }
     }
 
@@ -594,14 +462,20 @@ pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     photo_manager: Singleton<PhotoManager>,
     available_rect: Rect,
+    history_manager: &'a mut CanvasHistoryManager,
 }
 
 impl<'a> Canvas<'a> {
-    pub fn new(state: &'a mut CanvasState, available_rect: Rect) -> Self {
+    pub fn new(
+        state: &'a mut CanvasState,
+        available_rect: Rect,
+        history_manager: &'a mut CanvasHistoryManager,
+    ) -> Self {
         Self {
             state,
             photo_manager: Dependency::get(),
             available_rect,
+            history_manager,
         }
     }
 
@@ -802,16 +676,17 @@ impl<'a> Canvas<'a> {
                     && self.is_pointer_on_canvas(ui)
                     && self.state.is_layer_selected(&layer_id)
                 {
-                    self.state.deselect_all_photos();
+                    self.deselect_all_photos();
                 } else if transform_response.mouse_down && primary_pointer_pressed {
-                    self.state.select_photo(&layer_id, ui.ctx());
+                    self.select_photo(&layer_id, ui.ctx());
                 }
 
                 if transform_response.ended_moving
                     || transform_response.ended_resizing
                     || transform_response.ended_rotating
                 {
-                    self.state.save_history(CanvasHistoryKind::Transform);
+                    self.history_manager
+                        .save_history(CanvasHistoryKind::Transform, &mut self.state);
                 }
             }
         }
@@ -980,7 +855,8 @@ impl<'a> Canvas<'a> {
                     || transform_response.ended_resizing
                     || transform_response.ended_rotating
                 {
-                    self.state.save_history(CanvasHistoryKind::Transform);
+                    self.history_manager
+                        .save_history(CanvasHistoryKind::Transform, &mut self.state);
                 }
             }
         }
@@ -1120,13 +996,14 @@ impl<'a> Canvas<'a> {
 
             // Clear the selected photo
             if input.key_pressed(egui::Key::Escape) {
-                self.state.deselect_all_photos();
+                self.deselect_all_photos();
             }
 
             // Delete the selected photo
             if input.key_pressed(egui::Key::Delete) {
                 self.state.layers.retain(|_, layer| !layer.selected);
-                self.state.save_history(CanvasHistoryKind::DeletePhoto);
+                self.history_manager
+                    .save_history(CanvasHistoryKind::DeletePhoto, &mut self.state);
             }
 
             // Move the selected photo
@@ -1183,15 +1060,16 @@ impl<'a> Canvas<'a> {
             }
 
             if save_transform_history {
-                self.state.save_history(CanvasHistoryKind::Transform);
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, &mut self.state);
             }
 
             // Undo/Redo
             if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
                 if input.modifiers.shift {
-                    self.state.redo();
+                    self.history_manager.redo(&mut self.state);
                 } else {
-                    self.state.undo();
+                    self.history_manager.undo(&mut self.state);
                 }
             }
 
@@ -1204,6 +1082,38 @@ impl<'a> Canvas<'a> {
             ui.input(|input| input.pointer.hover_pos())
                 .unwrap_or_default(),
         )
+    }
+
+    pub fn add_photo(&mut self, photo: Photo) {
+        let layer = Layer::with_photo(photo);
+        self.state.layers.insert(layer.id, layer);
+        self.history_manager
+            .save_history(CanvasHistoryKind::AddPhoto, &mut self.state);
+    }
+
+    fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {
+        if ctx.input(|input| input.modifiers.ctrl) {
+            self.state
+                .layers
+                .get_mut(layer_id)
+                .unwrap()
+                .selected
+                .toggle();
+        } else {
+            for (_, layer) in &mut self.state.layers {
+                layer.selected = layer.id == *layer_id;
+            }
+        }
+    }
+
+    fn deselect_photo(&mut self, layer_id: &LayerId) {
+        self.state.layers.get_mut(layer_id).unwrap().selected = false;
+    }
+
+    fn deselect_all_photos(&mut self) {
+        for (_, layer) in &mut self.state.layers {
+            layer.selected = false;
+        }
     }
 }
 

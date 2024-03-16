@@ -141,17 +141,10 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    self.navigator
-                                        .push(Box::new(CanvasScene::with_photo(photo)));
-
-                                    // let gallery_state = match component {
-                                    //     PrimaryComponent::Gallery { state } => state.clone(),
-                                    //     _ => ImageGalleryState::default(),
-                                    // };
-
-                                    // nav_action = Some(NavAction::Push(PrimaryComponent::Canvas {
-                                    //     state: CanvasState::with_photo(photo, gallery_state),
-                                    // }));
+                                    self.navigator.push(Box::new(CanvasScene::with_photo(
+                                        photo,
+                                        Some(self.scene_state.image_gallery_state.clone()),
+                                    )));
                                 }
                             });
                         }

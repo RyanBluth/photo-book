@@ -6,12 +6,12 @@ pub trait HistoricallyEqual {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct HistoryManager<Kind, Value> {
+pub struct UndoRedoStack<Kind, Value> {
     pub history: Vec<(Kind, Value)>,
     pub index: usize,
 }
 
-impl<Kind, Value> HistoryManager<Kind, Value>
+impl<Kind, Value> UndoRedoStack<Kind, Value>
 where
     Kind: Display,
     Value: Clone,

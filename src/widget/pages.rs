@@ -65,7 +65,7 @@ impl<'a> Pages<'a> {
                         row.col(|ui| {
                             ui.label("Page");
 
-                            Canvas::new(&mut self.state.pages[offest + i], ui.max_rect()).show(ui);
+                            //Canvas::new(&mut self.state.pages[offest + i], ui.max_rect()).show(ui);
                         });
                     }
 
