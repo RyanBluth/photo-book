@@ -1,33 +1,40 @@
 use eframe::egui::{self, Response};
+use egui::InnerResponse;
 use indexmap::IndexMap;
 
-use crate::widget::{
-    canvas_info::{
-        alignment::{AlignmentInfo, AlignmentInfoState},
-        page_info::{PageInfo, PageInfoState},
+use crate::{
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    widget::{
+        canvas_info::{
+            alignment::{AlignmentInfo, AlignmentInfoState},
+            page_info::{PageInfo, PageInfoState},
+        },
+        page_canvas::Page,
     },
-    page_canvas::Page,
 };
 
 use super::{
-    layers::{Layer, LayerId, Layers},
+    history_info::{HistoryInfo, HistoryInfoState},
+    layers::{Layer, LayerId, Layers, LayersResponse},
     text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},
 };
+
+pub struct CanvasInfoResponse {
+    pub history: Option<CanvasHistoryKind>,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct CanvasInfo<'a> {
     pub layers: &'a mut IndexMap<LayerId, Layer>,
     pub page: &'a mut Page,
-}
-
-pub struct CanvasInfoResponse {
-    pub selected_layer: Option<usize>,
-    pub response: Response,
+    pub history_manager: &'a mut CanvasHistoryManager,
 }
 
 impl<'a> CanvasInfo<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) -> CanvasInfoResponse {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> InnerResponse<CanvasInfoResponse> {
+        let mut history = None;
+
         let response = ui.allocate_ui(ui.available_size(), |ui| {
             ui.vertical(|ui| {
                 PageInfo::new(&mut PageInfoState::new(self.page)).show(ui);
@@ -41,10 +48,6 @@ impl<'a> CanvasInfo<'a> {
                         .collect(),
                 ))
                 .show(ui);
-
-                struct Response {
-                    selected_layer_id: Option<usize>,
-                }
 
                 // TODO: Handle multi select
                 let selected_layer = self
@@ -65,20 +68,25 @@ impl<'a> CanvasInfo<'a> {
                     }
                 }
 
-                let selected_layer_id = Layers::new(self.layers).show(ui).selected_layer;
+                match Layers::new(self.layers).show(ui) {
+                    LayersResponse::SelectedLayer(_) => {
+                        history = Some(CanvasHistoryKind::SelectLayer)
+                    }
+                    LayersResponse::None => {}
+                }
 
                 if ui.button("Add Text").clicked() {
                     let layer = Layer::new_text_layer();
                     self.layers.insert(layer.id, layer);
+                    history = Some(CanvasHistoryKind::AddText);
                 }
 
-                Response { selected_layer_id }
+                ui.separator();
+
+                HistoryInfo::new(&mut HistoryInfoState::new(&mut self.history_manager)).show(ui);
             })
         });
 
-        CanvasInfoResponse {
-            selected_layer: response.inner.inner.selected_layer_id,
-            response: response.response,
-        }
+        InnerResponse::new(CanvasInfoResponse { history }, response.response)
     }
 }

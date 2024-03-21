@@ -667,6 +667,7 @@ impl<'a> Canvas<'a> {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
+                let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
 
                 // If the canvas was clicked but not on the photo then deselect the photo
                 if canvas_response.clicked()
@@ -681,9 +682,10 @@ impl<'a> Canvas<'a> {
                     self.select_photo(&layer_id, ui.ctx());
                 }
 
-                if transform_response.ended_moving
-                    || transform_response.ended_resizing
-                    || transform_response.ended_rotating
+                if primary_pointer_released
+                    && (transform_response.ended_moving
+                        || transform_response.ended_resizing
+                        || transform_response.ended_rotating)
                 {
                     self.history_manager
                         .save_history(CanvasHistoryKind::Transform, &mut self.state);
@@ -1104,16 +1106,22 @@ impl<'a> Canvas<'a> {
                 layer.selected = layer.id == *layer_id;
             }
         }
+        self.history_manager
+            .save_history(CanvasHistoryKind::SelectLayer, &mut self.state);
     }
 
     fn deselect_photo(&mut self, layer_id: &LayerId) {
         self.state.layers.get_mut(layer_id).unwrap().selected = false;
+        self.history_manager
+            .save_history(CanvasHistoryKind::DeselectLayer, &mut self.state);
     }
 
     fn deselect_all_photos(&mut self) {
         for (_, layer) in &mut self.state.layers {
             layer.selected = false;
         }
+        self.history_manager
+            .save_history(CanvasHistoryKind::DeselectLayer, &mut self.state);
     }
 }
 

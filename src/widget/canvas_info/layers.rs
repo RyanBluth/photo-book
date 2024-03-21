@@ -1,7 +1,7 @@
 use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::epaint::Color32;
-use egui::{CursorIcon, FontId, Image, Pos2, Rect, Vec2};
+use egui::{CursorIcon, FontId, Image, Pos2, Rect, Response, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
@@ -11,6 +11,7 @@ use crate::{
     history::HistoricallyEqual,
     photo::Photo,
     photo_manager::PhotoManager,
+    utils::Toggle,
     widget::{
         page_canvas::{CanvasPhoto, TransformHandleMode, TransformableState},
         placeholder::RectPlaceholder,
@@ -290,6 +291,11 @@ impl HistoricallyEqual for Layer {
     }
 }
 
+pub enum LayersResponse {
+    SelectedLayer(LayerId),
+    None,
+}
+
 #[derive(Debug)]
 pub struct Layers<'a> {
     layers: &'a mut IndexMap<LayerId, Layer>,
@@ -302,10 +308,6 @@ impl Hash for Layer {
     }
 }
 
-pub struct LayersResponse {
-    pub selected_layer: Option<usize>,
-}
-
 impl<'a> Layers<'a> {
     pub fn new(layers: &'a mut IndexMap<LayerId, Layer>) -> Self {
         Self {
@@ -315,7 +317,7 @@ impl<'a> Layers<'a> {
     }
 
     pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> LayersResponse {
-        let mut selected_layer = None;
+        let mut selected_layer_id = None;
 
         ui.vertical(|ui| {
             let dnd_response = dnd(ui, "layers_dnd").show(
@@ -390,7 +392,7 @@ impl<'a> Layers<'a> {
                             if ui.input(|i| i.pointer.primary_clicked())
                                 && ui.rect_contains_pointer(ui.max_rect())
                             {
-                                selected_layer = Some(layer.id);
+                                selected_layer_id = Some(layer.id);
                             }
                         });
                     });
@@ -408,6 +410,23 @@ impl<'a> Layers<'a> {
             }
         });
 
-        LayersResponse { selected_layer }
+        if let Some(selected_layer_id) = selected_layer_id {
+            if ui.ctx().input(|input| input.modifiers.ctrl) {
+                self.layers
+                    .get_mut(&selected_layer_id)
+                    .unwrap()
+                    .selected
+                    .toggle();
+            } else {
+                for (_, layer) in self.layers.iter_mut() {
+                    layer.selected = layer.id == selected_layer_id;
+                }
+            }
+        }
+
+        match selected_layer_id {
+            Some(selected_layer_id) => LayersResponse::SelectedLayer(selected_layer_id),
+            None => LayersResponse::None,
+        }
     }
 }

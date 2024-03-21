@@ -1,10 +1,9 @@
 use eframe::egui::{self};
-use egui::{Vec2};
+use egui::Vec2;
 
 use egui_extras::Column;
 
-
-
+use crate::scene::canvas_scene::CanvasHistoryManager;
 
 use super::{
     page_canvas::{Canvas, CanvasState},
@@ -12,23 +11,23 @@ use super::{
 };
 
 #[derive(Debug, PartialEq)]
-pub struct PagesState<'a> {
-    pages: &'a mut Vec<CanvasState>,
+pub struct PagesState {
+    pages: Vec<CanvasState>,
 }
 
-impl PagesState<'_> {
-    pub fn new(pages: &mut Vec<CanvasState>) -> PagesState {
+impl PagesState {
+    pub fn new(pages: Vec<CanvasState>) -> PagesState {
         PagesState { pages }
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct Pages<'a> {
-    pub state: &'a mut PagesState<'a>,
+    pub state: &'a mut PagesState,
 }
 
 impl<'a> Pages<'a> {
-    pub fn new(state: &'a mut PagesState<'a>) -> Pages<'a> {
+    pub fn new(state: &'a mut PagesState) -> Pages<'a> {
         Pages { state }
     }
 
@@ -65,7 +64,12 @@ impl<'a> Pages<'a> {
                         row.col(|ui| {
                             ui.label("Page");
 
-                            //Canvas::new(&mut self.state.pages[offest + i], ui.max_rect()).show(ui);
+                            Canvas::new(
+                                &mut self.state.pages[offest + i],
+                                ui.max_rect(),
+                                &mut CanvasHistoryManager::new(),
+                            )
+                            .show(ui);
                         });
                     }
 
