@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs::read_dir,
     io::BufWriter,
-    path::{PathBuf},
+    path::PathBuf,
 };
 
 use eframe::{
@@ -18,16 +18,13 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
-use rayon::{prelude::ParallelIterator};
+use rayon::prelude::ParallelIterator;
 use tokio::task::spawn_blocking;
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
     photo::Photo,
 };
-
-
-
 
 use std::fs::create_dir;
 
@@ -210,9 +207,7 @@ impl PhotoManager {
             &mut self.pending_textures,
         ) {
             Result::Ok(Some(tex)) => Ok(Some(tex)),
-            _ => Ok(self
-                .texture_cache
-                .get(&photo.thumbnail_uri()).copied()),
+            _ => Ok(self.texture_cache.get(&photo.thumbnail_uri()).copied()),
         }
     }
 

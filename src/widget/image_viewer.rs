@@ -1,13 +1,8 @@
-
-
 use eframe::{
-    egui::{
-        self, Image, Key, Response, Sense, Widget,
-    },
+    egui::{self, Image, Key, Response, Sense, Widget},
     emath::Rot2,
     epaint::{Color32, Mesh, Pos2, Rect, Shape, Vec2},
 };
-
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -105,12 +100,13 @@ impl<'a> Widget for ImageViewer<'a> {
         // Adjust the rect aspect ratio
         match self.photo.max_dimension() {
             Width => {
-                let aspect_ratio =
-                    self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32;
+                let aspect_ratio = self.photo.metadata.rotated_height() as f32
+                    / self.photo.metadata.rotated_width() as f32;
                 if image_rect.width() > image_rect.height() {
                     let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
                     let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32);
+                        * (self.photo.metadata.rotated_width() as f32
+                            / self.photo.metadata.rotated_height() as f32);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -119,7 +115,8 @@ impl<'a> Widget for ImageViewer<'a> {
                 } else {
                     let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
                     let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32);
+                        * (self.photo.metadata.rotated_height() as f32
+                            / self.photo.metadata.rotated_width() as f32);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -128,12 +125,13 @@ impl<'a> Widget for ImageViewer<'a> {
                 }
             }
             Height => {
-                let aspect_ratio =
-                    self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32;
+                let aspect_ratio = self.photo.metadata.rotated_width() as f32
+                    / self.photo.metadata.rotated_height() as f32;
                 if image_rect.width() > image_rect.height() {
                     let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
                     let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32 / self.photo.metadata.rotated_height() as f32);
+                        * (self.photo.metadata.rotated_width() as f32
+                            / self.photo.metadata.rotated_height() as f32);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -142,7 +140,8 @@ impl<'a> Widget for ImageViewer<'a> {
                 } else {
                     let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
                     let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32 / self.photo.metadata.rotated_width() as f32);
+                        * (self.photo.metadata.rotated_height() as f32
+                            / self.photo.metadata.rotated_width() as f32);
 
                     image_rect = Rect::from_center_size(
                         rect.center(),
@@ -254,16 +253,15 @@ impl<'a> Widget for ImageViewer<'a> {
             .with_lock_mut(|photo_manager| photo_manager.texture_for(self.photo, ui.ctx()))
         {
             Ok(Some(texture)) => {
-
-                let uv = Rect::from_min_max(
-                    Pos2::new(0.0, 0.0),
-                    Pos2 { x: 1.0, y: 1.0 }
-                );
+                let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
 
                 let painter = ui.painter().with_clip_rect(rect);
                 let mut mesh = Mesh::with_texture(texture.id);
                 mesh.add_rect_with_uv(image_rect, uv, Color32::WHITE);
-                mesh.rotate(Rot2::from_angle(self.photo.metadata.rotation().radians()), image_rect.min + Vec2::splat(0.5) * image_rect.size());
+                mesh.rotate(
+                    Rot2::from_angle(self.photo.metadata.rotation().radians()),
+                    image_rect.min + Vec2::splat(0.5) * image_rect.size(),
+                );
                 painter.add(Shape::mesh(mesh));
             }
             Ok(None) => match self.photo_manager.with_lock_mut(|photo_manager| {

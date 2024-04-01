@@ -4,11 +4,9 @@ use eframe::egui::{self};
 use egui::{Pos2, RichText, Vec2};
 
 use strum::IntoEnumIterator;
-use strum_macros::{EnumIter};
+use strum_macros::EnumIter;
 
-use crate::{
-    utils::{RectExt},
-};
+use crate::utils::RectExt;
 
 use super::layers::Layer;
 
@@ -132,10 +130,8 @@ impl<'a> AlignmentInfo<'a> {
                         match alignment {
                             Aligment::Left => {
                                 for layer in &mut self.state.layers {
-                                    layer.transform_state.rect = layer
-                                        .transform_state
-                                        .rect
-                                        .translate_left_to(min_x);
+                                    layer.transform_state.rect =
+                                        layer.transform_state.rect.translate_left_to(min_x);
                                 }
                             }
                             Aligment::CenterHorizontal => {
@@ -158,26 +154,20 @@ impl<'a> AlignmentInfo<'a> {
                             }
                             Aligment::Right => {
                                 for layer in &mut self.state.layers {
-                                    layer.transform_state.rect = layer
-                                        .transform_state
-                                        .rect
-                                        .translate_right_to(max_x);
+                                    layer.transform_state.rect =
+                                        layer.transform_state.rect.translate_right_to(max_x);
                                 }
                             }
                             Aligment::Top => {
                                 for layer in &mut self.state.layers {
-                                    layer.transform_state.rect = layer
-                                        .transform_state
-                                        .rect
-                                        .translate_top_to(min_y);
+                                    layer.transform_state.rect =
+                                        layer.transform_state.rect.translate_top_to(min_y);
                                 }
                             }
                             Aligment::Bottom => {
                                 for layer in &mut self.state.layers {
-                                    layer.transform_state.rect = layer
-                                        .transform_state
-                                        .rect
-                                        .translate_bottom_to(max_y);
+                                    layer.transform_state.rect =
+                                        layer.transform_state.rect.translate_bottom_to(max_y);
                                 }
                             }
                         }

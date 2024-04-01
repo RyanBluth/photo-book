@@ -1,13 +1,11 @@
-
-
 use eframe::{
     egui::{RichText, Ui},
-    epaint::{Vec2},
+    epaint::Vec2,
 };
 
-use crate::{utils::EditableValueTextEdit};
+use crate::utils::EditableValueTextEdit;
 
-use super::layers::{Layer};
+use super::layers::Layer;
 
 pub struct TransformControlState<'a> {
     layer: &'a mut Layer,

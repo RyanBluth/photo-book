@@ -1,8 +1,9 @@
-use std::{cell::Cell, sync::{Arc, Mutex}};
+use std::{
+    cell::Cell,
+    sync::{Arc, Mutex},
+};
 
 use flexi_logger::writers::LogWriter;
-
-
 
 pub struct ArcStringLog {
     log: Arc<StringLog>,
@@ -10,9 +11,7 @@ pub struct ArcStringLog {
 
 impl ArcStringLog {
     pub fn new(log: Arc<StringLog>) -> Self {
-        Self {
-            log,
-        }
+        Self { log }
     }
 }
 
@@ -27,15 +26,26 @@ impl StringLog {
         }
     }
 
-    pub fn for_each<F>(&self, func: F) where F: FnMut(&String) {
+    pub fn for_each<F>(&self, func: F)
+    where
+        F: FnMut(&String),
+    {
         self.logs.lock().unwrap().get_mut().iter().for_each(func);
     }
 }
 
 impl LogWriter for ArcStringLog {
-    
-    fn write(&self, now: &mut flexi_logger::DeferredNow, record: &log::Record) -> std::io::Result<()> {
-        let line = format!("[{}] {} - {}", record.level().as_str().to_uppercase(), now.now().format("%Y-%m-%d %H:%M:%S"), record.args());
+    fn write(
+        &self,
+        now: &mut flexi_logger::DeferredNow,
+        record: &log::Record,
+    ) -> std::io::Result<()> {
+        let line = format!(
+            "[{}] {} - {}",
+            record.level().as_str().to_uppercase(),
+            now.now().format("%Y-%m-%d %H:%M:%S"),
+            record.args()
+        );
         match record.level() {
             log::Level::Error => {
                 eprintln!("{}", line);

@@ -8,8 +8,6 @@ use crate::{
     widget::page_canvas::{Page, Unit},
 };
 
-
-
 #[derive(Debug, PartialEq)]
 pub struct PageInfoState<'a> {
     page: &'a mut Page,
@@ -32,7 +30,6 @@ impl<'a> PageInfo<'a> {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
-    
         self.state.page.update_edit_state();
 
         ui.vertical(|ui| {

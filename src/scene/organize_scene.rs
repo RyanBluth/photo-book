@@ -7,16 +7,12 @@ use log::info;
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo_manager::{PhotoLoadResult, PhotoManager},
-    widget::{
-        image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
-        image_viewer::ImageViewerState,
-        page_canvas::CanvasState,
-    },
+    widget::image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
 };
 
 use super::{
     canvas_scene::CanvasScene, viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
-    SceneResponse, SceneState,
+    SceneResponse,
 };
 
 pub struct GallerySceneState {

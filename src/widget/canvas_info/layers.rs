@@ -1,7 +1,7 @@
 use std::{fmt::Display, hash::Hasher, str::FromStr, sync::Mutex};
 
 use eframe::epaint::Color32;
-use egui::{CursorIcon, FontId, Image, Pos2, Rect, Response, Vec2};
+use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
@@ -11,10 +11,11 @@ use crate::{
     history::HistoricallyEqual,
     photo::Photo,
     photo_manager::PhotoManager,
-    utils::Toggle,
+    utils::{IdExt, Toggle},
     widget::{
-        page_canvas::{CanvasPhoto, TransformHandleMode, TransformableState},
+        page_canvas::CanvasPhoto,
         placeholder::RectPlaceholder,
+        transformable::{TransformHandleMode, TransformableState},
     },
 };
 use egui_dnd::{dnd, utils::shift_vec};
@@ -220,6 +221,7 @@ impl Layer {
             rotation: 0.0,
             last_frame_rotation: 0.0,
             change_in_rotation: None,
+            id: Id::random(),
         };
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
@@ -250,6 +252,7 @@ impl Layer {
             rotation: 0.0,
             last_frame_rotation: 0.0,
             change_in_rotation: None,
+            id: Id::random(),
         };
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {

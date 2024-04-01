@@ -1,31 +1,29 @@
 use std::fmt::Display;
 
-use egui::{Color32, Widget};
-use egui_tiles::{Tabs, UiResponse};
-use indexmap::{indexmap, IndexMap};
-use rayon::vec;
+use egui::{Ui, Widget};
+use egui_tiles::UiResponse;
+use indexmap::IndexMap;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     history::{HistoricallyEqual, UndoRedoStack},
     photo::Photo,
-    photo_manager::PhotoManager,
+    photo_manager::{self, PhotoManager},
     widget::{
         canvas_info::{
-            layers::{next_layer_id, Layer, LayerId},
+            layers::{Layer, LayerId},
             panel::CanvasInfo,
         },
-        image_gallery::{ImageGallery, ImageGalleryState},
-        image_viewer::{self, ImageViewer, ImageViewerState},
+        image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         page_canvas::{Canvas, CanvasState, MultiSelect, Page},
-        pages::{Pages, PagesState},
-        photo_info::PhotoInfo,
+        pages::{Pages, PagesResponse, PagesState},
     },
 };
 
-use super::{NavigationRequest, Navigator, Scene, SceneResponse};
+use super::{viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse};
 
 pub struct CanvasSceneState {
+    selected_page_index: usize,
     canvas_state: CanvasState,
     gallery_state: ImageGalleryState,
     pages_state: PagesState,
@@ -35,6 +33,7 @@ pub struct CanvasSceneState {
 impl CanvasSceneState {
     fn new() -> Self {
         Self {
+            selected_page_index: 0,
             canvas_state: CanvasState::new(),
             gallery_state: ImageGalleryState::default(),
             history_manager: CanvasHistoryManager::new(),
@@ -46,6 +45,7 @@ impl CanvasSceneState {
         let canvas_state = CanvasState::with_photo(photo.clone(), ImageGalleryState::default());
 
         Self {
+            selected_page_index: 0,
             canvas_state: canvas_state.clone(),
             gallery_state: gallery_state.unwrap_or_default(),
             history_manager: CanvasHistoryManager::with_initial_state(canvas_state.clone()),
@@ -125,7 +125,7 @@ struct ViewerTreeBehavior<'a> {
 impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
     fn pane_ui(
         &mut self,
-        ui: &mut egui::Ui,
+        ui: &mut Ui,
         _tile_id: egui_tiles::TileId,
         pane: &mut CanvasScenePane,
     ) -> UiResponse {
@@ -133,7 +133,50 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                ImageGallery::show(ui, &mut self.scene_state.gallery_state);
+                match ImageGallery::show(ui, &mut self.scene_state.gallery_state) {
+                    Some(response) => match response {
+                        ImageGalleryResponse::ViewPhotoAt(index) => {
+                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                            if let (index, Some(photo_result)) =
+                                photo_manager.with_lock(|photo_manager| {
+                                    (
+                                        index,
+                                        photo_manager.photos.get_index(index).map(|x| x.1.clone()),
+                                    )
+                                })
+                            {
+                                match photo_result {
+                                    photo_manager::PhotoLoadResult::Pending(path) => todo!(),
+                                    photo_manager::PhotoLoadResult::Ready(photo) => self
+                                        .navigator
+                                        .push(Box::new(ViewerScene::new(photo, index))),
+                                }
+                            }
+                        }
+                        ImageGalleryResponse::EditPhotoAt(index) => {
+                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                            if let Some(photo_result) = photo_manager.with_lock(|photo_manager| {
+                                photo_manager.photos.get_index(index).map(|x| x.1.clone())
+                            }) {
+                                match photo_result {
+                                    photo_manager::PhotoLoadResult::Pending(path) => todo!(),
+                                    photo_manager::PhotoLoadResult::Ready(photo) => {
+                                        let layer = Layer::with_photo(photo.clone());
+                                        self.scene_state
+                                            .canvas_state
+                                            .layers
+                                            .insert(layer.id, layer);
+                                        self.scene_state.history_manager.save_history(
+                                            CanvasHistoryKind::AddPhoto,
+                                            &mut self.scene_state.canvas_state,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    None => {}
+                }
             }
             CanvasScenePane::Canvas => {
                 Canvas::new(
@@ -154,7 +197,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
 
                 // Clone the state so that we can use it to save history if needed.
                 // History needs to be saved before the state is modified
-                let pre_info_canvas_state = self.scene_state.canvas_state.clone();
+                let _pre_info_canvas_state = self.scene_state.canvas_state.clone();
 
                 let response = CanvasInfo {
                     layers: &mut self.scene_state.canvas_state.layers,
@@ -168,14 +211,22 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                         .history_manager
                         .save_history(history, &self.scene_state.canvas_state);
                 }
-                // },
-                // );
             }
             CanvasScenePane::Pages => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
 
-                Pages::new(&mut self.scene_state.pages_state).show(ui);
+                self.scene_state
+                    .pages_state
+                    .pages[self.scene_state.selected_page_index] = self.scene_state.canvas_state.clone_with_new_widget_ids();
+
+                match Pages::new(&mut self.scene_state.pages_state).show(ui) {
+                    PagesResponse::SelectPage(index) => {
+                        self.scene_state.canvas_state = self.scene_state.pages_state.pages[index].clone_with_new_widget_ids();
+                        self.scene_state.selected_page_index = index;
+                    }
+                    PagesResponse::None => {}
+                }
             }
         }
 
@@ -308,6 +359,11 @@ impl CanvasHistoryManager {
         canvas_state.layers = history.layers;
         canvas_state.multi_select = history.multi_select;
         canvas_state.page = history.page;
+    }
+
+    pub fn apply_index(&mut self, index: usize, canvas_state: &mut CanvasState) {
+        let history = &self.stack.history[index];
+        self.apply_history(history.1.clone(), canvas_state);
     }
 
     pub fn capturing_history<T>(

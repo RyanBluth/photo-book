@@ -4,7 +4,7 @@ use eframe::{
     egui::{Key, Ui},
     epaint::Vec2,
 };
-use egui::Sense;
+
 use egui_extras::Column;
 
 use crate::{

@@ -1,133 +1,34 @@
 use std::{fmt::Display, str::FromStr};
 
 use eframe::{
-    egui::{
-        self, panel::PanelState, Button, CentralPanel, Context, CursorIcon, Image, Response, Sense,
-        SidePanel, Ui,
-    },
+    egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
-    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Stroke, Vec2},
+    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::epaint::TextShape;
+use egui::{ecolor::ParseHexColorError, epaint::TextShape, layers, Id};
 use indexmap::{indexmap, IndexMap};
 use strum_macros::EnumIter;
 
 use crate::{
-    assets::Asset,
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    history::{HistoricallyEqual, UndoRedoStack},
     photo::Photo,
-    photo_manager::{PhotoLoadResult, PhotoManager},
+    photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    utils::{RectExt, Toggle},
+    utils::{IdExt, RectExt, Toggle},
 };
 
 use super::{
-    canvas_info::{
-        layers::{
-            next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId,
-            LayerTransformEditState,
-        },
-        panel::CanvasInfo,
+    canvas_info::layers::{
+        next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId,
+        LayerTransformEditState,
     },
-    image_gallery::{self, ImageGallery, ImageGalleryState},
+    image_gallery::ImageGalleryState,
+    transformable::{
+        ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
+        TransformableWidgetResponse,
+    },
 };
-
-// pub struct CanvasScene<'a> {
-//     state: &'a mut CanvasState,
-// }
-
-// impl<'a> CanvasScene<'a> {
-//     pub fn new(canvas_state: &'a mut CanvasState) -> Self {
-//         Self {
-//             state: canvas_state,
-//         }
-//     }
-
-//     pub fn show(&mut self, ctx: &Context) -> Option<CanvasResponse> {
-//         let left_panel_rect = match PanelState::load(ctx, "image_gallery_panel".into()) {
-//             Some(state) => state.rect,
-//             None => Rect::ZERO,
-//         };
-
-//         let right_panel_rect = match PanelState::load(ctx, "canvas_info_panel".into()) {
-//             Some(state) => state.rect,
-//             None => Rect::ZERO,
-//         };
-
-//         let mut available_rect = ctx.available_rect();
-
-//         available_rect.min.x += left_panel_rect.width();
-//         available_rect.max.x -= right_panel_rect.width();
-
-//         let canvas_response = match CentralPanel::default()
-//             .show(ctx, |ui| {
-//                 let mut canvas = Canvas::new(self.state, available_rect);
-//                 canvas.show(ui)
-//             })
-//             .inner
-//         {
-//             Some(action) => match action {
-//                 CanvasResponse::Exit => Some(CanvasResponse::Exit),
-//             },
-//             None => None,
-//         };
-
-//         match SidePanel::left("image_gallery_panel")
-//             .default_width(300.0)
-//             .resizable(true)
-//             .show(ctx, |ui| {
-//                 ImageGallery::show(ui, &mut self.state.gallery_state)
-//             })
-//             .inner
-//         {
-//             Some(action) => match action {
-//                 image_gallery::ImageGalleryResponse::ViewPhotoAt(_index) => {
-//                     // TODO
-//                     return Some(CanvasResponse::Exit);
-//                 }
-//                 image_gallery::ImageGalleryResponse::EditPhotoAt(index) => {
-//                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
-//                     // TODO: Allow clicking on a pending photo
-//                     if let PhotoLoadResult::Ready(photo) =
-//                         photo_manager.with_lock(|photo_manager| photo_manager.photos[index].clone())
-//                     {
-//                         self.state.add_photo(photo.clone());
-//                     };
-//                 }
-//             },
-//             None => {}
-//         }
-
-//         let canvas_info_response =
-//             self.state
-//                 .history_manager
-//                 .capturing_history(CanvasHistoryKind::Page, |state| {
-//                     SidePanel::right("canvas_info_panel")
-//                         .default_width(300.0)
-//                         .resizable(true)
-//                         .show(ctx, |ui| {
-//                             CanvasInfo {
-//                                 layers: &mut state.layers,
-//                                 page: &mut state.page,
-//                             }
-//                             .show(ui)
-//                         })
-//                 });
-
-//         self.state
-//             .history_manager
-//             .capturing_history(CanvasHistoryKind::Select, |state| {
-//                 if let Some(selected_layer) = canvas_info_response.inner.selected_layer {
-//                     state.select_photo(&selected_layer, ctx);
-//                 }
-//             });
-
-//         canvas_response
-//     }
-// }
 
 pub enum CanvasResponse {
     Exit,
@@ -283,6 +184,14 @@ impl CanvasState {
         }
     }
 
+    pub fn clone_with_new_widget_ids(&self) -> Self {
+        let mut clone = self.clone();
+        for layer in clone.layers.values_mut() {
+            layer.transform_state.id = Id::random();
+        }
+        clone
+    }
+
     pub fn with_photo(photo: Photo, gallery_state: ImageGalleryState) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
@@ -304,6 +213,7 @@ impl CanvasState {
             rotation: 0.0,
             last_frame_rotation: 0.0,
             change_in_rotation: None,
+            id: Id::random(),
         };
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         let layer = Layer {
@@ -365,6 +275,7 @@ impl MultiSelect {
             rotation: 0.0,
             last_frame_rotation: 0.0,
             change_in_rotation: None,
+            id: Id::random(),
         };
 
         let res = Self {
@@ -663,7 +574,7 @@ impl<'a> Canvas<'a> {
         // We collect the ids into a map to avoid borrowing issues
         // TODO: Is there a better way?
         for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
-            if let Some(transform_response) = self.draw_layer(&layer_id, page_rect, ui) {
+            if let Some(transform_response) = self.draw_layer(&layer_id, false, page_rect, ui) {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
@@ -696,6 +607,25 @@ impl<'a> Canvas<'a> {
         self.draw_multi_select(ui, page_rect);
 
         None
+    }
+
+    pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
+        let zoom = (rect.width() / self.state.page.size_pixels().x)
+            .min(rect.height() / self.state.page.size_pixels().y);
+
+        let page_rect: Rect =
+            Rect::from_center_size(rect.center(), self.state.page.size_pixels() * zoom);
+
+        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+
+        let current_zoom = self.state.zoom;
+        self.state.zoom = zoom;
+
+        for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
+            self.draw_layer(&layer_id, true, page_rect, ui);
+        }
+
+        self.state.zoom = current_zoom;
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
@@ -867,6 +797,7 @@ impl<'a> Canvas<'a> {
     fn draw_layer(
         &mut self,
         layer_id: &LayerId,
+        is_preview: bool,
         available_rect: Rect,
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
@@ -887,7 +818,7 @@ impl<'a> Canvas<'a> {
                                     ui,
                                     available_rect,
                                     self.state.zoom,
-                                    active,
+                                    active && !is_preview,
                                     |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                                         let uv = Rect::from_min_max(
                                             Pos2::new(0.0, 0.0),
@@ -1106,8 +1037,6 @@ impl<'a> Canvas<'a> {
                 layer.selected = layer.id == *layer_id;
             }
         }
-        self.history_manager
-            .save_history(CanvasHistoryKind::SelectLayer, &mut self.state);
     }
 
     fn deselect_photo(&mut self, layer_id: &LayerId) {
@@ -1122,627 +1051,5 @@ impl<'a> Canvas<'a> {
         }
         self.history_manager
             .save_history(CanvasHistoryKind::DeselectLayer, &mut self.state);
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum TransformHandle {
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-    MiddleTop,
-    MiddleBottom,
-    MiddleLeft,
-    MiddleRight,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum ResizeMode {
-    Free,
-    MirrorAxis,
-    ConstrainedAspectRatio,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Copy)]
-pub enum TransformHandleMode {
-    Resize(ResizeMode),
-    Rotate,
-}
-
-impl Default for TransformHandleMode {
-    fn default() -> Self {
-        Self::Resize(ResizeMode::Free)
-    }
-}
-
-impl TransformHandle {
-    fn cursor(&self) -> CursorIcon {
-        match self {
-            TransformHandle::TopLeft => CursorIcon::ResizeNorthWest,
-            TransformHandle::TopRight => CursorIcon::ResizeNorthEast,
-            TransformHandle::BottomLeft => CursorIcon::ResizeSouthWest,
-            TransformHandle::BottomRight => CursorIcon::ResizeSouthEast,
-            TransformHandle::MiddleTop => CursorIcon::ResizeRow,
-            TransformHandle::MiddleBottom => CursorIcon::ResizeRow,
-            TransformHandle::MiddleLeft => CursorIcon::ResizeColumn,
-            TransformHandle::MiddleRight => CursorIcon::ResizeColumn,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TransformableState {
-    pub rect: Rect,
-    pub active_handle: Option<TransformHandle>,
-    pub is_moving: bool,
-    pub handle_mode: TransformHandleMode,
-    pub rotation: f32,
-    pub last_frame_rotation: f32,
-    pub change_in_rotation: Option<f32>,
-}
-
-impl TransformableState {
-    fn to_local_space(&self, parent: &TransformableState) -> Self {
-        let mut new_rect = self.rect;
-        new_rect.set_center(parent.rect.center() - self.rect.center().to_vec2());
-
-        TransformableState {
-            rect: new_rect,
-            active_handle: self.active_handle,
-            is_moving: self.is_moving,
-            handle_mode: self.handle_mode,
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-        }
-    }
-}
-
-pub struct TransformableWidget<'a> {
-    pub state: &'a mut TransformableState,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum TransformableWidgetResponseAction {
-    PushHistory,
-}
-
-#[derive(Debug, Clone)]
-pub struct TransformableWidgetResponse<Inner> {
-    inner: Inner,
-    began_moving: bool,
-    began_resizing: bool,
-    began_rotating: bool,
-    ended_moving: bool,
-    ended_resizing: bool,
-    ended_rotating: bool,
-    mouse_down: bool,
-    clicked: bool,
-}
-
-impl<'a> TransformableWidget<'a> {
-    const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
-
-    pub fn new(state: &'a mut TransformableState) -> Self {
-        Self { state }
-    }
-
-    pub fn show<R>(
-        &mut self,
-        ui: &mut Ui,
-        pre_scaled_container_rect: Rect,
-        global_scale: f32,
-        active: bool,
-        add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
-    ) -> TransformableWidgetResponse<R> {
-        let initial_is_moving = self.state.is_moving;
-        let initial_active_handle = self.state.active_handle;
-        let initial_mode = self.state.handle_mode;
-
-        self.state.last_frame_rotation = self.state.rotation;
-
-        // Translate photo to the new left_top position, adjusted for the global offset
-        let translated_rect_left_top = pre_scaled_container_rect.left_top()
-            + (self.state.rect.left_top() * global_scale).to_vec2();
-
-        // Scale the size of the photo
-        let scaled_photo_size = self.state.rect.size() * global_scale;
-
-        // Create the new scaled and translated rect for the photo
-        let pre_rotated_inner_content_rect =
-            Rect::from_min_size(translated_rect_left_top, scaled_photo_size);
-
-        let rotated_inner_content_rect =
-            pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);
-
-        let response = if active {
-            // Draw the mode selector above the inner content
-            let mode_selector_response =
-                self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
-
-            mode_selector_response
-                .union(ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag()))
-        } else {
-            ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
-        };
-
-        let rect = response.rect;
-
-        let middle_point = |p1: Pos2, p2: Pos2| p1 + (p2 - p1) / 2.0;
-
-        let handles = [
-            (
-                TransformHandle::TopLeft,
-                rotated_inner_content_rect.left_top() - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::TopRight,
-                rotated_inner_content_rect.right_top() - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::BottomLeft,
-                rotated_inner_content_rect.left_bottom() - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::BottomRight,
-                rotated_inner_content_rect.right_bottom() - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::MiddleTop,
-                middle_point(
-                    rotated_inner_content_rect.left_top(),
-                    rotated_inner_content_rect.right_top(),
-                ) - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::MiddleBottom,
-                middle_point(
-                    rotated_inner_content_rect.left_bottom(),
-                    rotated_inner_content_rect.right_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::MiddleLeft,
-                middle_point(
-                    rotated_inner_content_rect.left_top(),
-                    rotated_inner_content_rect.left_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
-            ),
-            (
-                TransformHandle::MiddleRight,
-                middle_point(
-                    rotated_inner_content_rect.right_top(),
-                    rotated_inner_content_rect.right_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
-            ),
-        ];
-
-        // Interact with an expanded rect to include the handles which are partially outside the rect
-        let interact_response: Response = ui.interact(
-            rotated_inner_content_rect.expand(Self::HANDLE_SIZE.x / 2.0),
-            response.id,
-            Sense::click_and_drag(),
-        );
-
-        if active {
-            for (handle, rotated_handle_pos) in &handles {
-                let handle_rect: Rect = Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE);
-                if !interact_response.is_pointer_button_down_on()
-                    && self.state.active_handle == Some(*handle)
-                {
-                    self.state.change_in_rotation = None;
-                    self.state.active_handle = None;
-                }
-
-                if (interact_response
-                    .interact_pointer_pos()
-                    .map(|pos| handle_rect.contains(pos))
-                    .unwrap_or(false)
-                    && self.state.active_handle.is_none())
-                    || self.state.active_handle == Some(*handle)
-                {
-                    let delta = interact_response.drag_delta() / global_scale;
-
-                    let (shift_pressed, alt_pressed) = ui
-                        .ctx()
-                        .input(|input| (input.modifiers.shift, input.modifiers.alt));
-
-                    match (self.state.handle_mode, shift_pressed, alt_pressed) {
-                        (TransformHandleMode::Resize(ResizeMode::MirrorAxis), _, _)
-                        | (TransformHandleMode::Resize(ResizeMode::Free), false, true) => {
-                            let mut new_rect = self.state.rect;
-
-                            match handle {
-                                TransformHandle::TopLeft => {
-                                    new_rect.min.x += delta.x;
-                                    new_rect.min.y += delta.y;
-
-                                    new_rect.max.x -= delta.x;
-                                    new_rect.max.y -= delta.y;
-                                }
-                                TransformHandle::TopRight => {
-                                    new_rect.max.x += delta.x;
-                                    new_rect.min.y += delta.y;
-
-                                    new_rect.min.x -= delta.x;
-                                    new_rect.max.y -= delta.y;
-                                }
-                                TransformHandle::BottomLeft => {
-                                    new_rect.min.x += delta.x;
-                                    new_rect.max.y += delta.y;
-
-                                    new_rect.max.x -= delta.x;
-                                    new_rect.min.y -= delta.y;
-                                }
-                                TransformHandle::BottomRight => {
-                                    new_rect.max.x += delta.x;
-                                    new_rect.max.y += delta.y;
-
-                                    new_rect.min.x -= delta.x;
-                                    new_rect.min.y -= delta.y;
-                                }
-                                TransformHandle::MiddleTop => {
-                                    new_rect.min.y += delta.y;
-                                    new_rect.max.y -= delta.y;
-                                }
-                                TransformHandle::MiddleBottom => {
-                                    new_rect.max.y += delta.y;
-                                    new_rect.min.y -= delta.y;
-                                }
-                                TransformHandle::MiddleLeft => {
-                                    new_rect.min.x += delta.x;
-                                    new_rect.max.x -= delta.x;
-                                }
-                                TransformHandle::MiddleRight => {
-                                    new_rect.max.x += delta.x;
-                                    new_rect.min.x -= delta.x;
-                                }
-                            };
-
-                            self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
-                        }
-                        (TransformHandleMode::Resize(ResizeMode::ConstrainedAspectRatio), _, _)
-                        | (TransformHandleMode::Resize(ResizeMode::Free), true, false) => {
-                            let mut new_rect = self.state.rect;
-
-                            let (ratio_x, ratio_y) = if new_rect.width() > new_rect.height() {
-                                (new_rect.width() / new_rect.height(), 1.0)
-                            } else {
-                                (1.0, new_rect.height() / new_rect.width())
-                            };
-
-                            let max_delta = delta.x.min(delta.y);
-                            let delta_x = max_delta * ratio_x;
-                            let delta_y = max_delta * ratio_y;
-
-                            match handle {
-                                TransformHandle::TopLeft => {
-                                    new_rect.min.x += delta_x;
-                                    new_rect.min.y += delta_y;
-                                }
-                                TransformHandle::TopRight => {
-                                    let max_delta = delta.x.abs().max(delta.y.abs());
-
-                                    if delta.x.abs() > delta.y.abs() && delta.x > 0.0 {
-                                        new_rect.max.x += max_delta * ratio_x;
-                                        new_rect.min.y -= max_delta * ratio_y;
-                                    } else if delta.x.abs() > delta.y.abs() && delta.x < 0.0 {
-                                        new_rect.max.x -= max_delta * ratio_x;
-                                        new_rect.min.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y > 0.0 {
-                                        new_rect.max.x -= max_delta * ratio_x;
-                                        new_rect.min.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y < 0.0 {
-                                        new_rect.max.x += max_delta * ratio_x;
-                                        new_rect.min.y -= max_delta * ratio_y;
-                                    }
-                                }
-                                TransformHandle::BottomLeft => {
-                                    let max_delta = delta.x.abs().max(delta.y.abs());
-
-                                    if delta.x.abs() > delta.y.abs() && delta.x > 0.0 {
-                                        new_rect.min.x += max_delta * ratio_x;
-                                        new_rect.max.y -= max_delta * ratio_y;
-                                    } else if delta.x.abs() > delta.y.abs() && delta.x < 0.0 {
-                                        new_rect.min.x -= max_delta * ratio_x;
-                                        new_rect.max.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y > 0.0 {
-                                        new_rect.min.x -= max_delta * ratio_x;
-                                        new_rect.max.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y < 0.0 {
-                                        new_rect.min.x += max_delta * ratio_x;
-                                        new_rect.max.y -= max_delta * ratio_y;
-                                    }
-                                }
-                                TransformHandle::BottomRight => {
-                                    new_rect.max.x += delta_x;
-                                    new_rect.max.y += delta_y;
-                                }
-                                TransformHandle::MiddleTop => {
-                                    new_rect.min.y -= delta.y * ratio_y * -1.0;
-                                    new_rect.max.y += delta.y * ratio_y * -1.0;
-                                    new_rect.min.x -= delta.y * ratio_x * -1.0;
-                                    new_rect.max.x += delta.y * ratio_x * -1.0;
-                                }
-                                TransformHandle::MiddleLeft => {
-                                    new_rect.min.y += delta.x * ratio_y;
-                                    new_rect.max.y -= delta.x * ratio_y;
-                                    new_rect.min.x += delta.x * ratio_x;
-                                    new_rect.max.x -= delta.x * ratio_x;
-                                }
-                                TransformHandle::MiddleRight => {
-                                    new_rect.min.y -= delta.x * ratio_y;
-                                    new_rect.max.y += delta.x * ratio_y;
-                                    new_rect.min.x -= delta.x * ratio_x;
-                                    new_rect.max.x += delta.x * ratio_x;
-                                }
-                                TransformHandle::MiddleBottom => {
-                                    new_rect.min.y -= delta.y * ratio_y;
-                                    new_rect.max.y += delta.y * ratio_y;
-                                    new_rect.min.x -= delta.y * ratio_x;
-                                    new_rect.max.x += delta.y * ratio_x;
-                                }
-                            };
-
-                            self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
-                        }
-                        (TransformHandleMode::Resize(ResizeMode::Free), _, _) => {
-                            let mut new_rect = self.state.rect;
-
-                            match handle {
-                                TransformHandle::TopLeft => {
-                                    new_rect.min.x += delta.x;
-                                    new_rect.min.y += delta.y;
-                                }
-                                TransformHandle::TopRight => {
-                                    new_rect.max.x += delta.x;
-                                    new_rect.min.y += delta.y;
-                                }
-                                TransformHandle::BottomLeft => {
-                                    new_rect.min.x += delta.x;
-                                    new_rect.max.y += delta.y;
-                                }
-                                TransformHandle::BottomRight => {
-                                    new_rect.max.x += delta.x;
-                                    new_rect.max.y += delta.y;
-                                }
-                                TransformHandle::MiddleTop => {
-                                    new_rect.min.y += delta.y;
-                                }
-                                TransformHandle::MiddleBottom => {
-                                    new_rect.max.y += delta.y;
-                                }
-                                TransformHandle::MiddleLeft => {
-                                    new_rect.min.x += delta.x;
-                                }
-                                TransformHandle::MiddleRight => {
-                                    new_rect.max.x += delta.x;
-                                }
-                            };
-
-                            self.state.active_handle = Some(*handle);
-                            self.state.rect = new_rect;
-                        }
-                        (TransformHandleMode::Rotate, _, _) => {
-                            if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
-                                let from_cursor_to_center =
-                                    cursor_pos - rotated_inner_content_rect.center();
-
-                                let from_rotated_handle_to_center =
-                                    Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE)
-                                        .center()
-                                        - rotated_inner_content_rect.center();
-
-                                let rotated_signed_angle =
-                                    f32::atan2(from_cursor_to_center.y, from_cursor_to_center.x)
-                                        - f32::atan2(
-                                            from_rotated_handle_to_center.y,
-                                            from_rotated_handle_to_center.x,
-                                        );
-
-                                self.state.rotation += rotated_signed_angle
-                                    - self.state.change_in_rotation.unwrap_or(0.0);
-                                self.state.change_in_rotation = Some(rotated_signed_angle);
-
-                                self.state.active_handle = Some(*handle);
-                            }
-                        }
-                    }
-                }
-            }
-
-            if self.state.active_handle.is_none() {
-                if interact_response.is_pointer_button_down_on()
-                    && (self.state.is_moving
-                        || interact_response
-                            .interact_pointer_pos()
-                            .map(|pos| rect.contains(pos))
-                            .unwrap_or(false))
-                {
-                    let delta = interact_response.drag_delta() / global_scale;
-                    self.state.rect = self.state.rect.translate(delta);
-                    self.state.is_moving = true;
-                } else {
-                    self.state.is_moving = false;
-                }
-
-                if interact_response.double_clicked() {
-                    match self.state.handle_mode {
-                        TransformHandleMode::Resize(_) => {
-                            self.state.handle_mode = TransformHandleMode::Rotate
-                        }
-                        TransformHandleMode::Rotate => {
-                            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free)
-                        }
-                    }
-                }
-            } else {
-                self.state.is_moving = false;
-            }
-        } else {
-            self.state.is_moving = false;
-            self.state.active_handle = None;
-            self.state.change_in_rotation = None;
-        }
-
-        let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
-
-        if active {
-            self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
-            self.update_cursor(ui, &rotated_inner_content_rect, &handles);
-        }
-
-        TransformableWidgetResponse {
-            inner: inner_response,
-            began_moving: !initial_is_moving && self.state.is_moving,
-            began_resizing: initial_active_handle.is_none()
-                && self.state.active_handle.is_some()
-                && matches!(initial_mode, TransformHandleMode::Resize(_)),
-            began_rotating: initial_active_handle.is_none()
-                && self.state.active_handle.is_some()
-                && matches!(initial_mode, TransformHandleMode::Rotate),
-            ended_moving: initial_is_moving && !self.state.is_moving,
-            ended_resizing: initial_active_handle.is_some()
-                && self.state.active_handle.is_none()
-                && matches!(initial_mode, TransformHandleMode::Resize(_)),
-            ended_rotating: initial_active_handle.is_some()
-                && self.state.active_handle.is_none()
-                && matches!(initial_mode, TransformHandleMode::Rotate),
-            mouse_down: interact_response.is_pointer_button_down_on(),
-            clicked: interact_response.clicked(),
-        }
-    }
-
-    fn update_cursor(
-        &self,
-        ui: &mut Ui,
-        rotated_inner_content_rect: &Rect,
-        handles: &[(TransformHandle, Pos2)],
-    ) {
-        ui.ctx().pointer_latest_pos().map(|pos| {
-            for (handle, handle_pos) in handles {
-                let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
-                if handle_rect.contains(pos) {
-                    match self.state.handle_mode {
-                        TransformHandleMode::Resize(_) => {
-                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
-                                cursor_manager.set_cursor(handle.cursor());
-                            });
-                        }
-                        TransformHandleMode::Rotate => {
-                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
-                                cursor_manager.set_cursor(CursorIcon::Crosshair);
-                            });
-                        }
-                    }
-                    break;
-                } else if rotated_inner_content_rect.contains(pos) {
-                    Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
-                        cursor_manager.set_cursor(CursorIcon::Move);
-                    });
-                }
-            }
-        });
-    }
-
-    fn draw_bounds_with_handles(
-        &self,
-        ui: &mut Ui,
-        rotated_content_rect: &Rect,
-        handles: &[(TransformHandle, Pos2)],
-    ) {
-        ui.painter()
-            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
-
-        // Draw the resize handles
-        for (handle, handle_pos) in handles {
-            let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
-            ui.painter().rect(
-                handle_rect,
-                1.0,
-                if Some(handle) == self.state.active_handle.as_ref() {
-                    Color32::RED
-                } else {
-                    Color32::WHITE
-                },
-                Stroke::new(2.0, Color32::BLACK),
-            );
-        }
-    }
-
-    fn draw_handle_mode_selector(&mut self, ui: &mut Ui, bottom_center_origin: Pos2) -> Response {
-        let width = 100.0;
-        let height = 60.0;
-        let margin_bottom = 20.0;
-        let button_padding = 15.0;
-
-        let button_size = Vec2::new(height - button_padding * 2.0, height - button_padding * 2.0);
-
-        let response = ui.allocate_rect(
-            Rect::from_points(&[
-                bottom_center_origin + Vec2::new(0.0, -margin_bottom),
-                bottom_center_origin + Vec2::new(-width * 0.5, -height),
-                bottom_center_origin + Vec2::new(width * 0.5, -height),
-            ]),
-            Sense::hover(),
-        );
-
-        ui.painter()
-            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
-
-        let left_half_rect =
-            Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
-
-        let right_half_rect =
-            Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
-
-        if ui
-            .put(
-                Rect::from_center_size(left_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::resize())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
-                )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
-        }
-
-        if ui
-            .put(
-                Rect::from_center_size(right_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::rotate())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
-                )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Rotate;
-        }
-
-        response
     }
 }

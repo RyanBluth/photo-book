@@ -1,5 +1,5 @@
 use std::fmt::Display;
-
+use std::ops::Index;
 
 pub trait HistoricallyEqual {
     fn historically_eqaul_to(&self, other: &Self) -> bool;
@@ -38,6 +38,10 @@ where
     }
 
     pub fn save_history(&mut self, kind: Kind, value: Value) {
+        if self.history[self.index].1.historically_eqaul_to(&value) {
+            return;
+        }
+
         self.history.truncate(self.index + 1);
         self.history.push((kind, value));
 

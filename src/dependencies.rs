@@ -3,10 +3,8 @@ use std::{
     sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
-
-
 use crate::{
-    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager
+    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager,
 };
 
 macro_rules! singleton {

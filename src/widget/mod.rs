@@ -1,9 +1,10 @@
+pub mod canvas_info;
 pub mod gallery_image;
+pub mod image_gallery;
+pub mod image_viewer;
+pub mod page_canvas;
+pub mod pages;
+pub mod photo_info;
 pub mod placeholder;
 pub mod spacer;
-pub mod image_viewer;
-pub mod photo_info;
-pub mod image_gallery;
-pub mod page_canvas;
-pub mod canvas_info;
-pub mod pages;
+pub mod transformable;

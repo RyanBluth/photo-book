@@ -1,13 +1,13 @@
 use eframe::egui::{self};
-use egui::{ComboBox, RichText, Vec2};
+use egui::{InnerResponse, RichText, Sense, Ui};
 
+use egui_extras::{Column, TableBuilder};
 use strum::IntoEnumIterator;
 
 use crate::{
-    history,
-    scene::canvas_scene::CanvasHistoryManager,
-    utils::EditableValueTextEdit,
-    widget::page_canvas::{Page, Unit},
+    cursor_manager::CursorManager,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, utils::EguiExt,
 };
 
 #[derive(Debug, PartialEq)]
@@ -37,37 +37,63 @@ impl<'a> HistoryInfo<'a> {
 
             ui.label(RichText::new("History").heading());
 
-            if self.state.history_manager.is_at_end() {
-                ui.label(
-                    RichText::new("Unsaved changes")
-                        .monospace()
-                        .color(egui::Color32::GREEN),
-                );
-                ui.separator();
-            }
-
-            for history in self
+            let history: Vec<&CanvasHistoryKind> = self
                 .state
                 .history_manager
                 .stack
                 .history
                 .iter()
-                .enumerate()
+                .map(|(kind, _)| kind)
                 .rev()
-            {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}", history.0));
-                    ui.label(RichText::new(history.1 .0.to_string()).monospace().color(
-                        if history.0 == self.state.history_manager.stack.index {
-                            egui::Color32::GREEN
-                        } else {
-                            egui::Color32::WHITE
-                        },
-                    ));
-                });
+                .collect();
 
-                ui.separator();
-            }
+            let available_width = ui.available_width();
+
+            TableBuilder::new(ui)
+                .column(Column::exact(available_width))
+                .striped(true)
+                .body(|body| {
+                    body.rows(
+                        20.0,
+                        self.state.history_manager.stack.history.len(),
+                        |mut row| {
+                            let index = row.index();
+                            let history_kind = history[index];
+                            row.col(|ui| {
+                                if ui
+                                    .clickable(|ui| {
+                                        ui.set_width(available_width);
+                                        ui.horizontal(|ui| {
+                                            ui.label(format!("{}", index));
+                                            ui.label(
+                                                RichText::new(history_kind.to_string())
+                                                    .monospace()
+                                                    .color(
+                                                        if (history.len() - 1) - index
+                                                            == self
+                                                                .state
+                                                                .history_manager
+                                                                .stack
+                                                                .index
+                                                        {
+                                                            egui::Color32::GREEN
+                                                        } else {
+                                                            egui::Color32::WHITE
+                                                        },
+                                                    ),
+                                            );
+                                        })
+                                    })
+                                    .response
+                                    .clicked()
+                                {
+                                    self.state.history_manager.stack.index =
+                                        (history.len() - 1) - index;
+                                }
+                            });
+                        },
+                    );
+                });
         });
     }
 }

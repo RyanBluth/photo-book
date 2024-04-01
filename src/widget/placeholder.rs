@@ -1,4 +1,7 @@
-use eframe::{egui::{Color32, Rect, Sense, Ui, Vec2, Widget, Response}, epaint::Pos2};
+use eframe::{
+    egui::{Color32, Rect, Response, Sense, Ui, Vec2, Widget},
+    epaint::Pos2,
+};
 
 pub struct RectPlaceholder {
     size: Vec2,

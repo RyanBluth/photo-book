@@ -4,13 +4,12 @@ use crate::{
         image_gallery::ImageGalleryState, image_viewer::ImageViewerState, page_canvas::CanvasState,
     },
 };
-use std::collections::HashSet;
 
 use self::organize_scene::GalleryScene;
 
+pub mod canvas_scene;
 pub mod organize_scene;
 pub mod viewer_scene;
-pub mod canvas_scene;
 
 pub enum SceneResponse {
     None,

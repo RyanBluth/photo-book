@@ -34,4 +34,3 @@ pub struct PhotoDirectory {
     id: i32,
     path: String,
 }
-

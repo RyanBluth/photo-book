@@ -5,7 +5,6 @@ pub struct CursorManager {
 }
 
 impl CursorManager {
-
     pub fn new() -> Self {
         Self {
             current_frame_cursor: None,

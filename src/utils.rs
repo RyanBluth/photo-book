@@ -4,9 +4,9 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::Ui;
+use egui::{Id, InnerResponse, Sense, Ui};
 
-use crate::widget::canvas_info::layers::EditableValue;
+use crate::{cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, widget::canvas_info::layers::EditableValue};
 
 macro_rules! guard_let {
     ($x:ident, $y:expr) => {
@@ -178,10 +178,7 @@ impl Toggle for bool {
 }
 
 pub trait EditableValueTextEdit {
-    fn text_edit_editable_value_singleline<T>(
-        &mut self,
-        value: &mut EditableValue<T>,
-    ) -> T
+    fn text_edit_editable_value_singleline<T>(&mut self, value: &mut EditableValue<T>) -> T
     where
         T: Display,
         T: FromStr,
@@ -189,10 +186,7 @@ pub trait EditableValueTextEdit {
 }
 
 impl EditableValueTextEdit for Ui {
-    fn text_edit_editable_value_singleline<T>(
-        &mut self,
-        value: &mut EditableValue<T>,
-    ) -> T
+    fn text_edit_editable_value_singleline<T>(&mut self, value: &mut EditableValue<T>) -> T
     where
         T: Display,
         T: FromStr,
@@ -209,5 +203,37 @@ impl EditableValueTextEdit for Ui {
         }
 
         value.value()
+    }
+}
+
+pub trait IdExt {
+    fn random() -> Id;
+}
+
+impl IdExt for Id {
+    fn random() -> Id {
+        Id::new(rand::random::<u64>())
+    }
+}
+
+pub trait EguiExt {
+    fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
+}
+
+impl EguiExt for Ui {
+    fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+        let response = self.allocate_ui(self.max_rect().size(), add_contents);
+
+        if response.response.contains_pointer() {
+            let cursor_manager: Singleton<CursorManager> = Dependency::get();
+            cursor_manager.with_lock_mut(|cursor_manager| {
+                cursor_manager.set_cursor(egui::CursorIcon::PointingHand);
+            });
+        }
+        
+        InnerResponse::new(
+            response.inner,
+            self.interact(response.response.rect, self.next_auto_id(), Sense::click()),
+        )
     }
 }

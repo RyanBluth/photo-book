@@ -1,23 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
-use eframe::egui::{self, CentralPanel, Context, SidePanel, ViewportBuilder, Widget};
+use eframe::egui::{self, ViewportBuilder, Widget};
 
 use font_manager::FontManager;
 
-use photo::Photo;
-use photo_manager::{PhotoLoadResult, PhotoManager};
+use photo_manager::PhotoManager;
 use scene::SceneManager;
 use tokio::runtime;
-use widget::{
-    image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
-    image_viewer::{self, ImageViewer, ImageViewerState},
-    page_canvas::{CanvasResponse, CanvasState},
-    photo_info::PhotoInfo,
-};
 
 use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};

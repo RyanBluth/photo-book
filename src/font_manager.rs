@@ -96,9 +96,7 @@ impl FontManager {
                 .families()
                 .iter()
                 .map(|family| FontId::new(20.0, family.clone()))
-                .filter(|font_id| {
-                    fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890")
-                })
+                .filter(|font_id| fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890"))
                 .map(|font_id| font_id.family.to_string())
                 .collect::<HashSet<String>>();
 

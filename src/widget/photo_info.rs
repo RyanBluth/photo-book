@@ -1,7 +1,4 @@
-
-
 use eframe::egui::{Grid, Widget};
-
 
 use crate::photo::{Photo, PhotoMetadataField};
 
@@ -28,7 +25,7 @@ impl<'a> Widget for PhotoInfo<'a> {
                         ui.label(format!("{}", value));
                         if let PhotoMetadataField::Path(path) = value {
                             if ui.button("📂").clicked() {
-                                open::that_in_background(path.parent().unwrap());          
+                                open::that_in_background(path.parent().unwrap());
                             }
                         }
                         ui.end_row()
