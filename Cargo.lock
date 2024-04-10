@@ -1145,8 +1145,8 @@ dependencies = [
 
 [[package]]
 name = "ecolor"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1154,8 +1154,8 @@ dependencies = [
 
 [[package]]
 name = "eframe"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "bytemuck",
  "cocoa 0.25.0",
@@ -1189,8 +1189,8 @@ dependencies = [
 
 [[package]]
 name = "egui"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "accesskit",
  "ahash",
@@ -1202,8 +1202,8 @@ dependencies = [
 
 [[package]]
 name = "egui-wgpu"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "bytemuck",
  "document-features",
@@ -1219,8 +1219,8 @@ dependencies = [
 
 [[package]]
 name = "egui-winit"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "accesskit_winit",
  "arboard",
@@ -1235,8 +1235,8 @@ dependencies = [
 
 [[package]]
 name = "egui_animation"
-version = "0.3.0"
-source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#f7e59d92ad26cae31ad5997ed5dcd912d26df050"
+version = "0.4.0"
+source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#dd75e492e92e45bf3247f56e849f2e2b5aea1e02"
 dependencies = [
  "egui",
  "hello_egui_utils",
@@ -1245,8 +1245,8 @@ dependencies = [
 
 [[package]]
 name = "egui_dnd"
-version = "0.7.0"
-source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#f7e59d92ad26cae31ad5997ed5dcd912d26df050"
+version = "0.8.0"
+source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#dd75e492e92e45bf3247f56e849f2e2b5aea1e02"
 dependencies = [
  "egui",
  "egui_animation",
@@ -1256,8 +1256,8 @@ dependencies = [
 
 [[package]]
 name = "egui_extras"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "egui",
  "ehttp",
@@ -1271,8 +1271,8 @@ dependencies = [
 
 [[package]]
 name = "egui_glow"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "bytemuck",
  "egui",
@@ -1322,8 +1322,8 @@ dependencies = [
 
 [[package]]
 name = "emath"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "bytemuck",
  "serde",
@@ -1397,8 +1397,8 @@ dependencies = [
 
 [[package]]
 name = "epaint"
-version = "0.27.0"
-source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#77289c33dfde90a311fdaf11247e095f9c4a8094"
+version = "0.27.2"
+source = "git+https://github.com/RyanBluth/egui.git?branch=font_fix#13c1c29f4e88c0bf2815be88f8f02267c3e5cb09"
 dependencies = [
  "ab_glyph",
  "ahash",
@@ -2053,8 +2053,8 @@ dependencies = [
 
 [[package]]
 name = "hello_egui_utils"
-version = "0.3.0"
-source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#f7e59d92ad26cae31ad5997ed5dcd912d26df050"
+version = "0.4.0"
+source = "git+https://github.com/RyanBluth/hello_egui.git?branch=main#dd75e492e92e45bf3247f56e849f2e2b5aea1e02"
 dependencies = [
  "concat-idents",
  "egui",
