@@ -6,38 +6,17 @@ use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
 use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    history::HistoricallyEqual,
-    photo::Photo,
-    photo_manager::PhotoManager,
-    utils::{IdExt, Toggle},
-    widget::{
+    cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, history::HistoricallyEqual, id::{next_layer_id, LayerId}, photo::Photo, photo_manager::PhotoManager, utils::{IdExt, Toggle}, widget::{
         page_canvas::CanvasPhoto,
         placeholder::RectPlaceholder,
         transformable::{TransformHandleMode, TransformableState},
-    },
+    }
 };
 use egui_dnd::{dnd, utils::shift_vec};
 
 use core::hash::Hash;
 
 use once_cell::sync::Lazy;
-
-struct LayerIdGenerator {
-    next_id: LayerId,
-}
-
-pub fn next_layer_id() -> LayerId {
-    static LAYER_ID_GENERATOR: Lazy<Mutex<LayerIdGenerator>> =
-        Lazy::new(|| Mutex::new(LayerIdGenerator { next_id: 0 }));
-    let mut layer_id_generator = LAYER_ID_GENERATOR.lock().unwrap();
-    let id = layer_id_generator.next_id;
-    layer_id_generator.next_id += 1;
-    id
-}
-
-pub type LayerId = usize;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct EditableValue<T> {

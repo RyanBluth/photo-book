@@ -28,6 +28,7 @@ mod scene;
 mod string_log;
 mod utils;
 mod widget;
+mod id;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

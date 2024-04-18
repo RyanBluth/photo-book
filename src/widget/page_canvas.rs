@@ -16,11 +16,12 @@ use crate::{
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::{IdExt, RectExt, Toggle},
+    id::{LayerId, next_layer_id},
 };
 
 use super::{
     canvas_info::layers::{
-        next_layer_id, CanvasTextAlignment, EditableValue, Layer, LayerContent, LayerId,
+        CanvasTextAlignment, EditableValue, Layer, LayerContent,
         LayerTransformEditState,
     },
     image_gallery::ImageGalleryState,
@@ -617,6 +618,8 @@ impl<'a> Canvas<'a> {
             Rect::from_center_size(rect.center(), self.state.page.size_pixels() * zoom);
 
         ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+
+        ui.set_clip_rect(page_rect);
 
         let current_zoom = self.state.zoom;
         self.state.zoom = zoom;

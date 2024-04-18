@@ -11,13 +11,15 @@ use crate::{
         },
         page_canvas::Page,
     },
+    id::LayerId,
 };
 
 use super::{
     history_info::{HistoryInfo, HistoryInfoState},
-    layers::{Layer, LayerId, Layers, LayersResponse},
+    layers::{Layer, Layers, LayersResponse},
     text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},
+    
 };
 
 pub struct CanvasInfoResponse {

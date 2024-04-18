@@ -1,9 +1,13 @@
 use eframe::egui::{self};
-use egui::{Sense, Vec2};
+use egui::{Color32, Sense, Vec2};
 
 use egui_extras::Column;
+use indexmap::IndexMap;
 
-use crate::{scene::canvas_scene::CanvasHistoryManager, utils::EguiExt};
+use crate::{
+    id::{next_page_id, PageId},
+    scene::canvas_scene::CanvasHistoryManager,
+};
 
 use super::{
     page_canvas::{Canvas, CanvasState},
@@ -12,22 +16,23 @@ use super::{
 
 pub enum PagesResponse {
     None,
-    SelectPage(usize),
+    SelectPage,
 }
 
 #[derive(Debug, PartialEq)]
 pub struct PagesState {
     // This should probably be an indexmap where each page has an id
-    pub pages: Vec<CanvasState>,
+    pub pages: IndexMap<PageId, CanvasState>,
+
+    pub selected_page: PageId,
 }
 
 impl PagesState {
-    pub fn new(pages: Vec<CanvasState>) -> PagesState {
-        PagesState { pages }
-    }
-
-    pub fn update_pages(&mut self, pages: Vec<CanvasState>) {
-        self.pages = pages;
+    pub fn new(pages: IndexMap<usize, CanvasState>, selected_page: PageId) -> PagesState {
+        PagesState {
+            pages,
+            selected_page,
+        }
     }
 }
 
@@ -64,7 +69,7 @@ impl<'a> Pages<'a> {
             .on_hover_text("Add a new page")
             .clicked()
         {
-            self.state.pages.push(CanvasState::new());
+            self.state.pages.insert(next_page_id(), CanvasState::new());
         }
 
         let mut clicked_page = None;
@@ -81,20 +86,33 @@ impl<'a> Pages<'a> {
                             break;
                         }
 
+                        let id: usize = *self.state.pages.get_index(offest + i).unwrap().0;
+                        let page = self.state.pages.get_index_mut(offest + i).unwrap().1;
+
                         if row
                             .col(|ui| {
-                                Canvas::new(
-                                    &mut self.state.pages[offest + i],
-                                    ui.max_rect(),
-                                    &mut CanvasHistoryManager::new(),
-                                )
-                                .show_preview(ui, ui.max_rect());
+                                if self.state.selected_page == id {
+                                    ui.painter().rect_filled(
+                                        ui.max_rect(),
+                                        6.0,
+                                        Color32::from_rgb(15, 15, 180),
+                                    );
+                                } else {
+                                    ui.painter().rect_filled(
+                                        ui.max_rect(),
+                                        6.0,
+                                        Color32::from_rgb(15, 15, 15),
+                                    );
+                                }
+
+                                Canvas::new(page, ui.max_rect(), &mut CanvasHistoryManager::new())
+                                    .show_preview(ui, ui.max_rect());
                             })
                             .1
                             .interact(Sense::click())
                             .clicked()
-                            {
-                            clicked_page = Some(offest + i);
+                        {
+                            clicked_page = Some(id);
                         }
                     }
 
@@ -105,7 +123,8 @@ impl<'a> Pages<'a> {
             });
 
         if let Some(page) = clicked_page {
-            PagesResponse::SelectPage(page)
+            self.state.selected_page = page;
+            PagesResponse::SelectPage
         } else {
             PagesResponse::None
         }

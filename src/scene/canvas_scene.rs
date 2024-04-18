@@ -1,19 +1,17 @@
 use std::fmt::Display;
 
-use egui::{Ui, Widget};
+use egui::Ui;
 use egui_tiles::UiResponse;
-use indexmap::IndexMap;
+use indexmap::{indexmap, IndexMap};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     history::{HistoricallyEqual, UndoRedoStack},
+    id::{next_page_id, LayerId},
     photo::Photo,
     photo_manager::{self, PhotoManager},
     widget::{
-        canvas_info::{
-            layers::{Layer, LayerId},
-            panel::CanvasInfo,
-        },
+        canvas_info::{layers::Layer, panel::CanvasInfo},
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         page_canvas::{Canvas, CanvasState, MultiSelect, Page},
         pages::{Pages, PagesResponse, PagesState},
@@ -23,7 +21,6 @@ use crate::{
 use super::{viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse};
 
 pub struct CanvasSceneState {
-    selected_page_index: usize,
     canvas_state: CanvasState,
     gallery_state: ImageGalleryState,
     pages_state: PagesState,
@@ -32,24 +29,25 @@ pub struct CanvasSceneState {
 
 impl CanvasSceneState {
     fn new() -> Self {
+        let page_id = next_page_id();
+
         Self {
-            selected_page_index: 0,
             canvas_state: CanvasState::new(),
             gallery_state: ImageGalleryState::default(),
             history_manager: CanvasHistoryManager::new(),
-            pages_state: PagesState::new(vec![CanvasState::new()]),
+            pages_state: PagesState::new(indexmap! { page_id => CanvasState::new() }, page_id),
         }
     }
 
     fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
         let canvas_state = CanvasState::with_photo(photo.clone(), ImageGalleryState::default());
+        let page_id = next_page_id();
 
         Self {
-            selected_page_index: 0,
             canvas_state: canvas_state.clone(),
             gallery_state: gallery_state.unwrap_or_default(),
             history_manager: CanvasHistoryManager::with_initial_state(canvas_state.clone()),
-            pages_state: PagesState::new(vec![canvas_state]),
+            pages_state: PagesState::new(indexmap! { page_id => canvas_state }, page_id),
         }
     }
 }
@@ -216,14 +214,20 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
 
-                self.scene_state
-                    .pages_state
-                    .pages[self.scene_state.selected_page_index] = self.scene_state.canvas_state.clone_with_new_widget_ids();
-
+                self.scene_state.pages_state.pages.insert(
+                    self.scene_state.pages_state.selected_page,
+                    self.scene_state.canvas_state.clone_with_new_widget_ids(),
+                );
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
-                    PagesResponse::SelectPage(index) => {
-                        self.scene_state.canvas_state = self.scene_state.pages_state.pages[index].clone_with_new_widget_ids();
-                        self.scene_state.selected_page_index = index;
+                    PagesResponse::SelectPage => {
+                        self.scene_state.canvas_state = self
+                            .scene_state
+                            .pages_state
+                            .pages
+                            .get_key_value(&self.scene_state.pages_state.selected_page)
+                            .unwrap()
+                            .1
+                            .clone_with_new_widget_ids();
                     }
                     PagesResponse::None => {}
                 }
