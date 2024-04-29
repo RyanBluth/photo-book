@@ -885,7 +885,7 @@ impl<'a> Canvas<'a> {
                     ui,
                     available_rect,
                     self.state.zoom,
-                    active,
+                    active && !is_preview,
                     |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
                         let painter = ui.painter();
 

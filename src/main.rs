@@ -29,6 +29,7 @@ mod string_log;
 mod utils;
 mod widget;
 mod id;
+mod template;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

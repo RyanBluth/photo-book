@@ -15,6 +15,7 @@ use crate::{
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         page_canvas::{Canvas, CanvasState, MultiSelect, Page},
         pages::{Pages, PagesResponse, PagesState},
+        templates::{Templates, TemplatesResponse, TemplatesState},
     },
 };
 
@@ -25,6 +26,7 @@ pub struct CanvasSceneState {
     gallery_state: ImageGalleryState,
     pages_state: PagesState,
     history_manager: CanvasHistoryManager,
+    templates_state: TemplatesState,
 }
 
 impl CanvasSceneState {
@@ -36,6 +38,7 @@ impl CanvasSceneState {
             gallery_state: ImageGalleryState::default(),
             history_manager: CanvasHistoryManager::new(),
             pages_state: PagesState::new(indexmap! { page_id => CanvasState::new() }, page_id),
+            templates_state: TemplatesState::new(),
         }
     }
 
@@ -48,6 +51,7 @@ impl CanvasSceneState {
             gallery_state: gallery_state.unwrap_or_default(),
             history_manager: CanvasHistoryManager::with_initial_state(canvas_state.clone()),
             pages_state: PagesState::new(indexmap! { page_id => canvas_state }, page_id),
+            templates_state: TemplatesState::new(),
         }
     }
 }
@@ -57,6 +61,7 @@ pub enum CanvasScenePane {
     Canvas,
     Info,
     Pages,
+    Templates,
 }
 
 pub struct CanvasScene {
@@ -71,6 +76,7 @@ impl CanvasScene {
         let tabs = vec![
             tiles.insert_pane(CanvasScenePane::Gallery),
             tiles.insert_pane(CanvasScenePane::Pages),
+            tiles.insert_pane(CanvasScenePane::Templates),
         ];
 
         let tabs_id = tiles.insert_tab_tile(tabs);
@@ -218,6 +224,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     self.scene_state.pages_state.selected_page,
                     self.scene_state.canvas_state.clone_with_new_widget_ids(),
                 );
+
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
                     PagesResponse::SelectPage => {
                         self.scene_state.canvas_state = self
@@ -232,6 +239,15 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     PagesResponse::None => {}
                 }
             }
+            CanvasScenePane::Templates => {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+
+                match Templates::new(&mut self.scene_state.templates_state).show(ui) {
+                    TemplatesResponse::SelectTemplate => {}
+                    TemplatesResponse::None => {}
+                }
+            }
         }
 
         UiResponse::None
@@ -243,6 +259,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Canvas => "Canvas".into(),
             CanvasScenePane::Info => "Info".into(),
             CanvasScenePane::Pages => "Pages".into(),
+            CanvasScenePane::Templates => "Templates".into(),
         }
     }
 }

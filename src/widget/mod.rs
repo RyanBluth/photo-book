@@ -8,3 +8,4 @@ pub mod photo_info;
 pub mod placeholder;
 pub mod spacer;
 pub mod transformable;
+pub mod templates;
