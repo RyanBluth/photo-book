@@ -3,7 +3,7 @@ use egui::InnerResponse;
 use indexmap::IndexMap;
 
 use crate::{
-    id::LayerId, model::{edit_state::EditablePage, page::Page}, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, widget::canvas_info::{
+    id::LayerId, model::{edit_state::EditablePage}, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, widget::canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             page_info::{PageInfo, PageInfoState},
         }

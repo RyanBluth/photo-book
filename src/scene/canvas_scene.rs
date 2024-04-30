@@ -151,7 +151,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                 })
                             {
                                 match photo_result {
-                                    photo_manager::PhotoLoadResult::Pending(path) => todo!(),
+                                    photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
                                     photo_manager::PhotoLoadResult::Ready(photo) => self
                                         .navigator
                                         .push(Box::new(ViewerScene::new(photo, index))),
@@ -164,7 +164,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                 photo_manager.photos.get_index(index).map(|x| x.1.clone())
                             }) {
                                 match photo_result {
-                                    photo_manager::PhotoLoadResult::Pending(path) => todo!(),
+                                    photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
                                     photo_manager::PhotoLoadResult::Ready(photo) => {
                                         let layer = Layer::with_photo(photo.clone());
                                         self.scene_state

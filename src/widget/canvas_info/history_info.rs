@@ -1,12 +1,10 @@
 use eframe::egui::{self};
-use egui::{InnerResponse, RichText, Sense, Ui};
+use egui::{RichText};
 
 use egui_extras::{Column, TableBuilder};
 use strum::IntoEnumIterator;
 
 use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, utils::EguiExt,
 };
 

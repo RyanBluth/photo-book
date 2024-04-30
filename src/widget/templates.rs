@@ -87,7 +87,7 @@ impl<'a> Templates<'a> {
                 })
             });
 
-        if let Some(template) = clicked_template {
+        if let Some(_template) = clicked_template {
             TemplatesResponse::SelectTemplate
         } else {
             TemplatesResponse::None

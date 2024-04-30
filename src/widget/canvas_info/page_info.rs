@@ -4,7 +4,7 @@ use egui::{ComboBox, RichText, Vec2};
 use strum::IntoEnumIterator;
 
 use crate::{
-    model::{edit_state::EditablePage, page::Page, unit::Unit},
+    model::{edit_state::EditablePage, unit::Unit},
     utils::EditableValueTextEdit,
 };
 
