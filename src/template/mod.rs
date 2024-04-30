@@ -1,12 +1,14 @@
 use egui::{Pos2, Vec2};
 use once_cell::sync::Lazy;
 
+use crate::model::page::Page;
+
 pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
     vec![
         // 12x8 Single
         Template {
             name: "12x8 Single".to_string(),
-            aspect_ratio: 12.0 / 8.0,
+            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
             regions: vec![TemplateRegion {
                 relative_position: Pos2::new(0.0, 0.0),
                 relative_size: Vec2::new(1.0, 1.0),
@@ -16,7 +18,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Split
         Template {
             name: "12x8 Split".to_string(),
-            aspect_ratio: 12.0 / 8.0,
+            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.05, 1.0 - (0.6 * 1.5) / 2.0),
@@ -28,6 +30,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
                     relative_size: Vec2::new(0.4, 0.1),
                     kind: TemplateRegionKind::Text {
                         sample_text: "Title".to_string(),
+                        font_size: 150.0
                     },
                 },
                 TemplateRegion {
@@ -35,6 +38,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
                     relative_size: Vec2::new(0.4, 0.7),
                     kind: TemplateRegionKind::Text {
                         sample_text: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer tempor libero eros, vel scelerisque quam fringilla et. Mauris libero augue, tempus vel eros ut, semper finibus arcu. Pellentesque pellentesque sit amet augue a laoreet. Integer eget feugiat ex, vel efficitur ante. Nullam sed mi imperdiet turpis varius scelerisque id eu dolor. Nulla sollicitudin vehicula interdum. Nunc diam libero, ullamcorper at feugiat eget, dapibus in ante.".to_string(),
+                        font_size: 32.0
                     },
                 },
             ],
@@ -42,7 +46,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Double
         Template {
             name: "12x8 Double".to_string(),
-            aspect_ratio: 12.0 / 8.0,
+            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.0, 0.0),
@@ -59,7 +63,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Triple
         Template {
             name: "12x8 Triple".to_string(),
-            aspect_ratio: 12.0 / 8.0,
+            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.0, 0.0),
@@ -84,7 +88,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Template {
     pub name: String,
-    pub aspect_ratio: f32,
+    pub page: Page,
     pub regions: Vec<TemplateRegion>,
 }
 
@@ -98,5 +102,5 @@ pub struct TemplateRegion {
 #[derive(Debug, PartialEq, Clone)]
 pub enum TemplateRegionKind {
     Image,
-    Text { sample_text: String },
+    Text { sample_text: String, font_size: f32 },
 }

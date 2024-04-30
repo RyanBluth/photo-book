@@ -8,12 +8,13 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId},
+    model::{edit_state::EditablePage, page::Page},
     photo::Photo,
     photo_manager::{self, PhotoManager},
     widget::{
         canvas_info::{layers::Layer, panel::CanvasInfo},
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
-        page_canvas::{Canvas, CanvasState, MultiSelect, Page},
+        page_canvas::{Canvas, CanvasState, MultiSelect},
         pages::{Pages, PagesResponse, PagesState},
         templates::{Templates, TemplatesResponse, TemplatesState},
     },
@@ -310,7 +311,7 @@ impl HistoricallyEqual for CanvasHistory {
 pub struct CanvasHistory {
     layers: IndexMap<LayerId, Layer>,
     multi_select: Option<MultiSelect>,
-    page: Page,
+    page: EditablePage,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -327,7 +328,7 @@ impl CanvasHistoryManager {
                     CanvasHistory {
                         layers: IndexMap::new(),
                         multi_select: None,
-                        page: Page::default(),
+                        page: EditablePage::new(Page::default()),
                     },
                 )],
                 index: 0,

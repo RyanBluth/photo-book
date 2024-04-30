@@ -4,17 +4,17 @@ use egui::{ComboBox, RichText, Vec2};
 use strum::IntoEnumIterator;
 
 use crate::{
+    model::{edit_state::EditablePage, page::Page, unit::Unit},
     utils::EditableValueTextEdit,
-    widget::page_canvas::{Page, Unit},
 };
 
 #[derive(Debug, PartialEq)]
 pub struct PageInfoState<'a> {
-    page: &'a mut Page,
+    page: &'a mut EditablePage,
 }
 
 impl PageInfoState<'_> {
-    pub fn new(page: &mut Page) -> PageInfoState {
+    pub fn new(page: &mut EditablePage) -> PageInfoState {
         PageInfoState { page }
     }
 }
@@ -30,7 +30,7 @@ impl<'a> PageInfo<'a> {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
-        self.state.page.update_edit_state();
+        self.state.page.update();
 
         ui.vertical(|ui| {
             ui.style_mut().spacing.text_edit_width = 80.0;
@@ -43,13 +43,15 @@ impl<'a> PageInfo<'a> {
                 ui.label("Width:");
 
                 let new_width = ui.text_edit_editable_value_singleline(&mut page.edit_state.width);
-                page.set_size(Vec2::new(new_width, page.size().y));
+                let height = page.size().y;
+                page.set_size(Vec2::new(new_width, height));
 
                 ui.label("Height:");
 
                 let new_height =
                     ui.text_edit_editable_value_singleline(&mut page.edit_state.height);
-                page.set_size(Vec2::new(page.size().x, new_height));
+                let width = page.size().x;
+                page.set_size(Vec2::new(width, new_height));
             });
 
             ui.separator();

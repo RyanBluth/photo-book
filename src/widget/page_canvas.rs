@@ -1,29 +1,24 @@
-use std::{fmt::Display, str::FromStr};
-
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{ecolor::ParseHexColorError, epaint::TextShape, layers, Id};
+use egui::{epaint::TextShape, Id};
 use indexmap::{indexmap, IndexMap};
-use strum_macros::EnumIter;
 
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
+    id::{next_layer_id, LayerId},
+    model::{edit_state::EditablePage, page::Page},
     photo::Photo,
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::{IdExt, RectExt, Toggle},
-    id::{LayerId, next_layer_id},
 };
 
 use super::{
-    canvas_info::layers::{
-        CanvasTextAlignment, EditableValue, Layer, LayerContent,
-        LayerTransformEditState,
-    },
+    canvas_info::layers::{CanvasTextAlignment, Layer, LayerContent, LayerTransformEditState},
     image_gallery::ImageGalleryState,
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
@@ -46,123 +41,6 @@ impl CanvasPhoto {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Copy, EnumIter)]
-pub enum Unit {
-    Pixels,
-    Inches,
-    Centimeters,
-}
-
-impl Display for Unit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Unit::Pixels => write!(f, "Pixels"),
-            Unit::Inches => write!(f, "Inches"),
-            Unit::Centimeters => write!(f, "Centimeters"),
-        }
-    }
-}
-
-impl FromStr for Unit {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Pixels" => Ok(Unit::Pixels),
-            "Inches" => Ok(Unit::Inches),
-            "Centimeters" => Ok(Unit::Centimeters),
-            _ => Err(()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PageEditState {
-    pub width: EditableValue<f32>,
-    pub height: EditableValue<f32>,
-    pub ppi: EditableValue<i32>,
-    pub unit: EditableValue<Unit>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Page {
-    size: Vec2,
-    ppi: i32,
-    unit: Unit,
-
-    pub edit_state: PageEditState,
-}
-
-impl Page {
-    fn a4() -> Self {
-        let ppi = 300;
-        let unit = Unit::Inches;
-
-        Self {
-            size: Vec2::new(8.27, 11.69),
-            ppi,
-            unit,
-            edit_state: PageEditState {
-                width: EditableValue::new(8.27),
-                height: EditableValue::new(11.69),
-                ppi: EditableValue::new(ppi),
-                unit: EditableValue::new(unit),
-            },
-        }
-    }
-
-    pub fn size_pixels(&self) -> Vec2 {
-        match self.unit {
-            Unit::Pixels => self.size,
-            Unit::Inches => self.size * self.ppi as f32,
-            Unit::Centimeters => self.size * (self.ppi as f32 / 2.54),
-        }
-    }
-
-    pub fn size(&self) -> Vec2 {
-        self.size
-    }
-
-    pub fn ppi(&self) -> i32 {
-        self.ppi
-    }
-
-    pub fn unit(&self) -> Unit {
-        self.unit
-    }
-
-    pub fn set_size(&mut self, size: Vec2) {
-        self.size = size;
-    }
-
-    pub fn set_unit(&mut self, unit: Unit) {
-        let size_pixels = self.size_pixels();
-        match unit {
-            Unit::Pixels => self.size = size_pixels,
-            Unit::Inches => self.size = size_pixels / self.ppi as f32,
-            Unit::Centimeters => self.size = size_pixels / (self.ppi as f32 / 2.54),
-        }
-        self.unit = unit;
-    }
-
-    pub fn set_ppi(&mut self, ppi: i32) {
-        self.ppi = ppi;
-    }
-
-    pub fn update_edit_state(&mut self) {
-        self.edit_state.width.update_if_not_active(self.size.x);
-        self.edit_state.height.update_if_not_active(self.size.y);
-        self.edit_state.ppi.update_if_not_active(self.ppi);
-        self.edit_state.unit.update_if_not_active(self.unit);
-    }
-}
-
-impl Default for Page {
-    fn default() -> Self {
-        Self::a4()
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasState {
     pub layers: IndexMap<LayerId, Layer>,
@@ -170,7 +48,7 @@ pub struct CanvasState {
     pub offset: Vec2,
     pub gallery_state: ImageGalleryState,
     pub multi_select: Option<MultiSelect>,
-    pub page: Page,
+    pub page: EditablePage,
 }
 
 impl CanvasState {
@@ -181,7 +59,7 @@ impl CanvasState {
             offset: Vec2::ZERO,
             gallery_state: ImageGalleryState::default(),
             multi_select: None,
-            page: Page::default(),
+            page: EditablePage::new(Page::default()),
         }
     }
 
@@ -234,7 +112,7 @@ impl CanvasState {
             offset: Vec2::ZERO,
             gallery_state,
             multi_select: None,
-            page: Page::default(),
+            page: EditablePage::new(Page::default()),
         }
     }
 

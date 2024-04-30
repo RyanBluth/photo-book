@@ -3,15 +3,10 @@ use egui::InnerResponse;
 use indexmap::IndexMap;
 
 use crate::{
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    widget::{
-        canvas_info::{
+    id::LayerId, model::{edit_state::EditablePage, page::Page}, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, widget::canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             page_info::{PageInfo, PageInfoState},
-        },
-        page_canvas::Page,
-    },
-    id::LayerId,
+        }
 };
 
 use super::{
@@ -29,7 +24,7 @@ pub struct CanvasInfoResponse {
 #[derive(Debug, PartialEq)]
 pub struct CanvasInfo<'a> {
     pub layers: &'a mut IndexMap<LayerId, Layer>,
-    pub page: &'a mut Page,
+    pub page: &'a mut EditablePage,
     pub history_manager: &'a mut CanvasHistoryManager,
 }
 

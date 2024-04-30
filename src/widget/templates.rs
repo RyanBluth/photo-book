@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, Pos2, Rect, Sense, Stroke, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 
 use egui_extras::Column;
 
@@ -104,17 +104,19 @@ impl TemplatePreview {
 
             let available_rect = ui.available_rect_before_wrap();
 
-            let page_rect = if template.aspect_ratio > 1.0 {
+            let page_rect = if template.page.aspect_ratio() > 1.0 {
                 let width = available_rect.width();
-                let height = width / template.aspect_ratio;
+                let height = width / template.page.aspect_ratio();
                 Rect::from_min_size(available_rect.min, Vec2::new(width, height))
             } else {
                 let height = available_rect.height();
-                let width = height * template.aspect_ratio;
+                let width = height * template.page.aspect_ratio();
                 Rect::from_min_size(available_rect.min, Vec2::new(width, height))
             };
 
             ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+
+            let scale = page_rect.width() / template.page.size_pixels().x;
 
             for region in &template.regions {
                 let region_rect = Rect::from_min_size(
@@ -130,7 +132,10 @@ impl TemplatePreview {
                         ui.painter()
                             .rect_filled(region_rect, 0.0, Color32::LIGHT_BLUE);
                     }
-                    template::TemplateRegionKind::Text { sample_text } => {
+                    template::TemplateRegionKind::Text {
+                        sample_text,
+                        font_size,
+                    } => {
                         ui.painter().rect_stroke(
                             region_rect,
                             0.0,
@@ -138,7 +143,10 @@ impl TemplatePreview {
                         );
 
                         ui.allocate_ui_at_rect(region_rect, |ui| {
-                            ui.label(sample_text);
+                            ui.label(
+                                RichText::new(sample_text.clone())
+                                    .font(FontId::proportional(*font_size * scale)),
+                            );
                         });
                     }
                 }

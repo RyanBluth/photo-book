@@ -6,7 +6,11 @@ use eframe::{
 };
 use egui::{Id, InnerResponse, Sense, Ui};
 
-use crate::{cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, widget::canvas_info::layers::EditableValue};
+use crate::{
+    cursor_manager::CursorManager,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    model::editable_value::EditableValue,
+};
 
 macro_rules! guard_let {
     ($x:ident, $y:expr) => {
@@ -230,7 +234,7 @@ impl EguiExt for Ui {
                 cursor_manager.set_cursor(egui::CursorIcon::PointingHand);
             });
         }
-        
+
         InnerResponse::new(
             response.inner,
             self.interact(response.response.rect, self.next_auto_id(), Sense::click()),

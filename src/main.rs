@@ -30,6 +30,7 @@ mod utils;
 mod widget;
 mod id;
 mod template;
+mod model;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
