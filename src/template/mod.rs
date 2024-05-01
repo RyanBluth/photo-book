@@ -21,7 +21,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
             page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
             regions: vec![
                 TemplateRegion {
-                    relative_position: Pos2::new(0.05, 1.0 - (0.6 * 1.5) / 2.0),
+                    relative_position: Pos2::new(0.05, 0.05),
                     relative_size: Vec2::new(0.4, 0.6 * 1.5),
                     kind: TemplateRegionKind::Image,
                 },

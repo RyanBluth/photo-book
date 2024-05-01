@@ -2,8 +2,9 @@ use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
+    wgpu::Color,
 };
-use egui::{epaint::TextShape, Id};
+use egui::{epaint::TextShape, Id, Stroke};
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -14,11 +15,14 @@ use crate::{
     photo::Photo,
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    template::{self, Template, TemplateRegionKind, BUILT_IN},
     utils::{IdExt, RectExt, Toggle},
 };
 
 use super::{
-    canvas_info::layers::{CanvasTextAlignment, Layer, LayerContent, LayerTransformEditState},
+    canvas_info::layers::{
+        CanvasText, CanvasTextAlignment, Layer, LayerContent, LayerTransformEditState,
+    },
     image_gallery::ImageGalleryState,
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
@@ -49,6 +53,7 @@ pub struct CanvasState {
     pub gallery_state: ImageGalleryState,
     pub multi_select: Option<MultiSelect>,
     pub page: EditablePage,
+    pub template: Option<Template>,
 }
 
 impl CanvasState {
@@ -60,6 +65,7 @@ impl CanvasState {
             gallery_state: ImageGalleryState::default(),
             multi_select: None,
             page: EditablePage::new(Page::default()),
+            template: None,
         }
     }
 
@@ -113,6 +119,86 @@ impl CanvasState {
             gallery_state,
             multi_select: None,
             page: EditablePage::new(Page::default()),
+            template: None,
+        }
+    }
+
+    pub fn with_template(template: Template, gallery_state: ImageGalleryState) -> Self {
+        // Add layer for each region in the template
+
+        let mut layers = IndexMap::new();
+        for region in &template.regions {
+            let name = format!("{:?}", region.kind);
+            let transform_state = TransformableState {
+                rect: Rect::from_min_size(
+                    Pos2::new(region.relative_position.x, region.relative_position.y),
+                    Vec2::new(region.relative_size.x, region.relative_size.y),
+                ),
+                active_handle: None,
+                is_moving: false,
+                handle_mode: TransformHandleMode::default(),
+                rotation: 0.0,
+                last_frame_rotation: 0.0,
+                change_in_rotation: None,
+                id: Id::random(),
+            };
+
+            let transform_edit_state = LayerTransformEditState::from(&transform_state);
+
+            match &region.kind {
+                TemplateRegionKind::Image => {
+                    let layer = Layer {
+                        content: LayerContent::TemplatePhoto {
+                            region: region.clone(),
+                            photo: None,
+                        },
+                        name,
+                        visible: true,
+                        locked: false,
+                        selected: false,
+                        id: next_layer_id(),
+                        transform_edit_state,
+                        transform_state,
+                    };
+                    layers.insert(layer.id, layer);
+                }
+                TemplateRegionKind::Text {
+                    sample_text,
+                    font_size,
+                } => {
+                    let layer = Layer {
+                        content: LayerContent::TemplateText {
+                            region: region.clone(),
+                            text: CanvasText::new(
+                                sample_text.clone(),
+                                *font_size,
+                                FontId::default(),
+                                CanvasTextAlignment::Left,
+                                Color32::BLACK,
+                            ),
+                        },
+                        name,
+                        visible: true,
+                        locked: false,
+                        selected: false,
+                        id: next_layer_id(),
+                        transform_edit_state,
+                        transform_state,
+                    };
+
+                    layers.insert(layer.id, layer);
+                }
+            }
+        }
+
+        Self {
+            layers: layers,
+            zoom: 1.0,
+            offset: Vec2::ZERO,
+            gallery_state,
+            multi_select: None,
+            page: EditablePage::new(template.page.clone()),
+            template: Some(template),
         }
     }
 
@@ -449,6 +535,8 @@ impl<'a> Canvas<'a> {
         ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
         ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
+        self.draw_template(ui, page_rect);
+
         // Draw the layers by iterating over the layers and drawing them
         // We collect the ids into a map to avoid borrowing issues
         // TODO: Is there a better way?
@@ -507,6 +595,35 @@ impl<'a> Canvas<'a> {
         }
 
         self.state.zoom = current_zoom;
+    }
+
+    fn draw_template(&mut self, ui: &mut Ui, page_rect: Rect) {
+        if let Some(template) = &self.state.template {
+            ui.set_clip_rect(page_rect);
+
+            for region in &template.regions {
+                let region_rect = Rect::from_min_max(
+                    page_rect.min + region.relative_position.to_vec2() * page_rect.size(),
+                    page_rect.min
+                        + region.relative_position.to_vec2() * page_rect.size()
+                        + region.relative_size * page_rect.size(),
+                );
+
+                match &region.kind {
+                    TemplateRegionKind::Image => {
+                        ui.painter()
+                            .rect_filled(region_rect, 0.0, Color32::LIGHT_BLUE);
+                    }
+                    TemplateRegionKind::Text {
+                        sample_text,
+                        font_size,
+                    } => {
+                        ui.painter()
+                            .rect_stroke(region_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
+                    }
+                }
+            }
+        }
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
@@ -765,32 +882,14 @@ impl<'a> Canvas<'a> {
                     self.state.zoom,
                     active && !is_preview,
                     |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                        let painter = ui.painter();
-
-                        let galley = painter.layout(
-                            text.text.clone(),
-                            FontId {
-                                size: text.font_size * self.state.zoom,
-                                family: text.font_id.family.clone(),
-                            },
+                        Self::draw_text(
+                            ui,
+                            &text.text,
+                            transformed_rect,
+                            text.font_size * self.state.zoom,
                             text.color,
-                            transformed_rect.width(),
+                            transformable_state.rotation,
                         );
-
-                        let text_pos = match text.alignment {
-                            CanvasTextAlignment::Left => transformed_rect.left_center(),
-                            CanvasTextAlignment::Center => {
-                                transformed_rect.center() - galley.size() * 0.5
-                            }
-                            CanvasTextAlignment::Right => {
-                                transformed_rect.right_center() - galley.size()
-                            }
-                        };
-
-                        let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK)
-                            .with_angle(transformable_state.rotation);
-
-                        painter.add(text_shape);
                     },
                 );
 
@@ -798,7 +897,55 @@ impl<'a> Canvas<'a> {
 
                 Some(transform_response)
             }
+
+            LayerContent::TemplatePhoto { region, photo } => {
+                // TODO
+                None
+            },
+            LayerContent::TemplateText { region, text } => {
+                Self::draw_text(
+                    ui,
+                    &text.text,
+                    Rect::from_min_max(
+                        available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
+                        available_rect.min
+                            + region.relative_position.to_vec2() * available_rect.size()
+                            + region.relative_size * available_rect.size(),
+                    ),
+                    text.font_size * self.state.zoom,
+                    text.color,
+                    0.0,
+                );
+                None
+            },
         }
+    }
+
+    fn draw_text(
+        ui: &mut Ui,
+        text: &str,
+        rect: Rect,
+        font_size: f32,
+        color: Color32,
+        angle: f32,
+    ) {
+        let painter = ui.painter();
+
+        let galley = painter.layout(
+            text.to_string(),
+            FontId {
+                size: font_size,
+                family: FontId::default().family.clone(),
+            },
+            color,
+            rect.width(),
+        );
+
+        let text_pos = rect.left_center();
+
+        let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK).with_angle(angle);
+
+        painter.add(text_shape);
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {

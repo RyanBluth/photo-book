@@ -7,9 +7,11 @@ use indexmap::IndexMap;
 use crate::{
     id::{next_page_id, PageId},
     scene::canvas_scene::CanvasHistoryManager,
+    template,
 };
 
 use super::{
+    image_gallery::ImageGalleryState,
     page_canvas::{Canvas, CanvasState},
     spacer::Spacer,
 };
@@ -69,7 +71,13 @@ impl<'a> Pages<'a> {
             .on_hover_text("Add a new page")
             .clicked()
         {
-            self.state.pages.insert(next_page_id(), CanvasState::new());
+            self.state.pages.insert(
+                next_page_id(),
+                CanvasState::with_template(
+                    template::BUILT_IN[1].clone(),
+                    ImageGalleryState::default(),
+                ),
+            );
         }
 
         let mut clicked_page = None;

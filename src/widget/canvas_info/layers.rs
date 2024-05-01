@@ -1,4 +1,4 @@
-use std::{hash::Hasher};
+use std::hash::Hasher;
 
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
@@ -6,18 +6,24 @@ use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
 use crate::{
-    cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, history::HistoricallyEqual, id::{next_layer_id, LayerId}, model::editable_value::EditableValue, photo::Photo, photo_manager::PhotoManager, utils::{IdExt, Toggle}, widget::{
+    cursor_manager::CursorManager,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    history::HistoricallyEqual,
+    id::{next_layer_id, LayerId},
+    model::editable_value::EditableValue,
+    photo::Photo,
+    photo_manager::PhotoManager,
+    template::TemplateRegion,
+    utils::{IdExt, Toggle},
+    widget::{
         page_canvas::CanvasPhoto,
         placeholder::RectPlaceholder,
         transformable::{TransformHandleMode, TransformableState},
-    }
+    },
 };
 use egui_dnd::{dnd, utils::shift_vec};
 
 use core::hash::Hash;
-
-
-
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LayerTransformEditState {
@@ -27,7 +33,6 @@ pub struct LayerTransformEditState {
     pub height: EditableValue<f32>,
     pub rotation: EditableValue<f32>,
 }
-
 
 impl From<&TransformableState> for LayerTransformEditState {
     fn from(state: &TransformableState) -> Self {
@@ -109,6 +114,14 @@ impl CanvasText {
 pub enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
+    TemplatePhoto {
+        region: TemplateRegion,
+        photo: Option<CanvasPhoto>,
+    },
+    TemplateText {
+        region: TemplateRegion,
+        text: CanvasText,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -303,6 +316,12 @@ impl<'a> Layers<'a> {
                                 LayerContent::Text(_) => {
                                     ui.label("Text");
                                 }
+                                LayerContent::TemplatePhoto { region, photo } => {
+                                    ui.label("Template Photo");
+                                }
+                                LayerContent::TemplateText { region, text } => {
+                                    ui.label("Template Text");
+                                },
                             }
 
                             ui.label(&layer.name);
