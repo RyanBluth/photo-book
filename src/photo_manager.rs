@@ -14,7 +14,7 @@ use eframe::{
 };
 use image::{
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
-    ColorType,
+    ColorType, ExtendedColorType,
 };
 use indexmap::IndexMap;
 use log::{error, info};
@@ -340,6 +340,7 @@ impl PhotoManager {
                 let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
                 if res.is_err() {
                     error!("{:?}", res);
+                    panic!("{:?}", res);
                 }
             });
             //});
@@ -385,22 +386,36 @@ impl PhotoManager {
                 }
 
                 let img = ImageReader::open(photo_path)?.decode()?;
-                let width = NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
-                let height =
+
+                let color_type = img.color();
+
+                let width = img.width();
+                let height = img.height();
+
+                let non_zero_width = NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
+                let non_zero_height =
                     NonZeroU32::new(img.height()).ok_or(anyhow!("Invalid image height"))?;
                 let mut src_image = fr::Image::from_vec_u8(
-                    width,
-                    height,
-                    img.to_rgba8().into_raw(),
-                    fr::PixelType::U8x4,
+                    non_zero_width,
+                    non_zero_height,
+                    // TODO: This isn't going to cover every type of image
+                    if color_type.has_alpha() {
+                        img.to_rgba8().into_raw()
+                    } else {
+                        img.into_rgb8().into_raw()
+                    },
+                    if color_type.has_alpha() { fr::PixelType::U8x4 } else { fr::PixelType::U8x3 },
                 )?;
 
                 // Multiple RGB channels of source image by alpha channel
                 // (not required for the Nearest algorithm)
                 let alpha_mul_div = fr::MulDiv::default();
-                alpha_mul_div.multiply_alpha_inplace(&mut src_image.view_mut())?;
 
-                let ratio = img.height() as f32 / img.width() as f32;
+                if color_type.has_alpha() {
+                    alpha_mul_div.multiply_alpha_inplace(&mut src_image.view_mut())?;
+                }
+
+                let ratio = height as f32 / width as f32;
                 let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
 
                 let dst_width = NonZeroU32::new(THUMBNAIL_SIZE as u32)
@@ -443,8 +458,10 @@ impl PhotoManager {
 
                 resizer.resize(&src_image.view(), &mut dst_view)?;
 
-                // Divide RGB channels of destination image by alpha
-                alpha_mul_div.divide_alpha_inplace(&mut dst_view)?;
+                if color_type.has_alpha() {
+                    // Divide RGB channels of destination image by alpha
+                    alpha_mul_div.divide_alpha_inplace(&mut dst_view)?;
+                }
 
                 // Write destination image as PNG-file
                 let mut result_buf = BufWriter::new(Vec::new());
@@ -455,11 +472,11 @@ impl PhotoManager {
                     .ok_or(anyhow!("Failed to convert extension to str"))?
                 {
                     "jpg" | "jpeg" => {
-                        JpegEncoder::new(&mut result_buf).write_image(
+                        JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
                             dst_image.buffer(),
                             dst_width.get(),
                             dst_height.get(),
-                            ColorType::Rgba8,
+                            ExtendedColorType::Rgb8,
                         )?;
                     }
                     "png" => {
@@ -467,7 +484,7 @@ impl PhotoManager {
                             dst_image.buffer(),
                             dst_width.get(),
                             dst_height.get(),
-                            ColorType::Rgba8,
+                            ExtendedColorType::Rgba8,
                         )?;
                     }
                     _ => {
