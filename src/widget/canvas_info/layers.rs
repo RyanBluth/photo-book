@@ -1,7 +1,7 @@
 use std::hash::Hasher;
 
 use eframe::epaint::Color32;
-use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
+use egui::{CursorIcon, FontId, Id, Image, Layout, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
@@ -86,9 +86,9 @@ pub struct CanvasText {
     pub text: String,
     pub font_size: f32,
     pub font_id: FontId,
-    pub alignment: CanvasTextAlignment,
     pub color: Color32,
     pub edit_state: CanvasTextEditState,
+    pub layout: Layout
 }
 
 impl CanvasText {
@@ -96,16 +96,16 @@ impl CanvasText {
         text: String,
         font_size: f32,
         font_family: FontId,
-        alignment: CanvasTextAlignment,
         color: Color32,
+        layout: Layout,
     ) -> Self {
         Self {
             text,
             font_size,
             font_id: font_family,
             edit_state: CanvasTextEditState::new(font_size),
-            alignment,
             color,
+            layout,
         }
     }
 }
@@ -122,6 +122,21 @@ pub enum LayerContent {
         region: TemplateRegion,
         text: CanvasText,
     },
+}
+
+impl LayerContent {
+    pub fn is_photo(&self) -> bool {
+        matches!(self, LayerContent::Photo(_)) || matches!(self, LayerContent::TemplatePhoto { .. })
+    }
+
+    pub fn is_text(&self) -> bool {
+        matches!(self, LayerContent::Text(_)) || matches!(self, LayerContent::TemplateText { .. })
+    }
+
+    pub fn is_template(&self) -> bool {
+        matches!(self, LayerContent::TemplatePhoto { .. })
+            || matches!(self, LayerContent::TemplateText { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -179,8 +194,8 @@ impl Layer {
             "New Text Layer".to_string(),
             20.0,
             FontId::default(),
-            CanvasTextAlignment::Left,
             Color32::BLACK,
+            Layout::default(),
         );
         let transform_state = TransformableState {
             rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
@@ -216,8 +231,8 @@ impl HistoricallyEqual for Layer {
                 text.text == other_text.text
                     && text.font_size == other_text.font_size
                     && text.font_id == other_text.font_id
-                    && text.alignment == other_text.alignment
                     && text.color == other_text.color
+                    && text.layout == other_text.layout
             }
             _ => false,
         };
@@ -259,7 +274,7 @@ impl<'a> Layers<'a> {
 
     pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> LayersResponse {
         let mut selected_layer_id = None;
-
+        
         ui.vertical(|ui| {
             let dnd_response = dnd(ui, "layers_dnd").show(
                 self.layers.iter().rev(),
@@ -321,7 +336,7 @@ impl<'a> Layers<'a> {
                                 }
                                 LayerContent::TemplateText { region, text } => {
                                     ui.label("Template Text");
-                                },
+                                }
                             }
 
                             ui.label(&layer.name);

@@ -4,7 +4,7 @@ use eframe::{
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
     wgpu::Color,
 };
-use egui::{epaint::TextShape, Id, Stroke};
+use egui::{epaint::TextShape, Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -131,8 +131,14 @@ impl CanvasState {
             let name = format!("{:?}", region.kind);
             let transform_state = TransformableState {
                 rect: Rect::from_min_size(
-                    Pos2::new(region.relative_position.x, region.relative_position.y),
-                    Vec2::new(region.relative_size.x, region.relative_size.y),
+                    Pos2::new(
+                        region.relative_position.x * template.page.size().x,
+                        region.relative_position.y * template.page.size().y,
+                    ),
+                    Vec2::new(
+                        region.relative_size.x * template.page.size().x,
+                        region.relative_size.y * template.page.size().y,
+                    ),
                 ),
                 active_handle: None,
                 is_moving: false,
@@ -173,8 +179,8 @@ impl CanvasState {
                                 sample_text.clone(),
                                 *font_size,
                                 FontId::default(),
-                                CanvasTextAlignment::Left,
                                 Color32::BLACK,
+                                Layout::default()
                             ),
                         },
                         name,
@@ -885,10 +891,11 @@ impl<'a> Canvas<'a> {
                         Self::draw_text(
                             ui,
                             &text.text,
+                            &text.font_id,
                             transformed_rect,
                             text.font_size * self.state.zoom,
                             text.color,
-                            transformable_state.rotation,
+                            &text.layout,
                         );
                     },
                 );
@@ -901,51 +908,67 @@ impl<'a> Canvas<'a> {
             LayerContent::TemplatePhoto { region, photo } => {
                 // TODO
                 None
-            },
+            }
             LayerContent::TemplateText { region, text } => {
                 Self::draw_text(
                     ui,
                     &text.text,
+                    &text.font_id,
                     Rect::from_min_max(
-                        available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
+                        available_rect.min
+                            + region.relative_position.to_vec2() * available_rect.size(),
                         available_rect.min
                             + region.relative_position.to_vec2() * available_rect.size()
                             + region.relative_size * available_rect.size(),
                     ),
                     text.font_size * self.state.zoom,
                     text.color,
-                    0.0,
+                    &text.layout,
                 );
                 None
-            },
+            }
         }
     }
 
     fn draw_text(
         ui: &mut Ui,
         text: &str,
+        font_id: &FontId,
         rect: Rect,
         font_size: f32,
         color: Color32,
-        angle: f32,
+        layout: &Layout,
     ) {
-        let painter = ui.painter();
+        ui.allocate_ui_at_rect(rect, |ui|{
 
-        let galley = painter.layout(
-            text.to_string(),
-            FontId {
-                size: font_size,
-                family: FontId::default().family.clone(),
-            },
-            color,
-            rect.width(),
-        );
+            ui.with_layout(layout.with_main_wrap(true), |ui| {
+                ui.label(RichText::new(text).color(color).family(font_id.family.clone()).size(font_size));
+            });
 
-        let text_pos = rect.left_center();
+            // TODO: It seems like there isn't a way to rotate when drawing text with ui.label
+            // The following sort of works but it makes laying out the text more difficult because we can't use eguis layout system
 
-        let text_shape = TextShape::new(text_pos, galley.clone(), Color32::BLACK).with_angle(angle);
+            // let painter = ui.painter();
+    
+            // let galley: std::sync::Arc<egui::Galley> = painter.layout(
+            //     text.to_string(),
+            //     FontId {
+            //         size: font_size,
+            //         family: font_id.family.clone(),
+            //     },
+            //     color,
+            //     rect.width(),
+            // );
 
-        painter.add(text_shape);
+            // let text_pos = rect.left_center();
+
+            // let text_shape =
+            //     TextShape::new(text_pos, galley.clone(), Color32::BLACK).with_angle(angle);
+
+            // painter.add(text_shape);
+        });
+
+      
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {

@@ -9,7 +9,7 @@ use crate::{template::Template, utils::EditableValueTextEdit, widget::page_canva
 
 use super::layers::{
     CanvasTextAlignment, Layer,
-    LayerContent::{Photo, TemplatePhoto, Text, TemplateText},
+    LayerContent::{Photo, TemplatePhoto, TemplateText, Text},
 };
 
 pub struct TextControlState<'a> {
@@ -37,10 +37,11 @@ impl<'a> TextControl<'a> {
                 Photo(_) | TemplatePhoto { .. } => {
                     ui.label("No text layer selected");
                 }
-                TemplateText { .. } => {
-                    todo!()
-                }
-                Text(ref mut text_content) => {
+                Text(ref mut text_content)
+                | TemplateText {
+                    region: _,
+                    text: ref mut text_content,
+                } => {
                     text_content.edit_state.update(text_content.font_size);
 
                     ui.vertical(|ui| {
@@ -52,7 +53,7 @@ impl<'a> TextControl<'a> {
                         ui.horizontal(|ui| {
                             let text = &mut self.state.layer.content;
                             match text {
-                                Text(text) => {
+                                Text(text) | TemplateText { region: _, text } => {
                                     let mut new_text = text.text.clone();
                                     ui.label("Text:");
                                     ui.text_edit_singleline(&mut new_text);
@@ -65,7 +66,7 @@ impl<'a> TextControl<'a> {
                         ui.horizontal(|ui| {
                             let text = &mut self.state.layer.content;
                             match text {
-                                Text(text) => {
+                                Text(text) | TemplateText { region: _, text } => {
                                     ui.label("Font Size:");
 
                                     let new_font_size = ui.text_edit_editable_value_singleline(
@@ -80,7 +81,7 @@ impl<'a> TextControl<'a> {
                         ui.horizontal(|ui| {
                             let text = &mut self.state.layer.content;
                             match text {
-                                Text(text) => {
+                                Text(text) | TemplateText { region: _, text } => {
                                     ui.label("Font Family:");
 
                                     ComboBox::from_label("Font Family")
@@ -111,7 +112,7 @@ impl<'a> TextControl<'a> {
                         ui.horizontal(|ui| {
                             let text = &mut self.state.layer.content;
                             match text {
-                                Text(text) => {
+                                Text(text) | TemplateText { region: _, text } => {
                                     ui.label("Color:");
 
                                     ui.color_edit_button_srgba(&mut text.color);
@@ -123,20 +124,32 @@ impl<'a> TextControl<'a> {
                         ui.horizontal(|ui| {
                             let text = &mut self.state.layer.content;
                             match text {
-                                Text(text) => {
+                                Text(text) | TemplateText { region: _, text } => {
                                     ui.label("Alignment:");
 
+                                    let mut current_alignment = match text.layout.cross_align {
+                                        egui::Align::Min => CanvasTextAlignment::Left,
+                                        egui::Align::Center => CanvasTextAlignment::Center,
+                                        egui::Align::Max => CanvasTextAlignment::Right,
+                                    };
+
                                     ComboBox::from_label("Alignment")
-                                        .selected_text(format!("{}", text.alignment))
+                                        .selected_text(format!("{}", current_alignment))
                                         .show_ui(ui, |ui| {
                                             for alignment in CanvasTextAlignment::iter() {
                                                 ui.selectable_value(
-                                                    &mut text.alignment,
+                                                    &mut current_alignment,
                                                     alignment.clone(),
                                                     RichText::new(alignment.to_string()),
                                                 );
                                             }
                                         });
+
+                                    text.layout.cross_align = match current_alignment {
+                                        CanvasTextAlignment::Left => egui::Align::Min,
+                                        CanvasTextAlignment::Center => egui::Align::Center,
+                                        CanvasTextAlignment::Right => egui::Align::Max,
+                                    };
                                 }
                                 _ => (),
                             }

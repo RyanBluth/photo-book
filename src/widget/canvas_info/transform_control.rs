@@ -28,6 +28,11 @@ impl<'a> TransformControl<'a> {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let _response = ui.allocate_ui(ui.available_size(), |ui| {
+
+            if self.state.layer.content.is_template() {
+                ui.set_enabled(false);
+            }
+
             self.state
                 .layer
                 .transform_edit_state
@@ -107,6 +112,8 @@ impl<'a> TransformControl<'a> {
                     self.state.layer.transform_state.rotation = new_rotation.to_radians();
                 });
             });
+
+            ui.set_enabled(true);
         });
     }
 }

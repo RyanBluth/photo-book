@@ -59,7 +59,7 @@ impl<'a> CanvasInfo<'a> {
 
                     ui.separator();
 
-                    if matches!(layer.content, super::layers::LayerContent::Text(_)) {
+                    if layer.content.is_text() {
                         TextControl::new(TextControlState::new(layer)).show(ui);
                         ui.separator();
                     }
