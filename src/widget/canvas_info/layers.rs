@@ -75,10 +75,17 @@ impl CanvasTextEditState {
 }
 
 #[derive(Debug, Clone, PartialEq, Display, EnumIter)]
-pub enum CanvasTextAlignment {
+pub enum CanvasTextHorizontalAlignment {
     Left,
     Center,
     Right,
+}
+
+#[derive(Debug, Clone, PartialEq, Display, EnumIter)]
+pub enum CanvasTextVerticalAlignment {
+    Top,
+    Center,
+    Bottom,
 }
 
 #[derive(Debug, Clone, PartialEq)]

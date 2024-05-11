@@ -8,8 +8,7 @@ use strum::IntoEnumIterator;
 use crate::{template::Template, utils::EditableValueTextEdit, widget::page_canvas::CanvasPhoto};
 
 use super::layers::{
-    CanvasTextAlignment, Layer,
-    LayerContent::{Photo, TemplatePhoto, TemplateText, Text},
+    CanvasTextHorizontalAlignment, CanvasTextVerticalAlignment, Layer, LayerContent::{Photo, TemplatePhoto, TemplateText, Text}
 };
 
 pub struct TextControlState<'a> {
@@ -125,18 +124,17 @@ impl<'a> TextControl<'a> {
                             let text = &mut self.state.layer.content;
                             match text {
                                 Text(text) | TemplateText { region: _, text } => {
-                                    ui.label("Alignment:");
 
                                     let mut current_alignment = match text.layout.cross_align {
-                                        egui::Align::Min => CanvasTextAlignment::Left,
-                                        egui::Align::Center => CanvasTextAlignment::Center,
-                                        egui::Align::Max => CanvasTextAlignment::Right,
+                                        egui::Align::Min => CanvasTextHorizontalAlignment::Left,
+                                        egui::Align::Center => CanvasTextHorizontalAlignment::Center,
+                                        egui::Align::Max => CanvasTextHorizontalAlignment::Right,
                                     };
 
-                                    ComboBox::from_label("Alignment")
+                                    ComboBox::from_label("Horizontal Alignment")
                                         .selected_text(format!("{}", current_alignment))
                                         .show_ui(ui, |ui| {
-                                            for alignment in CanvasTextAlignment::iter() {
+                                            for alignment in CanvasTextHorizontalAlignment::iter() {
                                                 ui.selectable_value(
                                                     &mut current_alignment,
                                                     alignment.clone(),
@@ -146,9 +144,41 @@ impl<'a> TextControl<'a> {
                                         });
 
                                     text.layout.cross_align = match current_alignment {
-                                        CanvasTextAlignment::Left => egui::Align::Min,
-                                        CanvasTextAlignment::Center => egui::Align::Center,
-                                        CanvasTextAlignment::Right => egui::Align::Max,
+                                        CanvasTextHorizontalAlignment::Left => egui::Align::Min,
+                                        CanvasTextHorizontalAlignment::Center => egui::Align::Center,
+                                        CanvasTextHorizontalAlignment::Right => egui::Align::Max,
+                                    };
+                                }
+                                _ => (),
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            let text = &mut self.state.layer.content;
+                            match text {
+                                Text(text) | TemplateText { region: _, text } => {
+                                    let mut current_alignment = match text.layout.main_align {
+                                        egui::Align::Min => CanvasTextVerticalAlignment::Top,
+                                        egui::Align::Center => CanvasTextVerticalAlignment::Center,
+                                        egui::Align::Max => CanvasTextVerticalAlignment::Bottom,
+                                    };
+
+                                    ComboBox::from_label("Vertical Alignment")
+                                        .selected_text(format!("{}", current_alignment))
+                                        .show_ui(ui, |ui| {
+                                            for alignment in CanvasTextVerticalAlignment::iter() {
+                                                ui.selectable_value(
+                                                    &mut current_alignment,
+                                                    alignment.clone(),
+                                                    RichText::new(alignment.to_string()),
+                                                );
+                                            }
+                                        });
+
+                                    text.layout.main_align = match current_alignment {
+                                        CanvasTextVerticalAlignment::Top => egui::Align::Min,
+                                        CanvasTextVerticalAlignment::Center => egui::Align::Center,
+                                        CanvasTextVerticalAlignment::Bottom => egui::Align::Max,
                                     };
                                 }
                                 _ => (),

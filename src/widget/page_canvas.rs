@@ -21,7 +21,7 @@ use crate::{
 
 use super::{
     canvas_info::layers::{
-        CanvasText, CanvasTextAlignment, Layer, LayerContent, LayerTransformEditState,
+        CanvasText, CanvasTextHorizontalAlignment, Layer, LayerContent, LayerTransformEditState,
     },
     image_gallery::ImageGalleryState,
     transformable::{
@@ -180,7 +180,7 @@ impl CanvasState {
                                 *font_size,
                                 FontId::default(),
                                 Color32::BLACK,
-                                Layout::default()
+                                Layout::default(),
                             ),
                         },
                         name,
@@ -939,17 +939,29 @@ impl<'a> Canvas<'a> {
         color: Color32,
         layout: &Layout,
     ) {
-        ui.allocate_ui_at_rect(rect, |ui|{
-
-            ui.with_layout(layout.with_main_wrap(true), |ui| {
-                ui.label(RichText::new(text).color(color).family(font_id.family.clone()).size(font_size));
-            });
+        ui.allocate_ui_at_rect(rect, |ui| {
+            ui.style_mut().interaction.selectable_labels = false;
+            ui.with_layout(
+                layout
+                    .with_main_wrap(true)
+                    .with_main_justify(true)
+                    .with_cross_justify(true),
+                |ui| {
+                    
+                    ui.label(
+                        RichText::new(text)
+                            .color(color)
+                            .family(font_id.family.clone())
+                            .size(font_size)
+                    )
+                },
+            );
 
             // TODO: It seems like there isn't a way to rotate when drawing text with ui.label
             // The following sort of works but it makes laying out the text more difficult because we can't use eguis layout system
 
             // let painter = ui.painter();
-    
+
             // let galley: std::sync::Arc<egui::Galley> = painter.layout(
             //     text.to_string(),
             //     FontId {
@@ -967,8 +979,6 @@ impl<'a> Canvas<'a> {
 
             // painter.add(text_shape);
         });
-
-      
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {

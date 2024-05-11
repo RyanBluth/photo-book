@@ -59,6 +59,7 @@ pub trait RectExt {
     fn translate_right_to(&self, new_right: f32) -> Rect;
     fn translate_top_to(&self, new_top: f32) -> Rect;
     fn translate_bottom_to(&self, new_bottom: f32) -> Rect;
+    fn corners(&self) -> [Pos2; 4];
 }
 
 impl RectExt for Rect {
@@ -168,6 +169,15 @@ impl RectExt for Rect {
         let diff = new_bottom - translated.bottom();
         translated = translated.translate(Vec2::new(0.0, diff));
         translated
+    }
+
+    fn corners(&self) -> [Pos2; 4] {
+        [
+            Pos2::new(self.left(), self.top()),
+            Pos2::new(self.right(), self.top()),
+            Pos2::new(self.left(), self.bottom()),
+            Pos2::new(self.right(), self.bottom()),
+        ]
     }
 }
 
