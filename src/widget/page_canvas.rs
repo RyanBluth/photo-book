@@ -605,8 +605,6 @@ impl<'a> Canvas<'a> {
 
     fn draw_template(&mut self, ui: &mut Ui, page_rect: Rect) {
         if let Some(template) = &self.state.template {
-            ui.set_clip_rect(page_rect);
-
             for region in &template.regions {
                 let region_rect = Rect::from_min_max(
                     page_rect.min + region.relative_position.to_vec2() * page_rect.size(),
@@ -624,8 +622,11 @@ impl<'a> Canvas<'a> {
                         sample_text,
                         font_size,
                     } => {
-                        ui.painter()
-                            .rect_stroke(region_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
+                        ui.painter().rect_stroke(
+                            region_rect,
+                            0.0,
+                            Stroke::new(2.0, Color32::GRAY.gamma_multiply(0.5)),
+                        );
                     }
                 }
             }
@@ -882,23 +883,24 @@ impl<'a> Canvas<'a> {
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
 
-                let transform_response = TransformableWidget::new(&mut transform_state).show(
-                    ui,
-                    available_rect,
-                    self.state.zoom,
-                    active && !is_preview,
-                    |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                        Self::draw_text(
-                            ui,
-                            &text.text,
-                            &text.font_id,
-                            transformed_rect,
-                            text.font_size * self.state.zoom,
-                            text.color,
-                            &text.layout,
-                        );
-                    },
-                );
+                let transform_response: TransformableWidgetResponse<()> =
+                    TransformableWidget::new(&mut transform_state).show(
+                        ui,
+                        available_rect,
+                        self.state.zoom,
+                        active && !is_preview,
+                        |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                            Self::draw_text(
+                                ui,
+                                &text.text,
+                                &text.font_id,
+                                transformed_rect,
+                                text.font_size * self.state.zoom,
+                                text.color,
+                                &text.layout,
+                            );
+                        },
+                    );
 
                 layer.transform_state = transform_state;
 
@@ -906,26 +908,87 @@ impl<'a> Canvas<'a> {
             }
 
             LayerContent::TemplatePhoto { region, photo } => {
-                // TODO
-                None
+                let rect = Rect::from_min_max(
+                    available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
+                    available_rect.min
+                        + region.relative_position.to_vec2() * available_rect.size()
+                        + region.relative_size * available_rect.size(),
+                );
+
+                let response = ui.allocate_rect(rect, Sense::click());
+
+                if let Some(photo) = photo {
+                    self.photo_manager.with_lock_mut(|photo_manager| {
+                        if let Ok(Some(texture)) = photo_manager
+                            .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
+                        {
+                            let uv =
+                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
+
+                            let painter = ui.painter();
+                            let mut mesh = Mesh::with_texture(texture.id);
+
+                            mesh.add_rect_with_uv(rect, uv, Color32::WHITE);
+
+                            painter.add(Shape::mesh(mesh));
+                        }
+                    });
+                }
+
+                if layer.selected {
+                    ui.painter()
+                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN));
+                }
+
+                Some(TransformableWidgetResponse {
+                    mouse_down: response.is_pointer_button_down_on(),
+                    ended_moving: false,
+                    ended_resizing: false,
+                    ended_rotating: false,
+                    inner: (),
+                    began_moving: false,
+                    began_resizing: false,
+                    began_rotating: false,
+                    clicked: response.clicked(),
+                })
             }
             LayerContent::TemplateText { region, text } => {
+                let rect = Rect::from_min_max(
+                    available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
+                    available_rect.min
+                        + region.relative_position.to_vec2() * available_rect.size()
+                        + region.relative_size * available_rect.size(),
+                );
+
+                let response = ui.allocate_rect(rect, Sense::click());
+
                 Self::draw_text(
                     ui,
                     &text.text,
                     &text.font_id,
-                    Rect::from_min_max(
-                        available_rect.min
-                            + region.relative_position.to_vec2() * available_rect.size(),
-                        available_rect.min
-                            + region.relative_position.to_vec2() * available_rect.size()
-                            + region.relative_size * available_rect.size(),
-                    ),
+                    rect,
                     text.font_size * self.state.zoom,
                     text.color,
                     &text.layout,
                 );
-                None
+
+                if layer.selected {
+                    ui.painter()
+                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN));
+                }
+
+                // TODO: Maybe this is really just a LayerResponse?
+                Some(TransformableWidgetResponse {
+                    mouse_down: response.is_pointer_button_down_on(),
+                    ended_moving: false,
+                    ended_resizing: false,
+                    ended_rotating: false,
+                    inner: (),
+                    began_moving: false,
+                    began_resizing: false,
+                    began_rotating: false,
+                    clicked: response.clicked(),
+                })
             }
         }
     }
@@ -947,12 +1010,11 @@ impl<'a> Canvas<'a> {
                     .with_main_justify(true)
                     .with_cross_justify(true),
                 |ui| {
-                    
                     ui.label(
                         RichText::new(text)
                             .color(color)
                             .family(font_id.family.clone())
-                            .size(font_size)
+                            .size(font_size),
                     )
                 },
             );

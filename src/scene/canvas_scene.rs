@@ -12,9 +12,12 @@ use crate::{
     photo::Photo,
     photo_manager::{self, PhotoManager},
     widget::{
-        canvas_info::{layers::Layer, panel::CanvasInfo},
+        canvas_info::{
+            layers::{Layer, LayerContent},
+            panel::CanvasInfo,
+        },
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
-        page_canvas::{Canvas, CanvasState, MultiSelect},
+        page_canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         pages::{Pages, PagesResponse, PagesState},
         templates::{Templates, TemplatesResponse, TemplatesState},
     },
@@ -166,15 +169,53 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                 match photo_result {
                                     photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
                                     photo_manager::PhotoLoadResult::Ready(photo) => {
-                                        let layer = Layer::with_photo(photo.clone());
-                                        self.scene_state
-                                            .canvas_state
-                                            .layers
-                                            .insert(layer.id, layer);
-                                        self.scene_state.history_manager.save_history(
-                                            CanvasHistoryKind::AddPhoto,
-                                            &mut self.scene_state.canvas_state,
-                                        );
+                                        let is_template =
+                                            self.scene_state.canvas_state.template.is_some();
+
+                                        if is_template {
+                                            let mut selected_template_photos: Vec<_> = self
+                                                .scene_state
+                                                .canvas_state
+                                                .layers
+                                                .iter_mut()
+                                                .filter(|(_, layer)| {
+                                                    matches!(
+                                                        layer.content,
+                                                        LayerContent::TemplatePhoto { .. }
+                                                    ) && layer.selected
+                                                })
+                                                .collect();
+
+                                            if selected_template_photos.len() == 1 {
+                                                if let LayerContent::TemplatePhoto {
+                                                    region: _,
+                                                    photo: canvas_photo,
+                                                } = &mut selected_template_photos[0].1.content
+                                                {
+                                                    *canvas_photo =
+                                                        Some(CanvasPhoto::new(photo.clone()));
+                                                }
+
+                                                self.scene_state.history_manager.save_history(
+                                                    CanvasHistoryKind::AddPhoto,
+                                                    &mut self.scene_state.canvas_state,
+                                                );
+                                            } else if selected_template_photos.len() > 1
+                                                || selected_template_photos.is_empty()
+                                            {
+                                                // TODO: Show error message saying that only one template photo can be selected
+                                            }
+                                        } else {
+                                            let layer = Layer::with_photo(photo.clone());
+                                            self.scene_state
+                                                .canvas_state
+                                                .layers
+                                                .insert(layer.id, layer);
+                                            self.scene_state.history_manager.save_history(
+                                                CanvasHistoryKind::AddPhoto,
+                                                &mut self.scene_state.canvas_state,
+                                            );
+                                        }
                                     }
                                 }
                             }
