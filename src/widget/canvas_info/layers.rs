@@ -10,7 +10,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     history::HistoricallyEqual,
     id::{next_layer_id, LayerId},
-    model::editable_value::EditableValue,
+    model::{self, editable_value::EditableValue},
     photo::Photo,
     photo_manager::PhotoManager,
     template::TemplateRegion,
@@ -124,6 +124,7 @@ pub enum LayerContent {
     TemplatePhoto {
         region: TemplateRegion,
         photo: Option<CanvasPhoto>,
+        scale_mode: model::scale_mode::ScaleMode,
     },
     TemplateText {
         region: TemplateRegion,
@@ -338,7 +339,7 @@ impl<'a> Layers<'a> {
                                 LayerContent::Text(_) => {
                                     ui.label("Text");
                                 }
-                                LayerContent::TemplatePhoto { region, photo } => {
+                                LayerContent::TemplatePhoto { .. } => {
                                     ui.label("Template Photo");
                                 }
                                 LayerContent::TemplateText { region, text } => {

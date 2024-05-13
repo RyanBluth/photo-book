@@ -190,6 +190,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                                 if let LayerContent::TemplatePhoto {
                                                     region: _,
                                                     photo: canvas_photo,
+                                                    scale_mode: _,
                                                 } = &mut selected_template_photos[0].1.content
                                                 {
                                                     *canvas_photo =

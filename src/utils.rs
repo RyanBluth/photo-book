@@ -60,6 +60,7 @@ pub trait RectExt {
     fn translate_top_to(&self, new_top: f32) -> Rect;
     fn translate_bottom_to(&self, new_bottom: f32) -> Rect;
     fn corners(&self) -> [Pos2; 4];
+    fn center_within(&self, rect: Rect) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -178,6 +179,12 @@ impl RectExt for Rect {
             Pos2::new(self.left(), self.bottom()),
             Pos2::new(self.right(), self.bottom()),
         ]
+    }
+
+    fn center_within(&self, rect: Rect) -> Rect {
+        let center = rect.center();
+        let half_size = self.size() / 2.0;
+        Rect::from_min_max(center - half_size, center + half_size)
     }
 }
 

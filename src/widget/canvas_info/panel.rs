@@ -3,18 +3,21 @@ use egui::InnerResponse;
 use indexmap::IndexMap;
 
 use crate::{
-    id::LayerId, model::{edit_state::EditablePage}, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, widget::canvas_info::{
-            alignment::{AlignmentInfo, AlignmentInfoState},
-            page_info::{PageInfo, PageInfoState},
-        }
+    id::LayerId,
+    model::edit_state::EditablePage,
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    widget::canvas_info::{
+        alignment::{AlignmentInfo, AlignmentInfoState},
+        page_info::{PageInfo, PageInfoState},
+    },
 };
 
 use super::{
     history_info::{HistoryInfo, HistoryInfoState},
-    layers::{Layer, Layers, LayersResponse},
+    layers::{Layer, LayerContent, Layers, LayersResponse},
+    scale_mode::{ScaleMode, ScaleModeState},
     text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},
-    
 };
 
 pub struct CanvasInfoResponse {
@@ -55,13 +58,27 @@ impl<'a> CanvasInfo<'a> {
                     .next();
 
                 if let Some(layer) = selected_layer {
-                    TransformControl::new(TransformControlState::new(layer)).show(ui);
-
-                    ui.separator();
-
-                    if layer.content.is_text() {
-                        TextControl::new(TextControlState::new(layer)).show(ui);
+                    
+                    if let LayerContent::TemplatePhoto {
+                        region: _,
+                        photo: _,
+                        scale_mode,
+                    } = &mut layer.content
+                    {
                         ui.separator();
+
+                        ScaleMode::new(&mut ScaleModeState::new(scale_mode)).show(ui);
+                    }
+
+                    {
+                        TransformControl::new(TransformControlState::new(layer)).show(ui);
+
+                        ui.separator();
+
+                        if layer.content.is_text() {
+                            TextControl::new(TextControlState::new(layer)).show(ui);
+                            ui.separator();
+                        }
                     }
                 }
 

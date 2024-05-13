@@ -11,7 +11,7 @@ use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     id::{next_layer_id, LayerId},
-    model::{edit_state::EditablePage, page::Page},
+    model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
@@ -157,6 +157,7 @@ impl CanvasState {
                         content: LayerContent::TemplatePhoto {
                             region: region.clone(),
                             photo: None,
+                            scale_mode: ScaleMode::Fit,
                         },
                         name,
                         visible: true,
@@ -907,7 +908,11 @@ impl<'a> Canvas<'a> {
                 Some(transform_response)
             }
 
-            LayerContent::TemplatePhoto { region, photo } => {
+            LayerContent::TemplatePhoto {
+                region,
+                photo,
+                scale_mode,
+            } => {
                 let rect = Rect::from_min_max(
                     available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
                     available_rect.min
@@ -922,15 +927,64 @@ impl<'a> Canvas<'a> {
                         if let Ok(Some(texture)) = photo_manager
                             .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                         {
-                            let uv =
-                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
+                            let scaled_rect = match scale_mode {
+                                ScaleMode::Fit => {
+                                    if texture.size.x > texture.size.y {
+                                        Rect::from_center_size(
+                                            rect.center(),
+                                            Vec2::new(
+                                                rect.width(),
+                                                rect.width() / texture.size.x * texture.size.y,
+                                            ),
+                                        )
+                                    } else {
+                                        Rect::from_center_size(
+                                            rect.center(),
+                                            Vec2::new(
+                                                rect.height() / texture.size.y * texture.size.x,
+                                                rect.height(),
+                                            ),
+                                        )
+                                    }
+                                }
+                                ScaleMode::Fill => {
+                                    if texture.size.x > texture.size.y {
+                                        Rect::from_center_size(
+                                            rect.center(),
+                                            Vec2::new(
+                                                rect.height() / texture.size.y * texture.size.x,
+                                                rect.height(),
+                                            ),
+                                        )
+                                    } else {
+                                        Rect::from_center_size(
+                                            rect.center(),
+                                            Vec2::new(
+                                                rect.width(),
+                                                rect.width() / texture.size.x * texture.size.y,
+                                            ),
+                                        )
+                                    }
+                                }
+                                ScaleMode::Stretch => rect,
+                            };
+
+                            let current_clip = ui.clip_rect();
+
+                            ui.set_clip_rect(rect.intersect(current_clip));
 
                             let painter = ui.painter();
                             let mut mesh = Mesh::with_texture(texture.id);
 
-                            mesh.add_rect_with_uv(rect, uv, Color32::WHITE);
+                            mesh.add_rect_with_uv(
+                                scaled_rect.center_within(rect),
+                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 }),
+                                Color32::WHITE,
+                            );
 
                             painter.add(Shape::mesh(mesh));
+
+                            ui.set_clip_rect(current_clip);
                         }
                     });
                 }
