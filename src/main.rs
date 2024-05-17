@@ -31,6 +31,7 @@ mod widget;
 mod id;
 mod template;
 mod model;
+mod export;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

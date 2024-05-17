@@ -1,3 +1,5 @@
+use std::sync::{Arc, Mutex};
+
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
@@ -10,6 +12,7 @@ use indexmap::{indexmap, IndexMap};
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
+    export::export,
     id::{next_layer_id, LayerId},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
@@ -357,6 +360,20 @@ impl<'a> Canvas<'a> {
         Self {
             state,
             photo_manager: Dependency::get(),
+            available_rect,
+            history_manager,
+        }
+    }
+
+    pub fn with_photo_manager(
+        photo_manager: Singleton<PhotoManager>,
+        state: &'a mut CanvasState,
+        available_rect: Rect,
+        history_manager: &'a mut CanvasHistoryManager,
+    ) -> Self {
+        Self {
+            state,
+            photo_manager: photo_manager,
             available_rect,
             history_manager,
         }
@@ -1098,7 +1115,12 @@ impl<'a> Canvas<'a> {
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
+        let mut should_export = false;
         ctx.input(|input| {
+            if input.key_pressed(egui::Key::F1) {
+                should_export = true;
+            }
+
             // Exit the canvas
             if input.key_pressed(egui::Key::Backspace) && input.modifiers.ctrl {
                 return Some(CanvasResponse::Exit);
@@ -1184,7 +1206,28 @@ impl<'a> Canvas<'a> {
             }
 
             None
-        })
+        });
+
+        if should_export {
+            export(self.state.clone(), "");
+
+            // let state = Arc::new(Mutex::new(state));
+            // let history_manager = Arc::new(Mutex::new(history_manager));
+
+            // ctx.on_end_frame("Export", {
+            //     let state = Arc::clone(&state);
+            //     let history_manager = Arc::clone(&history_manager);
+            //     Arc::new(move |ctx| {
+            //         let mut state = state.lock().unwrap();
+            //         let mut history_manager = history_manager.lock().unwrap();
+            //         let export_canvas =
+            //             Canvas::new(&mut *state, available_rect, &mut *history_manager);
+            //         export(export_canvas, "", &ctx);
+            //     })
+            // });
+        }
+
+        None
     }
 
     fn is_pointer_on_canvas(&self, ui: &mut Ui) -> bool {

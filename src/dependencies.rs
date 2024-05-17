@@ -33,6 +33,12 @@ macro_rules! dependency {
 #[derive(Debug)]
 pub struct Singleton<T>(Arc<RwLock<T>>);
 
+impl<T> Singleton<T> {
+    pub fn new(value: T) -> Self {
+        Self(Arc::new(RwLock::new(value)))
+    }
+}
+
 impl<T> Clone for Singleton<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())

@@ -64,7 +64,7 @@ pub struct PhotoManager {
 
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
-    thumbnail_existance_cache: HashSet<PathBuf>,
+    thumbnail_existence_cache: HashSet<PathBuf>,
 }
 
 impl PhotoManager {
@@ -73,7 +73,7 @@ impl PhotoManager {
             photos: IndexMap::new(),
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
-            thumbnail_existance_cache: HashSet::new(),
+            thumbnail_existence_cache: HashSet::new(),
         }
     }
 
@@ -149,7 +149,7 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_existance_cache.contains(&photo.path) {
+        if !self.thumbnail_existence_cache.contains(&photo.path) {
             return Ok(None);
         }
 
@@ -168,7 +168,7 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
             Some((_, PhotoLoadResult::Ready(photo))) => {
-                if !self.thumbnail_existance_cache.contains(&photo.path) {
+                if !self.thumbnail_existence_cache.contains(&photo.path) {
                     return Ok(None);
                 }
                 Self::load_texture(
@@ -188,6 +188,19 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         Self::load_texture(
+            &photo.uri(),
+            ctx,
+            &mut self.texture_cache,
+            &mut self.pending_textures,
+        )
+    }
+
+    pub fn texture_for_blocking(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        Self::load_texture_blocking(
             &photo.uri(),
             ctx,
             &mut self.texture_cache,
@@ -312,6 +325,39 @@ impl PhotoManager {
         }
     }
 
+    fn load_texture_blocking(
+        uri: &str,
+        ctx: &Context,
+        texture_cache: &mut HashMap<String, SizedTexture>,
+        pending_textures: &mut HashSet<String>,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        match texture_cache.get(uri) {
+            Some(texture) => {
+                pending_textures.remove(uri);
+                Ok(Some(*texture))
+            }
+            None => {
+                let texture = ctx.try_load_texture(
+                    uri,
+                    eframe::egui::TextureOptions::default(),
+                    eframe::egui::SizeHint::Scale(1.0_f32.ord()),
+                );
+
+                match texture {
+                    Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
+                        pending_textures.insert(uri.to_string());
+                        Ok(None)
+                    }
+                    Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                        texture_cache.insert(uri.to_string(), texture);
+                        Ok(Some(texture))
+                    }
+                    Result::Err(err) => Err(anyhow!(err)),
+                }
+            }
+        }
+    }
+
     fn gen_thumbnails(dir: PathBuf, photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
         let path: PathBuf = dir;
 
@@ -376,7 +422,7 @@ impl PhotoManager {
 
                     Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                         photo_manager
-                            .thumbnail_existance_cache
+                            .thumbnail_existence_cache
                             .insert(photo_path.clone());
                     });
 
@@ -508,7 +554,7 @@ impl PhotoManager {
 
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                     photo_manager
-                        .thumbnail_existance_cache
+                        .thumbnail_existence_cache
                         .insert(photo_path.clone());
                 });
 
