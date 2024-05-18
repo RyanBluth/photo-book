@@ -342,7 +342,7 @@ impl<'a> Layers<'a> {
                                 LayerContent::TemplatePhoto { .. } => {
                                     ui.label("Template Photo");
                                 }
-                                LayerContent::TemplateText { region, text } => {
+                                LayerContent::TemplateText { region: _, text: _ } => {
                                     ui.label("Template Text");
                                 }
                             }

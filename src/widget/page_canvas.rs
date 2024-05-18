@@ -1,12 +1,11 @@
-use std::sync::{Arc, Mutex};
+
 
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
-    wgpu::Color,
 };
-use egui::{epaint::TextShape, Id, Layout, RichText, Stroke};
+use egui::{Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -18,13 +17,13 @@ use crate::{
     photo::Photo,
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    template::{self, Template, TemplateRegionKind, BUILT_IN},
+    template::{Template, TemplateRegionKind},
     utils::{IdExt, RectExt, Toggle},
 };
 
 use super::{
     canvas_info::layers::{
-        CanvasText, CanvasTextHorizontalAlignment, Layer, LayerContent, LayerTransformEditState,
+        CanvasText, Layer, LayerContent, LayerTransformEditState,
     },
     image_gallery::ImageGalleryState,
     transformable::{
@@ -637,8 +636,8 @@ impl<'a> Canvas<'a> {
                             .rect_filled(region_rect, 0.0, Color32::LIGHT_BLUE);
                     }
                     TemplateRegionKind::Text {
-                        sample_text,
-                        font_size,
+                        sample_text: _,
+                        font_size: _,
                     } => {
                         ui.painter().rect_stroke(
                             region_rect,
@@ -907,7 +906,7 @@ impl<'a> Canvas<'a> {
                         available_rect,
                         self.state.zoom,
                         active && !is_preview,
-                        |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                             Self::draw_text(
                                 ui,
                                 &text.text,

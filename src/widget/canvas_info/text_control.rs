@@ -5,7 +5,7 @@ use eframe::{
 use egui::ComboBox;
 use strum::IntoEnumIterator;
 
-use crate::{template::Template, utils::EditableValueTextEdit, widget::page_canvas::CanvasPhoto};
+use crate::{utils::EditableValueTextEdit};
 
 use super::layers::{
     CanvasTextHorizontalAlignment, CanvasTextVerticalAlignment, Layer, LayerContent::{Photo, TemplatePhoto, TemplateText, Text}

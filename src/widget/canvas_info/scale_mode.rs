@@ -1,14 +1,14 @@
-use std::fmt::{Display, Formatter};
+
 
 use eframe::egui::{self};
-use egui::{Pos2, RichText, Vec2};
+use egui::{Vec2};
 
 use strum::IntoEnumIterator;
-use strum_macros::EnumIter;
 
-use crate::{model, utils::RectExt};
 
-use super::layers::Layer;
+use crate::{model};
+
+
 
 #[derive(Debug, PartialEq)]
 pub struct ScaleModeState<'a> {

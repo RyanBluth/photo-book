@@ -14,6 +14,7 @@ pub enum LoadingState {
 pub struct FontManager {
     pub fonts: IndexMap<String, Vec<FontInfo>>,
     pub loading_state: LoadingState,
+    pub font_definitions: Option<FontDefinitions>,
 }
 
 impl FontManager {
@@ -21,6 +22,7 @@ impl FontManager {
         Self {
             fonts: IndexMap::new(),
             loading_state: LoadingState::NotLoaded,
+            font_definitions: None,
         }
     }
 
@@ -117,8 +119,9 @@ impl FontManager {
                     );
                 });
 
-            ctx.set_fonts(valid_font_definitions);
+            ctx.set_fonts(valid_font_definitions.clone());
 
+            self.font_definitions = Some(valid_font_definitions);
             self.loading_state = LoadingState::Loaded;
         }
     }

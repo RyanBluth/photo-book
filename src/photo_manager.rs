@@ -13,8 +13,7 @@ use eframe::{
     epaint::util::FloatOrd,
 };
 use image::{
-    codecs::{jpeg::JpegEncoder, png::PngEncoder},
-    ColorType, ExtendedColorType,
+    codecs::{jpeg::JpegEncoder, png::PngEncoder}, ExtendedColorType,
 };
 use indexmap::IndexMap;
 use log::{error, info};
