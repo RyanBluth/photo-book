@@ -42,6 +42,14 @@ impl Page {
         }
     }
 
+    pub fn size_mm(&self) -> Vec2 {
+        match self.unit {
+            Unit::Pixels => self.size / (self.ppi as f32 / 2.54),
+            Unit::Inches => self.size * 25.4,
+            Unit::Centimeters => self.size * 10.0,
+        }
+    }
+
     pub fn size(&self) -> Vec2 {
         self.size
     }

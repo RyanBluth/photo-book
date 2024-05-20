@@ -1,5 +1,6 @@
 use eframe::wgpu::naga::back;
 use egui::{FontId, Pos2, Rect};
+use genpdf::fonts::{Builtin, FontData, FontFamily};
 use log::{error, info};
 
 use skia_safe::surfaces::raster_n32_premul;
@@ -7,11 +8,13 @@ use skia_safe::{ColorSpace, EncodedImageFormat};
 
 use std::default;
 use std::fs::File;
-use std::io::Write;
+use std::io::{BufReader, Write};
 
 use tokio::task::spawn_blocking;
 
 use smol_egui_skia::{rasterize, EguiSkia, RasterizeOptions};
+
+use genpdf::{elements, Alignment, Document, Size};
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
@@ -110,12 +113,26 @@ pub fn export(mut canvas_state: CanvasState, path: &str) {
 
         let data = surface
             .image_snapshot()
-            .encode_to_data(EncodedImageFormat::JPEG)
+            .encode_to_data(EncodedImageFormat::PNG)
             .expect("Failed to encode image");
 
-        File::create("output.jpg")
+        File::create("output.png")
             .unwrap()
             .write_all(&data)
             .unwrap();
+        let mut doc = Document::new(
+            genpdf::fonts::from_files("src/assets/OpenSans", "OpenSans", None).unwrap(),
+        );
+
+        let image = elements::Image::from_path("output.png").unwrap();
+        doc.set_paper_size(Size::new(
+            canvas_state.page.size_mm().x,
+            canvas_state.page.size_mm().y,
+        ));
+
+        doc.push(image.with_alignment(Alignment::Center));
+
+        let mut output = File::create("output.pdf").unwrap();
+        doc.render(&mut output).unwrap();
     });
 }

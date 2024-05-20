@@ -35,7 +35,7 @@ ab_glyph = "0.2.23"
 rand = "0.8.5"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main"}
 skia-safe = "0.73.0"
-genpdf = "0.2.0"
+genpdf = { version = "0.2.0", features = ["images"] }
 
 [profile.dev.package."*"]
 opt-level = 2
