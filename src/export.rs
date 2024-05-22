@@ -1,38 +1,149 @@
-use eframe::wgpu::naga::back;
-use egui::{FontId, Pos2, Rect};
-use genpdf::fonts::{Builtin, FontData, FontFamily};
+use egui::{Pos2, Rect};
 use log::{error, info};
 
 use skia_safe::surfaces::raster_n32_premul;
-use skia_safe::{ColorSpace, EncodedImageFormat};
+use skia_safe::EncodedImageFormat;
 
+use printpdf::{Image, ImageTransform, Mm, PdfDocument, Pt};
+use std::collections::HashMap;
 use std::default;
+use std::error::Error;
 use std::fs::File;
-use std::io::{BufReader, Write};
+use std::io::{BufWriter, Write};
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use tokio::task::spawn_blocking;
 
-use smol_egui_skia::{rasterize, EguiSkia, RasterizeOptions};
+use smol_egui_skia::{EguiSkia, RasterizeOptions};
 
-use genpdf::{elements, Alignment, Document, Size};
+use thiserror::Error;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
+use crate::model::page;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas_info::layers::LayerContent;
 use crate::widget::page_canvas::{Canvas, CanvasState};
 
-pub fn export(mut canvas_state: CanvasState, path: &str) {
-    let path = String::from(path);
+#[derive(Error, Debug, Clone)]
+pub enum ExportError {
+    #[error("Failed to create surface")]
+    SurfaceCreationError,
+    #[error("Error loading texture: {0}")]
+    TextureLoadingError(String),
+    #[error("Failed to encode image")]
+    ImageEncodingError,
+    #[error("File operation error: {0}")]
+    FileError(String),
+    #[error("PDF rendering error: {0}")]
+    PdfRenderingError(String),
+}
 
-    spawn_blocking(move || {
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub struct ExportTaskId {
+    pub task_id: u64,
+}
+
+#[derive(Debug, Clone)]
+pub enum ExportTaskStatus {
+    InProgress(f32),
+    Completed,
+    Failed(ExportError),
+}
+
+pub struct Exporter {
+    pub tasks: Arc<Mutex<HashMap<ExportTaskId, ExportTaskStatus>>>,
+}
+
+impl Exporter {
+    pub fn new() -> Self {
+        Self {
+            tasks: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn get_task_status(&self, task_id: ExportTaskId) -> Option<ExportTaskStatus> {
+        let tasks = self.tasks.lock().unwrap();
+        tasks.get(&task_id).cloned()
+    }
+
+    pub fn export(
+        &mut self,
+        ctx: egui::Context,
+        pages: Vec<CanvasState>,
+        directory: PathBuf,
+        file_name: &str,
+    ) -> ExportTaskId {
+        let task_id = ExportTaskId {
+            task_id: rand::random(),
+        };
+
+        let tasks = self.tasks.clone();
+
+        let file_name = file_name.to_string();
+
+        if !directory.exists() {
+            if let Err(err) = std::fs::create_dir_all(&directory) {
+                let mut tasks = tasks.lock().unwrap();
+                tasks.insert(
+                    task_id,
+                    ExportTaskStatus::Failed(ExportError::FileError(err.to_string())),
+                );
+                ctx.request_repaint();
+                return task_id;
+            }
+        }
+
+        spawn_blocking(move || {
+            let mut page_number = 0;
+            let num_pages = pages.len();
+            for page in &pages {
+                if let Err(err) = Self::export_page(page.clone(), &directory, page_number) {
+                    let mut tasks = tasks.lock().unwrap();
+                    tasks.insert(task_id, ExportTaskStatus::Failed(err));
+                    ctx.request_repaint();
+                    return;
+                }
+                page_number += 1;
+                let progress = page_number as f32 / (num_pages as f32 + 1.0); // +1 for the PDF generation
+                let mut tasks = tasks.lock().unwrap();
+                tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
+                ctx.request_repaint();
+            }
+
+            if let Err(err) = Self::export_pdf(&pages, &directory, &file_name) {
+                let mut tasks = tasks.lock().unwrap();
+                tasks.insert(task_id, ExportTaskStatus::Failed(err));
+                ctx.request_repaint();
+                return;
+            }
+
+            let mut tasks = tasks.lock().unwrap();
+            tasks.insert(task_id, ExportTaskStatus::Completed);
+            ctx.request_repaint();
+        });
+
+        let mut tasks = self.tasks.lock().unwrap();
+        tasks.insert(task_id.clone(), ExportTaskStatus::InProgress(0.0));
+
+        task_id
+    }
+
+    fn export_page(
+        mut canvas_state: CanvasState,
+        directory: &PathBuf,
+        page_number: u32,
+    ) -> Result<(), ExportError> {
+        let directory = PathBuf::from(directory);
+
         let size = canvas_state.page.size_pixels();
         canvas_state.zoom = 1.0;
 
-        let mut surface =
-            raster_n32_premul((size.x as i32, size.y as i32)).expect("Failed to create surface");
+        let mut surface = raster_n32_premul((size.x as i32, size.y as i32))
+            .ok_or(ExportError::SurfaceCreationError)?;
 
         let RasterizeOptions {
             pixels_per_point,
@@ -68,7 +179,7 @@ pub fn export(mut canvas_state: CanvasState, path: &str) {
                             }
                             Err(error) => {
                                 error!("Error loading texture: {:?}", error);
-                                break;
+                                return Err(ExportError::TextureLoadingError(error.to_string()));
                             }
                         }
                     },
@@ -77,7 +188,8 @@ pub fn export(mut canvas_state: CanvasState, path: &str) {
                     LayerContent::TemplateText { .. } => {}
                 }
             }
-        });
+            Ok(())
+        })?;
 
         let font_manager: Singleton<FontManager> = Dependency::get();
 
@@ -113,26 +225,65 @@ pub fn export(mut canvas_state: CanvasState, path: &str) {
 
         let data = surface
             .image_snapshot()
-            .encode_to_data(EncodedImageFormat::PNG)
-            .expect("Failed to encode image");
+            .encode_to_data(EncodedImageFormat::JPEG)
+            .ok_or(ExportError::ImageEncodingError)?;
 
-        File::create("output.png")
-            .unwrap()
+        let image_path = directory.join(format!("page_{}.jpg", page_number));
+
+        let mut output_file =
+            File::create(&image_path).map_err(|e| ExportError::FileError(e.to_string()))?;
+        output_file
             .write_all(&data)
-            .unwrap();
-        let mut doc = Document::new(
-            genpdf::fonts::from_files("src/assets/OpenSans", "OpenSans", None).unwrap(),
-        );
+            .map_err(|e| ExportError::FileError(e.to_string()))?;
 
-        let image = elements::Image::from_path("output.png").unwrap();
-        doc.set_paper_size(Size::new(
-            canvas_state.page.size_mm().x,
-            canvas_state.page.size_mm().y,
-        ));
+        Ok(())
+    }
 
-        doc.push(image.with_alignment(Alignment::Center));
+    fn export_pdf(
+        pages: &Vec<CanvasState>,
+        directory: &PathBuf,
+        file_name: &str,
+    ) -> Result<(), ExportError> {
+        
+        let directory = PathBuf::from(directory);
 
-        let mut output = File::create("output.pdf").unwrap();
-        doc.render(&mut output).unwrap();
-    });
+        let pdf = PdfDocument::empty(file_name);
+
+        for page_number in 0..pages.len() {
+            let image_path = directory.join(format!("page_{}.jpg", page_number));
+
+            let page_size = pages[page_number].page.size_mm();
+            let (mm_width, mm_height) = (Mm(page_size.x), Mm(page_size.y));
+
+            let (page_idx, layer_idx) = pdf.add_page(mm_width, mm_height, "Layer 1");
+
+            let current_layer = pdf.get_page(page_idx).get_layer(layer_idx);
+
+            use printpdf::image as printpdf_image;
+            use printpdf::image_crate::codecs::jpeg::JpegDecoder;
+
+            let image_file = File::open(image_path).unwrap();
+            let image =
+                printpdf_image::Image::try_from(JpegDecoder::new(image_file).unwrap()).unwrap();
+
+            image.add_to_layer(
+                current_layer.clone(),
+                ImageTransform {
+                    dpi: Some(pages[page_number].page.ppi() as f32),
+                    ..Default::default()
+                },
+            );
+        }
+
+        let mut pdf_path = directory.join(file_name);
+        pdf_path.set_extension("pdf");
+
+        let output_pdf =
+            File::create(pdf_path).map_err(|e| ExportError::FileError(e.to_string()))?;
+
+        pdf.save(&mut BufWriter::new(output_pdf)).unwrap();
+
+        Ok(())
+    }
+
 }

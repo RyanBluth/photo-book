@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    cursor_manager::CursorManager, font_manager::FontManager, photo_manager::PhotoManager,
+    cursor_manager::CursorManager, export::Exporter, font_manager::FontManager, photo_manager::PhotoManager
 };
 
 macro_rules! singleton {
@@ -70,3 +70,5 @@ singleton!(PHOTO_MANAGER_INSTANCE, PhotoManager, PhotoManager::new());
 singleton!(CURSOR_MANAGER, CursorManager, CursorManager::new());
 
 singleton!(FONT_MANAGER, FontManager, FontManager::new());
+
+singleton!(EXPORTER, Exporter, Exporter::new());

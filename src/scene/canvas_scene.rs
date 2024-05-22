@@ -1,11 +1,12 @@
 use std::fmt::Display;
 
-use egui::Ui;
+use egui::{Key, Ui};
 use egui_tiles::UiResponse;
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
+    export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId},
     model::{edit_state::EditablePage, page::Page},
@@ -31,6 +32,7 @@ pub struct CanvasSceneState {
     pages_state: PagesState,
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
+    export_task_id: Option<ExportTaskId>,
 }
 
 impl CanvasSceneState {
@@ -43,6 +45,7 @@ impl CanvasSceneState {
             history_manager: CanvasHistoryManager::new(),
             pages_state: PagesState::new(indexmap! { page_id => CanvasState::new() }, page_id),
             templates_state: TemplatesState::new(),
+            export_task_id: None,
         }
     }
 
@@ -56,6 +59,7 @@ impl CanvasSceneState {
             history_manager: CanvasHistoryManager::with_initial_state(canvas_state.clone()),
             pages_state: PagesState::new(indexmap! { page_id => canvas_state }, page_id),
             templates_state: TemplatesState::new(),
+            export_task_id: None,
         }
     }
 }
@@ -107,6 +111,39 @@ impl CanvasScene {
 
 impl Scene for CanvasScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
+        match self.state.export_task_id {
+            Some(task_id) => {
+                let exporter: Singleton<Exporter> = Dependency::get();
+                let status = exporter.with_lock(|exporter| exporter.get_task_status(task_id));
+
+                match status {
+                    Some(ExportTaskStatus::Failed(error)) => {
+                        log::error!("Export failed: {:?}", error);
+                        self.state.export_task_id = None;
+                    }
+                    Some(ExportTaskStatus::InProgress(progress)) => {
+                        log::info!("Exporting... {:.0}%", progress * 100.0);
+                    }
+                    Some(ExportTaskStatus::Completed) | None => {
+                        self.state.export_task_id = None;
+                    }
+                }
+            }
+            None => {
+                if ui.ctx().input(|input| input.key_pressed(Key::F1)) {
+                    let exporter: Singleton<Exporter> = Dependency::get();
+                    self.state.export_task_id = Some(exporter.with_lock_mut(|exporter| {
+                        exporter.export(
+                            ui.ctx().clone(),
+                            self.state.pages_state.pages.values().cloned().collect(),
+                            "export".into(),
+                            "out",
+                        )
+                    }));
+                }
+            }
+        }
+
         let mut navigator = Navigator::new();
 
         self.tree.ui(

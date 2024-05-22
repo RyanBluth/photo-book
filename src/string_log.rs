@@ -51,7 +51,7 @@ impl LogWriter for ArcStringLog {
                 eprintln!("{}", line);
             }
             _ => {
-                // println!("{}", line);
+                println!("{}", line);
             }
         }
         self.log.logs.lock().unwrap().get_mut().push(line);
