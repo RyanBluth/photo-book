@@ -1,3 +1,11 @@
+use std::{
+    rc::Rc,
+    sync::{Arc, RwLock},
+};
+
+use egui::{Grid, Layout, Ui, Vec2};
+use sqlx::Either;
+
 use crate::{
     photo::Photo,
     widget::{
@@ -5,16 +13,50 @@ use crate::{
     },
 };
 
-use self::organize_scene::GalleryScene;
+use self::{
+    canvas_scene::CanvasScene, organize_edit_scene::OrganizeEditScene,
+    organize_scene::GalleryScene, viewer_scene::ViewerScene,
+};
 
 pub mod canvas_scene;
+pub mod organize_edit_scene;
 pub mod organize_scene;
 pub mod viewer_scene;
 
 pub enum SceneResponse {
     None,
     Pop,
-    Push(Box<dyn Scene>),
+    Push(SceneTransition),
+}
+
+pub enum SceneTransition {
+    OrganizeEdit(OrganizeEditScene),
+    Gallery(GalleryScene),
+    Viewer(ViewerScene),
+    Canvas(CanvasScene),
+}
+
+impl SceneTransition {
+    pub fn scene(self) -> Box<dyn Scene> {
+        match self {
+            SceneTransition::OrganizeEdit(scene) => Box::new(scene),
+            SceneTransition::Gallery(scene) => Box::new(scene),
+            SceneTransition::Viewer(scene) => Box::new(scene),
+            SceneTransition::Canvas(scene) => Box::new(scene),
+        }
+    }
+}
+
+impl PartialEq for SceneTransition {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (SceneTransition::OrganizeEdit(_), SceneTransition::OrganizeEdit(_)) => true,
+            (SceneTransition::Gallery(_), SceneTransition::Gallery(_)) => true,
+            (SceneTransition::Viewer(_), SceneTransition::Viewer(_)) => true,
+            (SceneTransition::Canvas(_), SceneTransition::Canvas(_)) => true,
+            _ => false,
+        }
+    }
 }
 
 pub trait Scene: Send + Sync {
@@ -30,17 +72,17 @@ impl SceneManager {
         Self { scenes: vec![] }
     }
 
-    pub fn push(&mut self, scene: Box<dyn Scene>) {
-        self.scenes.push(scene);
+    pub fn push(&mut self, scene: SceneTransition) {
+        self.scenes.push(scene.scene());
     }
 
     pub fn pop(&mut self) {
         self.scenes.pop();
     }
 
-    pub fn swap(&mut self, scene: Box<dyn Scene>) {
+    pub fn swap(&mut self, scene: SceneTransition) {
         self.scenes.pop();
-        self.scenes.push(scene);
+        self.scenes.push(scene.scene());
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
@@ -61,13 +103,16 @@ impl SceneManager {
 impl Default for SceneManager {
     fn default() -> Self {
         Self {
-            scenes: vec![Box::new(GalleryScene::new())],
+            scenes: vec![Box::new(OrganizeEditScene::new(
+                GalleryScene::new(),
+                CanvasScene::new(),
+            ))],
         }
     }
 }
 
 pub enum NavigationRequest {
-    Push(Box<dyn Scene>),
+    Push(SceneTransition),
     Pop,
 }
 
@@ -80,7 +125,7 @@ impl Navigator {
         Self { request: None }
     }
 
-    pub fn push(&mut self, scene: Box<dyn Scene>) {
+    pub fn push(&mut self, scene: SceneTransition) {
         self.request = Some(NavigationRequest::Push(scene));
     }
 

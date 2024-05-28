@@ -1,4 +1,5 @@
-use egui::{Pos2, Rect};
+use eframe::wgpu::core::error;
+use egui::{Pos2, Rect, Ui};
 use log::{error, info};
 
 use skia_safe::surfaces::raster_n32_premul;
@@ -40,6 +41,8 @@ pub enum ExportError {
     FileError(String),
     #[error("PDF rendering error: {0}")]
     PdfRenderingError(String),
+    #[error("PDF saving error: {0}")]
+    PdfSavingError(String),
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -217,7 +220,7 @@ impl Exporter {
         for _ in 0..frames_before_screenshot {
             output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    canvas.show(ui);
+                    canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
                 });
             }));
         }
@@ -244,7 +247,6 @@ impl Exporter {
         directory: &PathBuf,
         file_name: &str,
     ) -> Result<(), ExportError> {
-        
         let directory = PathBuf::from(directory);
 
         let pdf = PdfDocument::empty(file_name);
@@ -262,9 +264,12 @@ impl Exporter {
             use printpdf::image as printpdf_image;
             use printpdf::image_crate::codecs::jpeg::JpegDecoder;
 
-            let image_file = File::open(image_path).unwrap();
-            let image =
-                printpdf_image::Image::try_from(JpegDecoder::new(image_file).unwrap()).unwrap();
+            let image_file =
+                File::open(image_path).map_err(|e| ExportError::FileError(e.to_string()))?;
+            let image = printpdf_image::Image::try_from(JpegDecoder::new(image_file).unwrap())
+                .map_err(|e| {
+                    ExportError::PdfRenderingError(format!("Error loading image: {:?}", e))
+                })?;
 
             image.add_to_layer(
                 current_layer.clone(),
@@ -281,9 +286,9 @@ impl Exporter {
         let output_pdf =
             File::create(pdf_path).map_err(|e| ExportError::FileError(e.to_string()))?;
 
-        pdf.save(&mut BufWriter::new(output_pdf)).unwrap();
+        pdf.save(&mut BufWriter::new(output_pdf))
+            .map_err(|e| ExportError::PdfSavingError(e.to_string().to_string()))?;
 
         Ok(())
     }
-
 }

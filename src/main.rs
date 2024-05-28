@@ -32,6 +32,7 @@ mod id;
 mod template;
 mod model;
 mod export;
+mod theme;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

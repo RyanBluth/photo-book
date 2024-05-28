@@ -64,6 +64,7 @@ impl ViewerScene {
 }
 
 impl Scene for ViewerScene {
+
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         let mut navigator = Navigator::new();
 

@@ -12,11 +12,12 @@ use crate::{
 
 use super::{
     canvas_scene::CanvasScene, viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
-    SceneResponse,
+    SceneResponse, SceneTransition,
 };
 
+#[derive(Debug, Clone)]
 pub struct GallerySceneState {
-    image_gallery_state: ImageGalleryState,
+    pub image_gallery_state: ImageGalleryState,
 }
 
 impl Default for GallerySceneState {
@@ -30,11 +31,14 @@ impl Default for GallerySceneState {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum GalleryScenePane {
     Gallery,
 }
+
+#[derive(Debug, Clone)]
 pub struct GalleryScene {
-    state: GallerySceneState,
+    pub state: GallerySceneState,
     tree: egui_tiles::Tree<GalleryScenePane>,
 }
 
@@ -127,7 +131,9 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                                     photo_manager.photos[index].clone()
                                 {
                                     self.navigator
-                                        .push(Box::new(ViewerScene::new(photo, index)));
+                                        .push(SceneTransition::Viewer(ViewerScene::new(
+                                            photo, index,
+                                        )));
                                 }
                             });
                         }
@@ -137,10 +143,12 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                                 if let PhotoLoadResult::Ready(photo) =
                                     photo_manager.photos[index].clone()
                                 {
-                                    self.navigator.push(Box::new(CanvasScene::with_photo(
-                                        photo,
-                                        Some(self.scene_state.image_gallery_state.clone()),
-                                    )));
+                                    self.navigator.push(SceneTransition::Canvas(
+                                        CanvasScene::with_photo(
+                                            photo,
+                                            Some(self.scene_state.image_gallery_state.clone()),
+                                        ),
+                                    ));
                                 }
                             });
                         }

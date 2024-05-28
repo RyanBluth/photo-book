@@ -931,7 +931,14 @@ impl<'a> Canvas<'a> {
                         + region.relative_size * available_rect.size(),
                 );
 
-                let response = ui.allocate_rect(rect, Sense::click());
+                let response = ui.allocate_rect(
+                    rect,
+                    if is_preview {
+                        Sense::focusable_noninteractive()
+                    } else {
+                        Sense::click()
+                    },
+                );
 
                 if let Some(photo) = photo {
                     self.photo_manager.with_lock_mut(|photo_manager| {
@@ -1025,7 +1032,14 @@ impl<'a> Canvas<'a> {
                         + region.relative_size * available_rect.size(),
                 );
 
-                let response = ui.allocate_rect(rect, Sense::click());
+                let response = ui.allocate_rect(
+                    rect,
+                    if is_preview {
+                        Sense::focusable_noninteractive()
+                    } else {
+                        Sense::click()
+                    },
+                );
 
                 Self::draw_text(
                     ui,

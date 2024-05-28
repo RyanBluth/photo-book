@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Color32, Sense, Vec2};
+use egui::{Color32, Sense, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use crate::{
     id::{next_page_id, PageId},
     scene::canvas_scene::CanvasHistoryManager,
-    template,
+    template, theme,
 };
 
 use super::{
@@ -64,7 +64,7 @@ impl<'a> Pages<'a> {
             - ui.spacing().item_spacing.x)
             .max(0.0);
 
-        let num_rows = self.state.pages.len().div_ceil(num_columns);
+        let num_rows = self.state.pages.len().div_ceil(num_columns.max(1));
 
         if ui
             .button("Add Page")
@@ -97,31 +97,36 @@ impl<'a> Pages<'a> {
                         let id: usize = *self.state.pages.get_index(offest + i).unwrap().0;
                         let page = self.state.pages.get_index_mut(offest + i).unwrap().1;
 
-                        if row
-                            .col(|ui| {
-                                if self.state.selected_page == id {
-                                    ui.painter().rect_filled(
-                                        ui.max_rect(),
-                                        6.0,
-                                        Color32::from_rgb(15, 15, 180),
-                                    );
-                                } else {
-                                    ui.painter().rect_filled(
-                                        ui.max_rect(),
-                                        6.0,
-                                        Color32::from_rgb(15, 15, 15),
-                                    );
+                        row.col(|ui| {
+                            ui.vertical(|ui| {
+                                ui.add_space(10.0);
+
+                                ui.label(format!("Page {}", id + 1));
+
+                                let mut page_rect = ui.max_rect();
+                                page_rect.min.y += 30.0;
+
+                                Canvas::new(page, page_rect, &mut CanvasHistoryManager::new())
+                                    .show_preview(ui, page_rect);
+
+                                let click_response = ui.allocate_rect(page_rect, Sense::click());
+
+                                if click_response.clicked() {
+                                    clicked_page = Some(id);
                                 }
 
-                                Canvas::new(page, ui.max_rect(), &mut CanvasHistoryManager::new())
-                                    .show_preview(ui, ui.max_rect());
-                            })
-                            .1
-                            .interact(Sense::click())
-                            .clicked()
-                        {
-                            clicked_page = Some(id);
-                        }
+                                if self.state.selected_page == id {
+                                    // Expand the clip rect for the highlight
+                                    ui.set_clip_rect(ui.max_rect().expand(10.0));
+
+                                    ui.painter().rect_stroke(
+                                        page_rect,
+                                        4.0,
+                                        Stroke::new(3.0, theme::color::FOCUSED),
+                                    );
+                                }
+                            });
+                        });
                     }
 
                     row.col(|ui| {

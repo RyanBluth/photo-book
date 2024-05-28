@@ -24,11 +24,11 @@ use crate::{
     },
 };
 
-use super::{viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse};
+use super::{viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition::Viewer};
 
 pub struct CanvasSceneState {
     canvas_state: CanvasState,
-    gallery_state: ImageGalleryState,
+    pub gallery_state: ImageGalleryState,
     pages_state: PagesState,
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
@@ -73,12 +73,12 @@ pub enum CanvasScenePane {
 }
 
 pub struct CanvasScene {
-    state: CanvasSceneState,
+    pub state: CanvasSceneState,
     tree: egui_tiles::Tree<CanvasScenePane>,
 }
 
 impl CanvasScene {
-    pub fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
+    pub fn new() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
         let tabs = vec![
@@ -99,7 +99,7 @@ impl CanvasScene {
         linear_layout.shares.set_share(info_id, 0.2);
 
         Self {
-            state: CanvasSceneState::with_photo(photo, gallery_state),
+            state: CanvasSceneState::new(),
             tree: egui_tiles::Tree::new(
                 "canvas_scene_tree",
                 tiles.insert_container(linear_layout),
@@ -107,9 +107,16 @@ impl CanvasScene {
             ),
         }
     }
+
+    pub fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
+        let mut res = Self::new();
+        res.state = CanvasSceneState::with_photo(photo, gallery_state);
+        res
+    }
 }
 
 impl Scene for CanvasScene {
+
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         match self.state.export_task_id {
             Some(task_id) => {
@@ -194,7 +201,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                     photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
                                     photo_manager::PhotoLoadResult::Ready(photo) => self
                                         .navigator
-                                        .push(Box::new(ViewerScene::new(photo, index))),
+                                        .push(Viewer(ViewerScene::new(photo, index))),
                                 }
                             }
                         }
