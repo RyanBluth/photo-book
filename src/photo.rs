@@ -73,6 +73,19 @@ impl PhotoRotation {
             Self::Rotate270CW => (3.0 * PI) / 2.0,
         }
     }
+
+    pub fn is_horizontal(&self) -> bool {
+        match self {
+            Self::Normal => true,
+            Self::MirrorHorizontal => true,
+            Self::Rotate180 => true,
+            Self::MirrorVerticalAndRotate180 => true,
+            Self::MirrorHorizontalAndRotate90CW => false,
+            Self::Rotate90CW => false,
+            Self::MirrorHorizontalAndRotate270CW => false,
+            Self::Rotate270CW => false,
+        }
+    }
 }
 
 impl Display for PhotoRotation {

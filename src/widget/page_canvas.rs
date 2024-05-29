@@ -846,21 +846,18 @@ impl<'a> Canvas<'a> {
                                         let mut mesh = Mesh::with_texture(texture.id);
 
                                         // If the photo is rotated swap the width and height
-                                        let mesh_rect = if photo.photo.metadata.rotation().radians()
-                                            == 0.0
-                                            || photo.photo.metadata.rotation().radians()
-                                                == std::f32::consts::PI
-                                        {
-                                            transformed_rect
-                                        } else {
-                                            Rect::from_center_size(
-                                                transformed_rect.center(),
-                                                Vec2::new(
-                                                    transformed_rect.height(),
-                                                    transformed_rect.width(),
-                                                ),
-                                            )
-                                        };
+                                        let mesh_rect =
+                                            if photo.photo.metadata.rotation().is_horizontal() {
+                                                transformed_rect
+                                            } else {
+                                                Rect::from_center_size(
+                                                    transformed_rect.center(),
+                                                    Vec2::new(
+                                                        transformed_rect.height(),
+                                                        transformed_rect.width(),
+                                                    ),
+                                                )
+                                            };
 
                                         mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
 
@@ -924,7 +921,7 @@ impl<'a> Canvas<'a> {
                 photo,
                 scale_mode,
             } => {
-                let rect = Rect::from_min_max(
+                let rect: Rect = Rect::from_min_max(
                     available_rect.min + region.relative_position.to_vec2() * available_rect.size(),
                     available_rect.min
                         + region.relative_position.to_vec2() * available_rect.size()
@@ -945,46 +942,65 @@ impl<'a> Canvas<'a> {
                         if let Ok(Some(texture)) = photo_manager
                             .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                         {
+                            let photo_size = Vec2::new(
+                                photo.photo.metadata.width() as f32,
+                                photo.photo.metadata.height() as f32,
+                            );
+
+                            // Rotate to match the image rotation so we can calculate the scaled rect correctly
+                            let rotated_rect: Rect =
+                                if photo.photo.metadata.rotation().is_horizontal()
+                                    || photo.photo.metadata.rotation().radians()
+                                        == std::f32::consts::PI
+                                {
+                                    rect
+                                } else {
+                                    Rect::from_center_size(
+                                        rect.center(),
+                                        Vec2::new(rect.height(), rect.width()),
+                                    )
+                                };
+
                             let scaled_rect = match scale_mode {
                                 ScaleMode::Fit => {
-                                    if texture.size.x > texture.size.y {
+                                    if photo_size.x > photo_size.y {
                                         Rect::from_center_size(
-                                            rect.center(),
+                                            rotated_rect.center(),
                                             Vec2::new(
-                                                rect.width(),
-                                                rect.width() / texture.size.x * texture.size.y,
+                                                rotated_rect.width(),
+                                                rotated_rect.width() / photo_size.x * photo_size.y,
                                             ),
                                         )
                                     } else {
                                         Rect::from_center_size(
-                                            rect.center(),
+                                            rotated_rect.center(),
                                             Vec2::new(
-                                                rect.height() / texture.size.y * texture.size.x,
-                                                rect.height(),
+                                                rotated_rect.height() / photo_size.y * photo_size.x,
+                                                rotated_rect.height(),
                                             ),
                                         )
                                     }
                                 }
                                 ScaleMode::Fill => {
-                                    if texture.size.x > texture.size.y {
+                                    if photo_size.x > photo_size.y {
                                         Rect::from_center_size(
-                                            rect.center(),
+                                            rotated_rect.center(),
                                             Vec2::new(
-                                                rect.height() / texture.size.y * texture.size.x,
-                                                rect.height(),
+                                                rotated_rect.height() / photo_size.y * photo_size.x,
+                                                rotated_rect.height(),
                                             ),
                                         )
                                     } else {
                                         Rect::from_center_size(
-                                            rect.center(),
+                                            rotated_rect.center(),
                                             Vec2::new(
-                                                rect.width(),
-                                                rect.width() / texture.size.x * texture.size.y,
+                                                rotated_rect.width(),
+                                                rotated_rect.width() / photo_size.x * photo_size.y,
                                             ),
                                         )
                                     }
                                 }
-                                ScaleMode::Stretch => rect,
+                                ScaleMode::Stretch => rotated_rect,
                             };
 
                             let current_clip = ui.clip_rect();
@@ -998,6 +1014,14 @@ impl<'a> Canvas<'a> {
                                 scaled_rect.center_within(rect),
                                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 }),
                                 Color32::WHITE,
+                            );
+
+                            let mesh_center: Pos2 =
+                                scaled_rect.min + Vec2::splat(0.5) * scaled_rect.size();
+
+                            mesh.rotate(
+                                Rot2::from_angle(photo.photo.metadata.rotation().radians()),
+                                mesh_center,
                             );
 
                             painter.add(Shape::mesh(mesh));

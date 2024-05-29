@@ -94,14 +94,15 @@ impl<'a> Pages<'a> {
                             break;
                         }
 
-                        let id: usize = *self.state.pages.get_index(offest + i).unwrap().0;
-                        let page = self.state.pages.get_index_mut(offest + i).unwrap().1;
+                        let index: usize = offest + i;
+                        let id: usize = *self.state.pages.get_index(index).unwrap().0;
+                        let page = self.state.pages.get_index_mut(index).unwrap().1;
 
                         row.col(|ui| {
                             ui.vertical(|ui| {
                                 ui.add_space(10.0);
 
-                                ui.label(format!("Page {}", id + 1));
+                                ui.label(format!("Page {}", index + 1));
 
                                 let mut page_rect = ui.max_rect();
                                 page_rect.min.y += 30.0;
