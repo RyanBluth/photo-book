@@ -47,7 +47,6 @@ pub struct CanvasState {
     pub layers: IndexMap<LayerId, Layer>,
     pub zoom: f32,
     pub offset: Vec2,
-    pub gallery_state: ImageGalleryState,
     pub multi_select: Option<MultiSelect>,
     pub page: EditablePage,
     pub template: Option<Template>,
@@ -59,7 +58,6 @@ impl CanvasState {
             layers: IndexMap::new(),
             zoom: 1.0,
             offset: Vec2::ZERO,
-            gallery_state: ImageGalleryState::default(),
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
@@ -74,7 +72,7 @@ impl CanvasState {
         clone
     }
 
-    pub fn with_photo(photo: Photo, gallery_state: ImageGalleryState) -> Self {
+    pub fn with_photo(photo: Photo) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
@@ -113,14 +111,13 @@ impl CanvasState {
             layers: indexmap! { layer.id => layer.clone() },
             zoom: 1.0,
             offset: Vec2::ZERO,
-            gallery_state,
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
         }
     }
 
-    pub fn with_template(template: Template, gallery_state: ImageGalleryState) -> Self {
+    pub fn with_template(template: Template) -> Self {
         // Add layer for each region in the template
 
         let mut layers = IndexMap::new();
@@ -199,7 +196,6 @@ impl CanvasState {
             layers: layers,
             zoom: 1.0,
             offset: Vec2::ZERO,
-            gallery_state,
             multi_select: None,
             page: EditablePage::new(template.page.clone()),
             template: Some(template),

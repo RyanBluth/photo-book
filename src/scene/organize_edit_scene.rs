@@ -4,7 +4,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use egui::{Ui, Vec2};
+use egui::{Color32, Pos2, Rect, Ui, Vec2};
 use sqlx::Either;
 
 use super::{
@@ -34,13 +34,8 @@ impl OrganizeEditScene {
         self.current = Either::Left(self.organize.clone());
         // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
         // Introduce some sort of shared state between the two scenes
-        self.organize.write().unwrap().state.image_gallery_state = self
-            .edit
-            .read()
-            .unwrap()
-            .state
-            .gallery_state
-            .clone();
+        self.organize.write().unwrap().state.image_gallery_state =
+            self.edit.read().unwrap().state.gallery_state.clone();
     }
 
     pub fn show_edit(&mut self) {
@@ -59,6 +54,13 @@ impl OrganizeEditScene {
 
 impl Scene for OrganizeEditScene {
     fn ui(&mut self, ui: &mut Ui) -> SceneResponse {
+
+        ui.painter().rect_filled(
+            Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 50.0)),
+            0.0,
+            Color32::from_gray(40),
+        );
+
         ui.vertical(|ui| {
             ui.allocate_ui(Vec2::new(ui.available_width(), 50.0), |ui| {
                 let top_nav_button_width: f32 = ui.memory_mut(|memory| {
@@ -89,6 +91,7 @@ impl Scene for OrganizeEditScene {
                         );
                     });
                 });
+                
             });
 
             ui.add_space(10.0);

@@ -2,6 +2,7 @@ use std::fmt::Display;
 
 use egui::{Key, Ui};
 use egui_tiles::UiResponse;
+use font_kit::canvas;
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -24,7 +25,10 @@ use crate::{
     },
 };
 
-use super::{viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition::Viewer};
+use super::{
+    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse,
+    SceneTransition::Viewer,
+};
 
 pub struct CanvasSceneState {
     canvas_state: CanvasState,
@@ -50,7 +54,7 @@ impl CanvasSceneState {
     }
 
     fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
-        let canvas_state = CanvasState::with_photo(photo.clone(), ImageGalleryState::default());
+        let canvas_state = CanvasState::with_photo(photo.clone());
         let page_id = next_page_id();
 
         Self {
@@ -116,7 +120,6 @@ impl CanvasScene {
 }
 
 impl Scene for CanvasScene {
-
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         match self.state.export_task_id {
             Some(task_id) => {
@@ -199,9 +202,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                             {
                                 match photo_result {
                                     photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
-                                    photo_manager::PhotoLoadResult::Ready(photo) => self
-                                        .navigator
-                                        .push(Viewer(ViewerScene::new(photo, index))),
+                                    photo_manager::PhotoLoadResult::Ready(photo) => {
+                                        self.navigator.push(Viewer(ViewerScene::new(photo, index)))
+                                    }
                                 }
                             }
                         }
@@ -291,8 +294,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 let _pre_info_canvas_state = self.scene_state.canvas_state.clone();
 
                 let response = CanvasInfo {
-                    layers: &mut self.scene_state.canvas_state.layers,
-                    page: &mut self.scene_state.canvas_state.page,
+                    canvas_state: &mut self.scene_state.canvas_state,
                     history_manager: &mut self.scene_state.history_manager,
                 }
                 .show(ui);
@@ -331,7 +333,26 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
 
                 match Templates::new(&mut self.scene_state.templates_state).show(ui) {
-                    TemplatesResponse::SelectTemplate => {}
+                    TemplatesResponse::SelectTemplate(template) => {
+                        let new_page_id = next_page_id();
+                        let new_canvas_state = CanvasState::with_template(template.clone());
+
+                        self.scene_state
+                            .pages_state
+                            .pages
+                            .insert(new_page_id, new_canvas_state.clone());
+
+                        self.scene_state.pages_state.selected_page = new_page_id;
+
+                        self.scene_state.canvas_state = self
+                            .scene_state
+                            .pages_state
+                            .pages
+                            .get_key_value(&self.scene_state.pages_state.selected_page)
+                            .unwrap()
+                            .1
+                            .clone_with_new_widget_ids();
+                    }
                     TemplatesResponse::None => {}
                 }
             }

@@ -6,15 +6,19 @@ use crate::{
     id::LayerId,
     model::edit_state::EditablePage,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    widget::canvas_info::{
-        alignment::{AlignmentInfo, AlignmentInfoState},
-        page_info::{PageInfo, PageInfoState},
+    widget::{
+        canvas_info::{
+            alignment::{AlignmentInfo, AlignmentInfoState},
+            page_info::{PageInfo, PageInfoState},
+        },
+        page_canvas::CanvasState,
     },
 };
 
 use super::{
     history_info::{HistoryInfo, HistoryInfoState},
     layers::{Layer, LayerContent, Layers, LayersResponse},
+    quick_layout::{QuickLayout, QuickLayoutState},
     scale_mode::{ScaleMode, ScaleModeState},
     text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},
@@ -26,8 +30,7 @@ pub struct CanvasInfoResponse {
 
 #[derive(Debug, PartialEq)]
 pub struct CanvasInfo<'a> {
-    pub layers: &'a mut IndexMap<LayerId, Layer>,
-    pub page: &'a mut EditablePage,
+    pub canvas_state: &'a mut CanvasState,
     pub history_manager: &'a mut CanvasHistoryManager,
 }
 
@@ -37,11 +40,12 @@ impl<'a> CanvasInfo<'a> {
 
         let response = ui.allocate_ui(ui.available_size(), |ui| {
             ui.vertical(|ui| {
-                PageInfo::new(&mut PageInfoState::new(self.page)).show(ui);
+                PageInfo::new(&mut PageInfoState::new(&mut self.canvas_state.page)).show(ui);
 
                 AlignmentInfo::new(&mut AlignmentInfoState::new(
-                    self.page.size_pixels(),
-                    self.layers
+                    self.canvas_state.page.size_pixels(),
+                    self.canvas_state
+                        .layers
                         .iter_mut()
                         .filter(|(_, layer)| layer.selected)
                         .map(|(_, layer)| layer)
@@ -51,6 +55,7 @@ impl<'a> CanvasInfo<'a> {
 
                 // TODO: Handle multi select
                 let selected_layer = self
+                    .canvas_state
                     .layers
                     .iter_mut()
                     .filter(|x| x.1.selected)
@@ -58,7 +63,6 @@ impl<'a> CanvasInfo<'a> {
                     .next();
 
                 if let Some(layer) = selected_layer {
-                    
                     if let LayerContent::TemplatePhoto {
                         region: _,
                         photo: _,
@@ -82,7 +86,11 @@ impl<'a> CanvasInfo<'a> {
                     }
                 }
 
-                match Layers::new(self.layers).show(ui) {
+                QuickLayout::new(&mut QuickLayoutState::new(self.canvas_state)).show(ui);
+
+                ui.separator();
+
+                match Layers::new(&mut self.canvas_state.layers).show(ui) {
                     LayersResponse::SelectedLayer(_) => {
                         history = Some(CanvasHistoryKind::SelectLayer)
                     }
@@ -91,7 +99,7 @@ impl<'a> CanvasInfo<'a> {
 
                 if ui.button("Add Text").clicked() {
                     let layer = Layer::new_text_layer();
-                    self.layers.insert(layer.id, layer);
+                    self.canvas_state.layers.insert(layer.id, layer);
                     history = Some(CanvasHistoryKind::AddText);
                 }
 

@@ -74,8 +74,7 @@ impl<'a> Pages<'a> {
             self.state.pages.insert(
                 next_page_id(),
                 CanvasState::with_template(
-                    template::BUILT_IN[1].clone(),
-                    ImageGalleryState::default(),
+                    template::BUILT_IN[1].clone()
                 ),
             );
         }

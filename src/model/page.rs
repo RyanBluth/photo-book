@@ -84,6 +84,10 @@ impl Page {
         self.ppi = ppi;
     }
 
+    pub fn is_landscape(&self) -> bool {
+        self.size.x > self.size.y
+    }
+
 }
 
 impl Default for Page {

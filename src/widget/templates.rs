@@ -9,7 +9,7 @@ use super::spacer::Spacer;
 
 pub enum TemplatesResponse {
     None,
-    SelectTemplate,
+    SelectTemplate(Template),
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,7 +75,7 @@ impl<'a> Templates<'a> {
                             })
                             .1
                             .interact(Sense::click())
-                            .clicked()
+                            .double_clicked()
                         {
                             clicked_template = Some(template.clone());
                         }
@@ -87,8 +87,8 @@ impl<'a> Templates<'a> {
                 })
             });
 
-        if let Some(_template) = clicked_template {
-            TemplatesResponse::SelectTemplate
+        if let Some(template) = clicked_template {
+            TemplatesResponse::SelectTemplate(template)
         } else {
             TemplatesResponse::None
         }

@@ -6,3 +6,4 @@ pub mod panel;
 pub mod text_control;
 pub mod transform_control;
 pub mod scale_mode;
+pub mod quick_layout;
