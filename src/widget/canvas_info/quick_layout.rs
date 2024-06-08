@@ -8,7 +8,7 @@ use strum::IntoEnumIterator;
 use crate::{
     id::LayerId,
     model::page::Page,
-    scene::canvas_scene::CanvasHistoryManager,
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
         page_canvas::{Canvas, CanvasState},
         spacer::Spacer,
@@ -21,14 +21,27 @@ struct QukcLayoutRegion {
     absolute_rect: Rect,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum QuickLayoutFillMode {
+    Fill,
+    Margin(f32),
+}
+
 #[derive(Debug, PartialEq)]
 pub struct QuickLayoutState<'a> {
     canvas_state: &'a mut CanvasState,
+    history_manager: &'a mut CanvasHistoryManager,
 }
 
 impl<'a> QuickLayoutState<'a> {
-    pub fn new(canvas_state: &'a mut CanvasState) -> QuickLayoutState<'a> {
-        QuickLayoutState { canvas_state }
+    pub fn new(
+        canvas_state: &'a mut CanvasState,
+        history_manager: &'a mut CanvasHistoryManager,
+    ) -> QuickLayoutState<'a> {
+        QuickLayoutState {
+            canvas_state,
+            history_manager,
+        }
     }
 }
 
@@ -61,7 +74,7 @@ impl<'a> QuickLayout<'a> {
         let available_layouts = self.available_layouts();
         let num_rows = available_layouts.len();
 
-        let mut clicked_template = None;
+        let mut selected_layout = None;
 
         egui_extras::TableBuilder::new(ui)
             .min_scrolled_height(window_height)
@@ -78,35 +91,32 @@ impl<'a> QuickLayout<'a> {
                         let index = offest + i;
                         let layout = available_layouts.get(offest + i).unwrap();
 
-                        if row
-                            .col(|ui| {
-                                let page_rect = ui.max_rect();
+                        let mut canvas_state = self.state.canvas_state.clone_with_new_widget_ids();
 
-                                let mut canvas_state =
-                                    self.state.canvas_state.clone_with_new_widget_ids();
+                        canvas_state
+                            .layers
+                            .iter_mut()
+                            .filter(|layer| layer.1.content.is_photo())
+                            .enumerate()
+                            .for_each(|(index, (_, layer))| {
+                                layer.transform_state.rect = layout[index].absolute_rect;
+                            });
 
-                                canvas_state
-                                    .layers
-                                    .iter_mut()
-                                    .filter(|layer| layer.1.content.is_photo())
-                                    .enumerate()
-                                    .for_each(|(index, (_, layer))| {
-                                        layer.transform_state.rect = layout[index].absolute_rect;
-                                    });
+                        row.col(|ui| {
+                            let page_rect = ui.max_rect();
+                            Canvas::new(
+                                &mut canvas_state,
+                                page_rect,
+                                &mut CanvasHistoryManager::new(),
+                            )
+                            .show_preview(ui, page_rect);
 
-                                Canvas::new(
-                                    &mut canvas_state,
-                                    page_rect,
-                                    &mut CanvasHistoryManager::new(),
-                                )
-                                .show_preview(ui, page_rect);
-                            })
-                            .1
-                            .interact(Sense::click())
-                            .double_clicked()
-                        {
-                            clicked_template = Some(index);
-                        }
+                            let click_response = ui.allocate_rect(page_rect, Sense::click());
+
+                            if click_response.clicked() {
+                                selected_layout = Some(canvas_state.clone());
+                            }
+                        });
                     }
 
                     row.col(|ui| {
@@ -114,6 +124,13 @@ impl<'a> QuickLayout<'a> {
                     });
                 })
             });
+
+        if let Some(selected_layout) = selected_layout {
+            self.state.canvas_state.layers = selected_layout.layers;
+            self.state
+                .history_manager
+                .save_history(CanvasHistoryKind::QuickLayout, &self.state.canvas_state);
+        }
     }
 
     fn available_layouts(&self) -> Vec<Vec<QukcLayoutRegion>> {
@@ -133,7 +150,7 @@ impl<'a> QuickLayout<'a> {
                             filtered_layers[0].1,
                             &self.state.canvas_state.page.value,
                             Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
-                            0.0,
+                            QuickLayoutFillMode::Fill,
                         ),
                     }],
                     vec![QukcLayoutRegion {
@@ -141,9 +158,75 @@ impl<'a> QuickLayout<'a> {
                             filtered_layers[0].1,
                             &self.state.canvas_state.page.value,
                             Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
-                            0.3,
+                            QuickLayoutFillMode::Margin(0.1),
                         ),
                     }],
+                    vec![QukcLayoutRegion {
+                        absolute_rect: Self::fractional_rect_for_layer_in_page(
+                            filtered_layers[0].1,
+                            &self.state.canvas_state.page.value,
+                            Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+                            QuickLayoutFillMode::Margin(0.3),
+                        ),
+                    }],
+                ]
+            }
+            2 => {
+                vec![
+                    vec![
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[0].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Fill,
+                            ),
+                        },
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[1].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Fill,
+                            ),
+                        },
+                    ],
+                    vec![
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[0].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Margin(0.2),
+                            ),
+                        },
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[1].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Margin(0.2),
+                            ),
+                        },
+                    ],
+                    vec![
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[0].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Margin(0.1),
+                            ),
+                        },
+                        QukcLayoutRegion {
+                            absolute_rect: Self::fractional_rect_for_layer_in_page(
+                                filtered_layers[1].1,
+                                &self.state.canvas_state.page.value,
+                                Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
+                                QuickLayoutFillMode::Margin(0.1),
+                            ),
+                        },
+                    ],
                 ]
             }
             _ => vec![],
@@ -154,7 +237,7 @@ impl<'a> QuickLayout<'a> {
         layer: &Layer,
         page: &Page,
         max_rect_percentage: Rect,
-        margin_percentage: f32,
+        margin_option: QuickLayoutFillMode,
     ) -> Rect {
         // Convert max_rect_percentage to absolute values based on the page size
         let page_size = page.size_pixels();
@@ -176,8 +259,13 @@ impl<'a> QuickLayout<'a> {
         let layer_aspect_ratio = layer_rect.width() / layer_rect.height();
 
         // Calculate the maximum width and height for the rect within the max_rect
-        let max_width = max_rect.width() * (1.0 - margin_percentage);
-        let max_height = max_rect.height() * (1.0 - margin_percentage);
+        let (max_width, max_height) = match margin_option {
+            QuickLayoutFillMode::Fill => (max_rect.width(), max_rect.height()),
+            QuickLayoutFillMode::Margin(margin_percentage) => (
+                max_rect.width() * (1.0 - margin_percentage),
+                max_rect.height() * (1.0 - margin_percentage),
+            ),
+        };
 
         // Calculate the new width and height while maintaining the aspect ratio
         let (new_width, new_height) = if layer_aspect_ratio > 1.0 {

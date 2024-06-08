@@ -383,6 +383,7 @@ pub enum CanvasHistoryKind {
     AddText,
     SelectLayer,
     DeselectLayer,
+    QuickLayout,
 }
 
 impl Display for CanvasHistoryKind {
@@ -397,6 +398,7 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::AddText => write!(f, "Add Text"),
             CanvasHistoryKind::SelectLayer => write!(f, "Select Layer"),
             CanvasHistoryKind::DeselectLayer => write!(f, "Deselect Layer"),
+            CanvasHistoryKind::QuickLayout => write!(f, "Quick Layout"),
         }
     }
 }
