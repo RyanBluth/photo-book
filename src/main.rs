@@ -6,6 +6,7 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, ViewportBuilder, Widget};
 
+use egui::Color32;
 use font_manager::FontManager;
 
 use photo_manager::PhotoManager;

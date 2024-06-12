@@ -15,8 +15,6 @@ pub struct GalleryImage {
 }
 
 impl GalleryImage {
-    pub const SIZE: Vec2 = Vec2 { x: 256.0, y: 256.0 };
-
     pub fn new(
         photo: PhotoLoadResult,
         texture: anyhow::Result<Option<SizedTexture>>,
@@ -39,28 +37,28 @@ impl Widget for GalleryImage {
 
                 ui.spacing_mut().item_spacing = Vec2 { x: 10.0, y: 10.0 };
 
+                let size = ui.available_size();
+
                 let image_size = match &self.photo {
-                    PhotoLoadResult::Pending(_) => {
-                        Vec2::new(Self::SIZE.x * 0.9, Self::SIZE.y * 0.9)
-                    }
+                    PhotoLoadResult::Pending(_) => Vec2::new(size.x * 0.9, size.y * 0.9),
                     PhotoLoadResult::Ready(photo) => match photo.max_dimension() {
                         crate::photo::MaxPhotoDimension::Width => Vec2::new(
-                            Self::SIZE.x * 0.9,
+                            size.x * 0.9,
                             photo.metadata.rotated_height() as f32
                                 / photo.metadata.rotated_width() as f32
-                                * Self::SIZE.x
+                                * size.x
                                 * 0.9,
                         ),
                         crate::photo::MaxPhotoDimension::Height => Vec2::new(
                             photo.metadata.rotated_width() as f32
                                 / photo.metadata.rotated_height() as f32
-                                * Self::SIZE.y,
-                            Self::SIZE.y,
+                                * size.y,
+                            size.y,
                         ),
                     },
                 };
 
-                let (rect, response) = ui.allocate_exact_size(Self::SIZE, Sense::click());
+                let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
                 ui.allocate_ui_at_rect(rect, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(10.0);
@@ -77,7 +75,7 @@ impl Widget for GalleryImage {
                     }
 
                     ui.vertical(|ui| {
-                        ui.set_max_size(Self::SIZE);
+                        ui.set_max_size(size);
 
                         ui.add_space(10.0);
 

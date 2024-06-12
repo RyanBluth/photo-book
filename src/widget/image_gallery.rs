@@ -5,11 +5,11 @@ use eframe::{
     epaint::Vec2,
 };
 
+use egui::{Color32, Image, Layout, Pos2, Rect, Sense, Slider};
 use egui_extras::Column;
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
-    photo_manager::PhotoManager,
+    assets::Asset, dependencies::{Dependency, Singleton, SingletonFor}, photo_manager::PhotoManager
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
@@ -18,6 +18,7 @@ use super::{gallery_image::GalleryImage, spacer::Spacer};
 pub struct ImageGalleryState {
     pub selected_images: HashSet<PathBuf>,
     pub current_dir: Option<PathBuf>,
+    pub scale: f32,
 }
 
 pub struct ImageGallery<'a> {
@@ -40,86 +41,129 @@ impl<'a> ImageGallery<'a> {
 
         match current_dir {
             Some(ref path) => {
-                ui.label(format!("Current Dir: {}", path.display()));
+                ui.vertical(|ui| {
+                    ui.label(format!("Current Dir: {}", path.display()));
 
-                if ui.input(|input| input.key_down(Key::Escape)) {
-                    selected_images.clear();
-                }
+                    if ui.input(|input| input.key_down(Key::Escape)) {
+                        selected_images.clear();
+                    }
 
-                ui.spacing_mut().item_spacing = Vec2::splat(10.0);
+                    let spacing = 10.0;
 
-                let window_width = ui.available_width();
-                let window_height = ui.available_height();
-                let column_width = 256.0;
-                let row_height = 256.0;
-                let num_columns: usize = (window_width / column_width).floor() as usize;
+                    let bottom_bar_height = 50.0;
 
-                //let padding_size = num_columns as f32 * 10.0;
-                let spacer_width = (window_width
-                    - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
-                    - 10.0
-                    - ui.spacing().item_spacing.x)
-                    .max(0.0);
+                    let mut table_size = ui.available_size();
+                    table_size.y -= bottom_bar_height;
 
-                let num_photos =
-                    photo_manager.with_lock(|photo_manager| photo_manager.photos.len());
+                    ui.allocate_ui(table_size, |ui| {
+                        ui.spacing_mut().item_spacing = Vec2::splat(spacing);
 
-                let num_rows = num_photos.div_ceil(num_columns);
+                        let column_width: f32 = 256.0 * state.scale;
+                        let row_height = 256.0 * state.scale;
+                        let num_columns: usize =
+                            (table_size.x / (column_width + spacing)).floor() as usize;
 
-                egui_extras::TableBuilder::new(ui)
-                    .min_scrolled_height(window_height)
-                    .columns(Column::exact(column_width), num_columns)
-                    .column(Column::exact(spacer_width))
-                    .body(|body| {
-                        body.rows(row_height, num_rows, |mut row| {
-                            let offest = row.index() * num_columns;
-                            for i in 0..num_columns {
-                                if offest + i >= num_photos {
-                                    break;
-                                }
+                        //let padding_size = num_columns as f32 * 10.0;
+                        let spacer_width = (table_size.x
+                            - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
+                            - 10.0
+                            - ui.spacing().item_spacing.x)
+                            .max(0.0);
 
-                                row.col(|ui| {
-                                    photo_manager.with_lock_mut(|photo_manager| {
-                                        let photo = photo_manager.photos[offest + i].clone();
+                        let num_photos =
+                            photo_manager.with_lock(|photo_manager| photo_manager.photos.len());
 
-                                        let image = GalleryImage::new(
-                                            photo.clone(),
-                                            photo_manager.tumbnail_texture_at(offest + i, ui.ctx()),
-                                            selected_images.contains(photo.path()),
-                                        );
+                        let num_rows = num_photos.div_ceil(num_columns);
 
-                                        let image_response = ui.add(image);
+                        egui_extras::TableBuilder::new(ui)
+                            .min_scrolled_height(table_size.y)
+                            .auto_shrink(false)
+                            .columns(Column::exact(column_width), num_columns)
+                            .column(Column::exact(spacer_width))
+                            .body(|body| {
+                                body.rows(row_height, num_rows, |mut row| {
+                                    let offest = row.index() * num_columns;
+                                    for i in 0..num_columns {
+                                        if offest + i >= num_photos {
+                                            break;
+                                        }
 
-                                        if image_response.clicked() {
-                                            let ctrl_held = ui.input(|input| input.modifiers.ctrl);
-                                            if ctrl_held {
-                                                if selected_images.contains(photo.path()) {
-                                                    selected_images.remove(photo.path());
-                                                } else {
-                                                    selected_images.insert(photo.path().clone());
+                                        row.col(|ui| {
+                                            photo_manager.with_lock_mut(|photo_manager| {
+                                                let photo =
+                                                    photo_manager.photos[offest + i].clone();
+
+                                                let image = GalleryImage::new(
+                                                    photo.clone(),
+                                                    photo_manager
+                                                        .tumbnail_texture_at(offest + i, ui.ctx()),
+                                                    selected_images.contains(photo.path()),
+                                                );
+
+                                                let image_response = ui.add(image);
+
+                                                if image_response.clicked() {
+                                                    let ctrl_held =
+                                                        ui.input(|input| input.modifiers.ctrl);
+                                                    if ctrl_held {
+                                                        if selected_images.contains(photo.path()) {
+                                                            selected_images.remove(photo.path());
+                                                        } else {
+                                                            selected_images
+                                                                .insert(photo.path().clone());
+                                                        }
+                                                    } else {
+                                                        selected_images.clear();
+                                                        selected_images
+                                                            .insert(photo.path().clone());
+                                                    }
                                                 }
-                                            } else {
-                                                selected_images.clear();
-                                                selected_images.insert(photo.path().clone());
-                                            }
-                                        }
 
-                                        if image_response.double_clicked() {
-                                            response =
-                                                Some(ImageGalleryResponse::ViewPhotoAt(offest + i));
-                                        } else if image_response.middle_clicked() {
-                                            response =
-                                                Some(ImageGalleryResponse::EditPhotoAt(offest + i));
-                                        }
+                                                if image_response.double_clicked() {
+                                                    response =
+                                                        Some(ImageGalleryResponse::ViewPhotoAt(
+                                                            offest + i,
+                                                        ));
+                                                } else if image_response.middle_clicked() {
+                                                    response =
+                                                        Some(ImageGalleryResponse::EditPhotoAt(
+                                                            offest + i,
+                                                        ));
+                                                }
+                                            });
+                                        });
+                                    }
+
+                                    row.col(|ui| {
+                                        ui.add(Spacer::new(spacer_width, row_height));
                                     });
-                                });
-                            }
-
-                            row.col(|ui| {
-                                ui.add(Spacer::new(spacer_width, row_height));
+                                })
                             });
-                        })
                     });
+
+                    ui.painter().rect_filled(
+                        ui.available_rect_before_wrap(),
+                        0.0,
+                        Color32::from_gray(40),
+                    );
+
+                    ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.add_space(20.0);
+                        ui.add(
+                            Image::from(Asset::larger())
+                                .tint(Color32::WHITE)
+                                .maintain_aspect_ratio(true)
+                                .fit_to_exact_size(Vec2::splat(20.0)),
+                        );
+                        ui.add(Slider::new(&mut state.scale, 0.5..=1.5).show_value(false));
+                        ui.add(
+                            Image::from(Asset::smaller())
+                                .tint(Color32::WHITE)
+                                .maintain_aspect_ratio(true)
+                                .fit_to_exact_size(Vec2::splat(20.0)),
+                        );
+                    });
+                });
             }
             None => {
                 ui.label("No folder selected");

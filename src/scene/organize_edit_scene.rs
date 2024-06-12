@@ -54,7 +54,6 @@ impl OrganizeEditScene {
 
 impl Scene for OrganizeEditScene {
     fn ui(&mut self, ui: &mut Ui) -> SceneResponse {
-
         ui.painter().rect_filled(
             Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 50.0)),
             0.0,
@@ -91,14 +90,13 @@ impl Scene for OrganizeEditScene {
                         );
                     });
                 });
-                
             });
 
             ui.add_space(10.0);
 
             let scene_response = ui
                 .allocate_ui(
-                    Vec2::new(ui.available_width(), ui.available_height() - 50.0),
+                    Vec2::new(ui.available_width(), ui.available_height()),
                     |ui| match &self.current {
                         Either::Left(organize) => {
                             let mut organize = organize.write().unwrap();

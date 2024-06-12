@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use egui::menu;
+use egui::{menu, Color32};
 use egui_tiles::UiResponse;
 use log::info;
 
@@ -26,6 +26,7 @@ impl Default for GallerySceneState {
             image_gallery_state: ImageGalleryState {
                 selected_images: HashSet::new(),
                 current_dir: None,
+                scale: 0.5,
             },
         }
     }

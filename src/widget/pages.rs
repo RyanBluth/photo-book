@@ -71,12 +71,7 @@ impl<'a> Pages<'a> {
             .on_hover_text("Add a new page")
             .clicked()
         {
-            self.state.pages.insert(
-                next_page_id(),
-                CanvasState::with_template(
-                    template::BUILT_IN[1].clone()
-                ),
-            );
+            self.state.pages.insert(next_page_id(), CanvasState::new());
         }
 
         let mut clicked_page = None;
