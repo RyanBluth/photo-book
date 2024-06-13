@@ -2,6 +2,8 @@ use eframe::egui::{Grid, Widget};
 
 use crate::photo::{Photo, PhotoMetadataField};
 
+use super::spacer::Spacer;
+
 pub struct PhotoInfo<'a> {
     pub photo: &'a Photo,
 }
@@ -17,8 +19,7 @@ impl<'a> Widget for PhotoInfo<'a> {
         ui.allocate_ui(ui.available_size(), |ui| {
             Grid::new("photo_info_grid")
                 .striped(true)
-                .num_columns(3)
-                .max_col_width(200.0)
+                .num_columns(4)
                 .show(ui, |ui| {
                     for (label, value) in self.photo.metadata.iter() {
                         ui.label(format!("{}", label));
@@ -28,7 +29,8 @@ impl<'a> Widget for PhotoInfo<'a> {
                                 open::that_in_background(path.parent().unwrap());
                             }
                         }
-                        ui.end_row()
+                        Spacer::new(ui.available_width(), 1.0).ui(ui);
+                        ui.end_row();
                     }
                 });
         })

@@ -107,7 +107,6 @@ impl PhotoBookApp {
 impl eframe::App for PhotoBookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
-
         if !self.loaded_fonts {
             self.loaded_fonts = true;
             // Just load all fonts at start up. Maybe there's a better time to do this?
@@ -128,5 +127,7 @@ impl eframe::App for PhotoBookApp {
         Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
             cursor_manager.end_frame(ctx);
         });
+
+        ctx.request_repaint();
     }
 }

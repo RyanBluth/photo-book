@@ -1,13 +1,16 @@
 use std::collections::HashSet;
 
-use egui::{menu, Color32};
+use egui::{menu, Color32, Widget};
 use egui_tiles::UiResponse;
 use log::info;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo_manager::{PhotoLoadResult, PhotoManager},
-    widget::image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
+    widget::{
+        image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
+        photo_info::PhotoInfo,
+    },
 };
 
 use super::{
@@ -35,6 +38,7 @@ impl Default for GallerySceneState {
 #[derive(Debug, Clone, PartialEq)]
 pub enum GalleryScenePane {
     Gallery,
+    PhotoInfo,
 }
 
 #[derive(Debug, Clone)]
@@ -47,15 +51,23 @@ impl GalleryScene {
     pub fn new() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
-        let gallery = GalleryScenePane::Gallery;
+        let gallery_pane_id = tiles.insert_pane(GalleryScenePane::Gallery);
+        let info_pane_id = tiles.insert_pane(GalleryScenePane::PhotoInfo);
 
-        let mut tabs = vec![];
+        let mut linear_layout = egui_tiles::Linear::new(
+            egui_tiles::LinearDir::Horizontal,
+            vec![gallery_pane_id, info_pane_id],
+        );
 
-        tabs.push(tiles.insert_pane(gallery));
+        linear_layout.shares.set_share(info_pane_id, 0.2);
 
         Self {
             state: GallerySceneState::default(),
-            tree: egui_tiles::Tree::new("organize_scene_tree", tiles.insert_tab_tile(tabs), tiles),
+            tree: egui_tiles::Tree::new(
+                "organize_scene_tree",
+                tiles.insert_container(linear_layout),
+                tiles,
+            ),
         }
     }
 }
@@ -154,6 +166,21 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                             });
                         }
                     }
+                }
+            }
+            GalleryScenePane::PhotoInfo => {
+                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+                let gallery_state = &self.scene_state.image_gallery_state;
+
+                if let Some(selected_image) = gallery_state.selected_images.iter().next() {
+                    photo_manager.with_lock(|photo_manager| {
+                        if let PhotoLoadResult::Ready(photo) =
+                            photo_manager.photos[selected_image].clone()
+                        {
+                            PhotoInfo::new(&photo).ui(ui);
+                        }
+                    });
                 }
             }
         }

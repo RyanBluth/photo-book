@@ -135,6 +135,7 @@ impl Scene for CanvasScene {
                         log::info!("Exporting... {:.0}%", progress * 100.0);
                     }
                     Some(ExportTaskStatus::Completed) | None => {
+                        log::info!("Export Complete");
                         self.state.export_task_id = None;
                     }
                 }

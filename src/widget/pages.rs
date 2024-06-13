@@ -76,6 +76,8 @@ impl<'a> Pages<'a> {
 
         let mut clicked_page = None;
 
+        ui.set_clip_rect(ui.available_rect_before_wrap());
+
         egui_extras::TableBuilder::new(ui)
             .min_scrolled_height(window_height)
             .columns(Column::exact(column_width), num_columns)

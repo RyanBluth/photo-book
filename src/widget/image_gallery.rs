@@ -61,7 +61,7 @@ impl<'a> ImageGallery<'a> {
                         let column_width: f32 = 256.0 * state.scale;
                         let row_height = 256.0 * state.scale;
                         let num_columns: usize =
-                            (table_size.x / (column_width + spacing)).floor() as usize;
+                            (table_size.x / (column_width + spacing)).floor().max(1.0) as usize;
 
                         //let padding_size = num_columns as f32 * 10.0;
                         let spacer_width = (table_size.x
