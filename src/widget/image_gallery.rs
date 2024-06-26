@@ -6,10 +6,13 @@ use eframe::{
 };
 
 use egui::{Color32, Image, Layout, Pos2, Rect, Sense, Slider};
-use egui_extras::Column;
+use egui_extras::{Column, TableRow};
+use skia_safe::luma_color_filter::new;
 
 use crate::{
-    assets::Asset, dependencies::{Dependency, Singleton, SingletonFor}, photo_manager::PhotoManager
+    assets::Asset,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    photo_manager::{PhotoManager, PhotosGrouping},
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
@@ -70,10 +73,46 @@ impl<'a> ImageGallery<'a> {
                             - ui.spacing().item_spacing.x)
                             .max(0.0);
 
-                        let num_photos =
-                            photo_manager.with_lock(|photo_manager| photo_manager.photos.len());
+                        let grouped_photos = photo_manager.with_lock_mut(|photo_manager| {
+                            photo_manager.group_photos_by(PhotosGrouping::Date).clone()
+                        });
+                        
+                        struct RowMetadata {
+                            height: f32,
+                            is_title: bool,
+                            section: String,
+                            row_index_in_section: usize,
+                        }
 
-                        let num_rows = num_photos.div_ceil(num_columns);
+                        let row_metadatas: Vec<RowMetadata> = {
+                            grouped_photos
+                                .iter()
+                                .map(|(title, group)| {
+                                    let rows = group.len().div_ceil(num_columns);
+
+                                    let mut metadatas: Vec<RowMetadata> = vec![RowMetadata {
+                                        height: 30.0,
+                                        is_title: true,
+                                        section: title.clone(),
+                                        row_index_in_section: 0,
+                                    }];
+
+                                    for row_idx in 0..rows {
+                                        metadatas.push(RowMetadata {
+                                            height: row_height,
+                                            is_title: false,
+                                            section: title.clone(),
+                                            row_index_in_section: row_idx,
+                                        });
+                                    }
+
+                                    metadatas
+                                })
+                                .flatten()
+                                .collect()
+                        };
+
+                        let heights: Vec<f32> = row_metadatas.iter().map(|x| x.height).collect();
 
                         egui_extras::TableBuilder::new(ui)
                             .min_scrolled_height(table_size.y)
@@ -81,64 +120,81 @@ impl<'a> ImageGallery<'a> {
                             .columns(Column::exact(column_width), num_columns)
                             .column(Column::exact(spacer_width))
                             .body(|body| {
-                                body.rows(row_height, num_rows, |mut row| {
-                                    let offest = row.index() * num_columns;
-                                    for i in 0..num_columns {
-                                        if offest + i >= num_photos {
-                                            break;
+                                body.heterogeneous_rows(heights.into_iter(), |mut row| {
+                                    let row_index = row.index();
+                                    let metadata = &row_metadatas[row_index];
+                                    let offest = metadata.row_index_in_section * num_columns;
+
+                                    let group = grouped_photos.get(&metadata.section).unwrap();
+
+                                    if metadata.is_title {
+                                        row.col(|ui| {
+                                            ui.vertical(|ui|{
+                                                ui.add_space(10.0);
+                                                ui.heading(metadata.section.clone());
+                                            });
+                                        });
+                                    } else {
+                                        for i in 0..num_columns {
+                                            if offest + i >= group.len() {
+                                                break;
+                                            }
+
+                                            row.col(|ui: &mut Ui| {
+                                                let photo = &group[offest + i];
+                                                photo_manager.with_lock_mut(|photo_manager| {
+                                                    let image = GalleryImage::new(
+                                                        photo.clone(),
+                                                        photo_manager.thumbnail_texture_for(
+                                                            photo,
+                                                            ui.ctx(),
+                                                        ),
+                                                        selected_images.contains(&photo.path),
+                                                    );
+
+                                                    let image_response = ui.add(image);
+
+                                                    if image_response.clicked() {
+                                                        let ctrl_held =
+                                                            ui.input(|input| input.modifiers.ctrl);
+                                                        if ctrl_held {
+                                                            if selected_images.contains(&photo.path)
+                                                            {
+                                                                selected_images.remove(&photo.path);
+                                                            } else {
+                                                                selected_images
+                                                                    .insert(photo.path.clone());
+                                                            }
+                                                        } else {
+                                                            selected_images.clear();
+                                                            selected_images
+                                                                .insert(photo.path.clone());
+                                                        }
+                                                    }
+
+                                                    if image_response.double_clicked() {
+                                                        response = Some(
+                                                            ImageGalleryResponse::ViewPhotoAt(
+                                                                offest + i,
+                                                            ),
+                                                        );
+                                                    } else if image_response.middle_clicked() {
+                                                        response = Some(
+                                                            ImageGalleryResponse::EditPhotoAt(
+                                                                offest + i,
+                                                            ),
+                                                        );
+                                                    }
+                                                });
+                                            });
                                         }
 
                                         row.col(|ui| {
-                                            photo_manager.with_lock_mut(|photo_manager| {
-                                                let photo =
-                                                    photo_manager.photos[offest + i].clone();
-
-                                                let image = GalleryImage::new(
-                                                    photo.clone(),
-                                                    photo_manager
-                                                        .tumbnail_texture_at(offest + i, ui.ctx()),
-                                                    selected_images.contains(photo.path()),
-                                                );
-
-                                                let image_response = ui.add(image);
-
-                                                if image_response.clicked() {
-                                                    let ctrl_held =
-                                                        ui.input(|input| input.modifiers.ctrl);
-                                                    if ctrl_held {
-                                                        if selected_images.contains(photo.path()) {
-                                                            selected_images.remove(photo.path());
-                                                        } else {
-                                                            selected_images
-                                                                .insert(photo.path().clone());
-                                                        }
-                                                    } else {
-                                                        selected_images.clear();
-                                                        selected_images
-                                                            .insert(photo.path().clone());
-                                                    }
-                                                }
-
-                                                if image_response.double_clicked() {
-                                                    response =
-                                                        Some(ImageGalleryResponse::ViewPhotoAt(
-                                                            offest + i,
-                                                        ));
-                                                } else if image_response.middle_clicked() {
-                                                    response =
-                                                        Some(ImageGalleryResponse::EditPhotoAt(
-                                                            offest + i,
-                                                        ));
-                                                }
-                                            });
+                                            ui.add(Spacer::new(spacer_width, row_height));
                                         });
                                     }
-
-                                    row.col(|ui| {
-                                        ui.add(Spacer::new(spacer_width, row_height));
-                                    });
-                                })
-                            });
+                                });
+                            })
                     });
 
                     ui.painter().rect_filled(

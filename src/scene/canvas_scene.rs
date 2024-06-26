@@ -193,79 +193,62 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     Some(response) => match response {
                         ImageGalleryResponse::ViewPhotoAt(index) => {
                             let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                            if let (index, Some(photo_result)) =
-                                photo_manager.with_lock(|photo_manager| {
-                                    (
-                                        index,
-                                        photo_manager.photos.get_index(index).map(|x| x.1.clone()),
-                                    )
-                                })
-                            {
-                                match photo_result {
-                                    photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
-                                    photo_manager::PhotoLoadResult::Ready(photo) => {
-                                        self.navigator.push(Viewer(ViewerScene::new(photo, index)))
-                                    }
-                                }
+                            if let (index, Some(photo)) = photo_manager.with_lock(|photo_manager| {
+                                (
+                                    index,
+                                    photo_manager.photos.get_index(index).map(|x| x.1.clone()),
+                                )
+                            }) {
+                                self.navigator.push(Viewer(ViewerScene::new(photo, index)));
                             }
                         }
                         ImageGalleryResponse::EditPhotoAt(index) => {
                             let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                            if let Some(photo_result) = photo_manager.with_lock(|photo_manager| {
+                            if let Some(photo) = photo_manager.with_lock(|photo_manager| {
                                 photo_manager.photos.get_index(index).map(|x| x.1.clone())
                             }) {
-                                match photo_result {
-                                    photo_manager::PhotoLoadResult::Pending(_path) => todo!(),
-                                    photo_manager::PhotoLoadResult::Ready(photo) => {
-                                        let is_template =
-                                            self.scene_state.canvas_state.template.is_some();
+                                let is_template = self.scene_state.canvas_state.template.is_some();
 
-                                        if is_template {
-                                            let mut selected_template_photos: Vec<_> = self
-                                                .scene_state
-                                                .canvas_state
-                                                .layers
-                                                .iter_mut()
-                                                .filter(|(_, layer)| {
-                                                    matches!(
-                                                        layer.content,
-                                                        LayerContent::TemplatePhoto { .. }
-                                                    ) && layer.selected
-                                                })
-                                                .collect();
+                                if is_template {
+                                    let mut selected_template_photos: Vec<_> = self
+                                        .scene_state
+                                        .canvas_state
+                                        .layers
+                                        .iter_mut()
+                                        .filter(|(_, layer)| {
+                                            matches!(
+                                                layer.content,
+                                                LayerContent::TemplatePhoto { .. }
+                                            ) && layer.selected
+                                        })
+                                        .collect();
 
-                                            if selected_template_photos.len() == 1 {
-                                                if let LayerContent::TemplatePhoto {
-                                                    region: _,
-                                                    photo: canvas_photo,
-                                                    scale_mode: _,
-                                                } = &mut selected_template_photos[0].1.content
-                                                {
-                                                    *canvas_photo =
-                                                        Some(CanvasPhoto::new(photo.clone()));
-                                                }
-
-                                                self.scene_state.history_manager.save_history(
-                                                    CanvasHistoryKind::AddPhoto,
-                                                    &mut self.scene_state.canvas_state,
-                                                );
-                                            } else if selected_template_photos.len() > 1
-                                                || selected_template_photos.is_empty()
-                                            {
-                                                // TODO: Show error message saying that only one template photo can be selected
-                                            }
-                                        } else {
-                                            let layer = Layer::with_photo(photo.clone());
-                                            self.scene_state
-                                                .canvas_state
-                                                .layers
-                                                .insert(layer.id, layer);
-                                            self.scene_state.history_manager.save_history(
-                                                CanvasHistoryKind::AddPhoto,
-                                                &mut self.scene_state.canvas_state,
-                                            );
+                                    if selected_template_photos.len() == 1 {
+                                        if let LayerContent::TemplatePhoto {
+                                            region: _,
+                                            photo: canvas_photo,
+                                            scale_mode: _,
+                                        } = &mut selected_template_photos[0].1.content
+                                        {
+                                            *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
                                         }
+
+                                        self.scene_state.history_manager.save_history(
+                                            CanvasHistoryKind::AddPhoto,
+                                            &mut self.scene_state.canvas_state,
+                                        );
+                                    } else if selected_template_photos.len() > 1
+                                        || selected_template_photos.is_empty()
+                                    {
+                                        // TODO: Show error message saying that only one template photo can be selected
                                     }
+                                } else {
+                                    let layer = Layer::with_photo(photo.clone());
+                                    self.scene_state.canvas_state.layers.insert(layer.id, layer);
+                                    self.scene_state.history_manager.save_history(
+                                        CanvasHistoryKind::AddPhoto,
+                                        &mut self.scene_state.canvas_state,
+                                    );
                                 }
                             }
                         }

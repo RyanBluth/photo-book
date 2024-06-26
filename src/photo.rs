@@ -1,9 +1,15 @@
 use std::{
-    collections::HashMap, f32::consts::PI, fmt::Display, fs::File, hash::Hash, hash::Hasher,
-    io::BufReader, path::PathBuf,
+    collections::HashMap,
+    f32::consts::PI,
+    fmt::Display,
+    fs::File,
+    hash::{Hash, Hasher},
+    io::BufReader,
+    path::PathBuf,
+    str::FromStr,
 };
 
-use crate::dependencies::SingletonFor;
+use crate::{dependencies::SingletonFor, utils::ExifDateTimeExt};
 
 use anyhow::anyhow;
 use eframe::{
@@ -11,6 +17,8 @@ use eframe::{
     epaint::{Pos2, Rect, Vec2},
 };
 
+use chrono::{DateTime, Utc};
+use egui::TextBuffer;
 use exif::{In, Reader, SRational, Tag, Value};
 
 macro_rules! metadata_fields {
@@ -136,7 +144,7 @@ metadata_fields!(
     (RotatedWidth, usize),
     (RotatedHeight, usize),
     (Camera, String),
-    (DateTime, String),
+    (DateTime, DateTime<Utc>),
     (ISO, u32),
     (ShutterSpeed, SRational),
     (Aperture, SRational),
@@ -284,11 +292,12 @@ impl PhotoMetadata {
             if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
                 match field.value {
                     Value::Ascii(ref vec) => {
-                        if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::DateTime(
-                                String::from_utf8_lossy(value).to_string(),
-                            ));
-                        }
+                        vec.first()
+                            .and_then(|value| exif::DateTime::from_ascii(value).ok())
+                            .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok())
+                            .map(|date_time| {
+                                fields.insert(PhotoMetadataField::DateTime(date_time))
+                            });
                     }
                     _ => {}
                 }

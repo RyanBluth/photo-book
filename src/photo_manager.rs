@@ -1,10 +1,12 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::read_dir,
+    hash::Hash,
     io::BufWriter,
     path::PathBuf,
 };
 
+use chrono::Datelike;
 use eframe::{
     egui::{
         load::{SizedTexture, TextureLoader},
@@ -13,7 +15,8 @@ use eframe::{
     epaint::util::FloatOrd,
 };
 use image::{
-    codecs::{jpeg::JpegEncoder, png::PngEncoder}, ExtendedColorType,
+    codecs::{jpeg::JpegEncoder, png::PngEncoder},
+    ExtendedColorType,
 };
 use indexmap::IndexMap;
 use log::{error, info};
@@ -22,7 +25,7 @@ use tokio::task::spawn_blocking;
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
-    photo::Photo,
+    photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel},
 };
 
 use std::fs::create_dir;
@@ -57,10 +60,15 @@ impl PhotoLoadResult {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PhotosGrouping {
+    Date,
+}
+
 #[derive(Debug)]
 pub struct PhotoManager {
-    pub photos: IndexMap<PathBuf, PhotoLoadResult>,
-
+    pub photos: IndexMap<PathBuf, Photo>,
+    grouped_photos: Option<(PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>)>,
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
     thumbnail_existence_cache: HashSet<PathBuf>,
@@ -70,6 +78,7 @@ impl PhotoManager {
     pub fn new() -> Self {
         Self {
             photos: IndexMap::new(),
+            grouped_photos: None,
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
             thumbnail_existence_cache: HashSet::new(),
@@ -86,7 +95,9 @@ impl PhotoManager {
                 let entry = entry.as_ref().unwrap();
                 let path = entry.path();
 
-                if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
+                let lowercase_extension = path.extension().unwrap_or_default().to_ascii_lowercase();
+
+                if lowercase_extension != "jpg" && lowercase_extension != "jpeg" {
                     continue;
                 }
 
@@ -94,14 +105,27 @@ impl PhotoManager {
             }
 
             Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                for photo in pending_photos {
+                for photo_path in pending_photos {
                     photo_manager
                         .photos
-                        .insert(photo.clone(), PhotoLoadResult::Pending(photo.clone()));
+                        .insert(photo_path.clone(), Photo::new(photo_path));
                 }
-            });
 
-            //ctx.request_repaint();
+                photo_manager.photos.sort_by(|_, a, _, b| {
+                    match (
+                        a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                        b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                    ) {
+                        (
+                            Some(PhotoMetadataField::DateTime(a)),
+                            Some(PhotoMetadataField::DateTime(b)),
+                        ) => b.cmp(a),
+                        _ => b.path.cmp(&a.path),
+                    }
+                });
+
+                photo_manager.grouped_photos = None;
+            });
 
             let photo_paths: Vec<PathBuf> =
                 Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
@@ -112,35 +136,65 @@ impl PhotoManager {
                         .collect::<Vec<PathBuf>>()
                 });
 
-            let mut ready_photos = Vec::new();
-
-            for entry in entries {
-                let entry = entry.as_ref().unwrap();
-                let path = entry.path();
-
-                if path.extension().unwrap_or_default().to_ascii_lowercase() != "jpg" {
-                    continue;
-                }
-
-                ready_photos.push(Photo::new(path.clone()));
-
-                // ctx.request_repaint();
-            }
-
-            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                for photo in ready_photos {
-                    photo_manager
-                        .photos
-                        .insert(photo.path.clone(), PhotoLoadResult::Ready(photo.clone()));
-                }
-            });
-
             Self::gen_thumbnails(path.clone(), photo_paths);
 
             Ok(())
         });
 
         Ok(())
+    }
+
+    pub fn group_photos_by(
+        &mut self,
+        photos_grouping: PhotosGrouping,
+    ) -> &IndexMap<String, IndexMap<PathBuf, Photo>> {
+
+        if let Some((grouping, _)) = &self.grouped_photos {
+            if grouping == &photos_grouping {
+                return &self.grouped_photos.as_ref().unwrap().1;
+            }
+        }
+
+        let photos = &self.photos;
+        match photos_grouping {
+            PhotosGrouping::Date => {
+                let mut grouped_photos: IndexMap<String, IndexMap<PathBuf, Photo>> =
+                    IndexMap::new();
+
+                for (photo_path, photo) in photos.iter() {
+                    let date_time = photo
+                        .metadata
+                        .fields
+                        .get(PhotoMetadataFieldLabel::DateTime)
+                        .and_then(|field| match field {
+                            PhotoMetadataField::DateTime(date_time) => Some(date_time),
+                            _ => None,
+                        });
+
+                    if let Some(date_time) = date_time {
+                        let year = date_time.year();
+                        let month = date_time.month();
+                        let day = date_time.day();
+
+                        let key = format!("{:04}-{:02}-{:02}", year, month, day);
+
+                        if let Some(group) = grouped_photos.get_mut(&key) {
+                            group.insert(photo_path.clone(), photo.clone());
+                        } else {
+                            let mut group = IndexMap::new();
+                            group.insert(photo_path.clone(), photo.clone());
+                            grouped_photos.insert(key, group);
+                        }
+                    }
+                }
+
+                grouped_photos.sort_by(|a, _, b, _| b.cmp(&a));
+
+                self.grouped_photos = Some((PhotosGrouping::Date, grouped_photos));
+            }
+        }
+
+        &self.grouped_photos.as_ref().unwrap().1
     }
 
     pub fn thumbnail_texture_for(
@@ -166,7 +220,7 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
-            Some((_, PhotoLoadResult::Ready(photo))) => {
+            Some((_, photo)) => {
                 if !self.thumbnail_existence_cache.contains(&photo.path) {
                     return Ok(None);
                 }
@@ -225,7 +279,7 @@ impl PhotoManager {
 
     pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
-            Some((_, PhotoLoadResult::Ready(photo))) => Self::load_texture(
+            Some((_, photo)) => Self::load_texture(
                 &photo.uri(),
                 ctx,
                 &mut self.texture_cache,
@@ -242,10 +296,8 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let next_index = (current_index + 1) % self.photos.len();
         match self.photos.get_index(next_index) {
-            Some((_, PhotoLoadResult::Ready(next_photo))) => {
-                if let Some((_, PhotoLoadResult::Ready(current_photo))) =
-                    self.photos.get_index(current_index)
-                {
+            Some((_, next_photo)) => {
+                if let Some((_, current_photo)) = self.photos.get_index(current_index) {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
                         ctx.forget_image(&current_photo.uri());
@@ -266,10 +318,8 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let prev_index = (current_index + self.photos.len() - 1) % self.photos.len();
         match self.photos.get_index(prev_index) {
-            Some((_, PhotoLoadResult::Ready(previous_photo))) => {
-                if let Some((_, PhotoLoadResult::Ready(current_photo))) =
-                    self.photos.get_index(current_index)
-                {
+            Some((_, previous_photo)) => {
+                if let Some((_, current_photo)) = self.photos.get_index(current_index) {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
                         info!("Freeing texture for photo {}", current_photo.uri());
                         ctx.forget_image(&current_photo.uri());
@@ -437,7 +487,8 @@ impl PhotoManager {
                 let width = img.width();
                 let height = img.height();
 
-                let non_zero_width = NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
+                let non_zero_width =
+                    NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
                 let non_zero_height =
                     NonZeroU32::new(img.height()).ok_or(anyhow!("Invalid image height"))?;
                 let mut src_image = fr::Image::from_vec_u8(
@@ -449,7 +500,11 @@ impl PhotoManager {
                     } else {
                         img.into_rgb8().into_raw()
                     },
-                    if color_type.has_alpha() { fr::PixelType::U8x4 } else { fr::PixelType::U8x3 },
+                    if color_type.has_alpha() {
+                        fr::PixelType::U8x4
+                    } else {
+                        fr::PixelType::U8x3
+                    },
                 )?;
 
                 // Multiple RGB channels of source image by alpha channel

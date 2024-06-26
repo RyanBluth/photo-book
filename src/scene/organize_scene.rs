@@ -140,29 +140,23 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                         ImageGalleryResponse::ViewPhotoAt(index) => {
                             photo_manager.with_lock(|photo_manager| {
                                 // TODO: Allow clicking on a pending photo
-                                if let PhotoLoadResult::Ready(photo) =
-                                    photo_manager.photos[index].clone()
-                                {
-                                    self.navigator
-                                        .push(SceneTransition::Viewer(ViewerScene::new(
-                                            photo, index,
-                                        )));
-                                }
+                                let photo = photo_manager.photos[index].clone();
+
+                                self.navigator
+                                    .push(SceneTransition::Viewer(ViewerScene::new(photo, index)));
                             });
                         }
                         ImageGalleryResponse::EditPhotoAt(index) => {
                             photo_manager.with_lock(|photo_manager| {
                                 // TODO: Allow clicking on a pending photo
-                                if let PhotoLoadResult::Ready(photo) =
-                                    photo_manager.photos[index].clone()
-                                {
-                                    self.navigator.push(SceneTransition::Canvas(
-                                        CanvasScene::with_photo(
-                                            photo,
-                                            Some(self.scene_state.image_gallery_state.clone()),
-                                        ),
-                                    ));
-                                }
+                                let photo = photo_manager.photos[index].clone();
+
+                                self.navigator.push(SceneTransition::Canvas(
+                                    CanvasScene::with_photo(
+                                        photo,
+                                        Some(self.scene_state.image_gallery_state.clone()),
+                                    ),
+                                ));
                             });
                         }
                     }
@@ -175,11 +169,9 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
 
                 if let Some(selected_image) = gallery_state.selected_images.iter().next() {
                     photo_manager.with_lock(|photo_manager| {
-                        if let PhotoLoadResult::Ready(photo) =
-                            photo_manager.photos[selected_image].clone()
-                        {
-                            PhotoInfo::new(&photo).ui(ui);
-                        }
+                        let photo = photo_manager.photos[selected_image].clone();
+
+                        PhotoInfo::new(&photo).ui(ui);
                     });
                 }
             }

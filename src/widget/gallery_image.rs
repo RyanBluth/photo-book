@@ -5,18 +5,19 @@ use eframe::{
 use log::error;
 
 use crate::{
-    photo_manager::PhotoLoadResult, utils::Truncate, widget::placeholder::RectPlaceholder,
+    photo::Photo, photo_manager::PhotoLoadResult, utils::Truncate,
+    widget::placeholder::RectPlaceholder,
 };
 
 pub struct GalleryImage {
-    photo: PhotoLoadResult,
+    photo: Photo,
     texture: anyhow::Result<Option<SizedTexture>>,
     selected: bool,
 }
 
 impl GalleryImage {
     pub fn new(
-        photo: PhotoLoadResult,
+        photo: Photo,
         texture: anyhow::Result<Option<SizedTexture>>,
         selected: bool,
     ) -> Self {
@@ -31,7 +32,7 @@ impl GalleryImage {
 impl Widget for GalleryImage {
     fn ui(self, ui: &mut Ui) -> Response {
         let response = ui.push_id(
-            format!("GalleryImage_{}", self.photo.path().display()),
+            format!("GalleryImage_{}", self.photo.path.display()),
             |ui| {
                 // let other = ui.allocate_response(Self::SIZE, Sense::click());
 
@@ -39,23 +40,20 @@ impl Widget for GalleryImage {
 
                 let size = ui.available_size();
 
-                let image_size = match &self.photo {
-                    PhotoLoadResult::Pending(_) => Vec2::new(size.x * 0.9, size.y * 0.9),
-                    PhotoLoadResult::Ready(photo) => match photo.max_dimension() {
-                        crate::photo::MaxPhotoDimension::Width => Vec2::new(
-                            size.x * 0.9,
-                            photo.metadata.rotated_height() as f32
-                                / photo.metadata.rotated_width() as f32
-                                * size.x
-                                * 0.9,
-                        ),
-                        crate::photo::MaxPhotoDimension::Height => Vec2::new(
-                            photo.metadata.rotated_width() as f32
-                                / photo.metadata.rotated_height() as f32
-                                * size.y,
-                            size.y,
-                        ),
-                    },
+                let image_size = match self.photo.max_dimension() {
+                    crate::photo::MaxPhotoDimension::Width => Vec2::new(
+                        size.x * 0.9,
+                        self.photo.metadata.rotated_height() as f32
+                            / self.photo.metadata.rotated_width() as f32
+                            * size.x
+                            * 0.9,
+                    ),
+                    crate::photo::MaxPhotoDimension::Height => Vec2::new(
+                        self.photo.metadata.rotated_width() as f32
+                            / self.photo.metadata.rotated_height() as f32
+                            * size.y,
+                        size.y,
+                    ),
                 };
 
                 let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -82,18 +80,13 @@ impl Widget for GalleryImage {
                         ui.horizontal(|ui| {
                             ui.add_space(10.0);
 
-                            ui.label(self.photo.path().display().truncate(30));
+                            ui.label(self.photo.path.display().truncate(30));
                         });
 
                         ui.centered_and_justified(|ui| {
                             match self.texture {
                                 Ok(Some(texture)) => {
-                                    let rotation = match self.photo {
-                                        PhotoLoadResult::Pending(_) => {
-                                            crate::photo::PhotoRotation::Normal
-                                        }
-                                        PhotoLoadResult::Ready(photo) => photo.metadata.rotation(),
-                                    };
+                                    let rotation = self.photo.metadata.rotation();
 
                                     ui.add(
                                         Image::from_texture(texture)
@@ -112,7 +105,7 @@ impl Widget for GalleryImage {
                                         .ui(ui);
                                     error!(
                                         "Failed to load image: {:?}. {:?}",
-                                        self.photo.path(),
+                                        self.photo.path,
                                         err
                                     );
                                 }

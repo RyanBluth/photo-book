@@ -1,5 +1,6 @@
 use std::{fmt::Display, str::FromStr};
 
+use chrono::{ParseError, TimeZone, Utc};
 use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
@@ -256,5 +257,18 @@ impl EguiExt for Ui {
             response.inner,
             self.interact(response.response.rect, self.next_auto_id(), Sense::click()),
         )
+    }
+}
+
+pub trait ExifDateTimeExt {
+    fn into_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError>;
+}
+
+impl ExifDateTimeExt for exif::DateTime {
+    fn into_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError> {
+        let naive_datetime =
+            chrono::NaiveDateTime::parse_from_str(&self.to_string(), "%Y-%m-%d %H:%M:%S")?;
+        let datetime = Utc.from_utc_datetime(&naive_datetime);
+        Ok(datetime)
     }
 }
