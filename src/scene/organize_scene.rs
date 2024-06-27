@@ -137,13 +137,11 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
 
                 if let Some(gallery_response) = gallery_response {
                     match gallery_response {
-                        ImageGalleryResponse::ViewPhotoAt(index) => {
+                        ImageGalleryResponse::ViewPhoto(photo) => {
                             photo_manager.with_lock(|photo_manager| {
-                                // TODO: Allow clicking on a pending photo
-                                let photo = photo_manager.photos[index].clone();
 
                                 self.navigator
-                                    .push(SceneTransition::Viewer(ViewerScene::new(photo, index)));
+                                    .push(SceneTransition::Viewer(ViewerScene::new(photo)));
                             });
                         }
                         ImageGalleryResponse::EditPhotoAt(index) => {

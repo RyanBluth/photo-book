@@ -10,9 +10,7 @@ use egui_extras::{Column, TableRow};
 use skia_safe::luma_color_filter::new;
 
 use crate::{
-    assets::Asset,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    photo_manager::{PhotoManager, PhotosGrouping},
+    assets::Asset, dependencies::{Dependency, Singleton, SingletonFor}, photo::Photo, photo_manager::{PhotoManager, PhotosGrouping}
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
@@ -30,7 +28,7 @@ pub struct ImageGallery<'a> {
 }
 
 pub enum ImageGalleryResponse {
-    ViewPhotoAt(usize),
+    ViewPhoto(Photo),
     EditPhotoAt(usize),
 }
 
@@ -174,8 +172,8 @@ impl<'a> ImageGallery<'a> {
 
                                                     if image_response.double_clicked() {
                                                         response = Some(
-                                                            ImageGalleryResponse::ViewPhotoAt(
-                                                                offest + i,
+                                                            ImageGalleryResponse::ViewPhoto(
+                                                                photo.clone(),
                                                             ),
                                                         );
                                                     } else if image_response.middle_clicked() {

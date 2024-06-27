@@ -148,7 +148,6 @@ impl PhotoManager {
         &mut self,
         photos_grouping: PhotosGrouping,
     ) -> &IndexMap<String, IndexMap<PathBuf, Photo>> {
-
         if let Some((grouping, _)) = &self.grouped_photos {
             if grouping == &photos_grouping {
                 return &self.grouped_photos.as_ref().unwrap().1;
@@ -291,9 +290,12 @@ impl PhotoManager {
 
     pub fn next_photo(
         &mut self,
-        current_index: usize,
+        current_photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
+        let current_index = self
+            .index_for_photo(current_photo)
+            .ok_or(anyhow!("Photo not found"))?;
         let next_index = (current_index + 1) % self.photos.len();
         match self.photos.get_index(next_index) {
             Some((_, next_photo)) => {
@@ -313,9 +315,12 @@ impl PhotoManager {
 
     pub fn previous_photo(
         &mut self,
-        current_index: usize,
+        current_photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
+        let current_index = self
+            .index_for_photo(current_photo)
+            .ok_or(anyhow!("Photo not found"))?;
         let prev_index = (current_index + self.photos.len() - 1) % self.photos.len();
         match self.photos.get_index(prev_index) {
             Some((_, previous_photo)) => {
@@ -331,6 +336,10 @@ impl PhotoManager {
             }
             _ => Ok(None),
         }
+    }
+
+    fn index_for_photo(&self, photo: &Photo) -> Option<usize> {
+        self.photos.get_full(&photo.path).map(|(index, _, _)| index)
     }
 
     fn load_texture(

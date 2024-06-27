@@ -15,15 +15,13 @@ use super::{NavigationRequest, Navigator, Scene, SceneResponse};
 
 pub struct ViewerSceneState {
     photo: Photo,
-    index: usize,
     viewer_state: ImageViewerState,
 }
 
 impl ViewerSceneState {
-    fn new(photo: Photo, index: usize) -> Self {
+    fn new(photo: Photo) -> Self {
         Self {
             photo,
-            index,
             viewer_state: ImageViewerState::default(),
         }
     }
@@ -40,7 +38,7 @@ pub struct ViewerScene {
 }
 
 impl ViewerScene {
-    pub fn new(photo: Photo, index: usize) -> Self {
+    pub fn new(photo: Photo) -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
         let viewer_id = tiles.insert_pane(ViewerScenePane::Viewer);
@@ -53,7 +51,7 @@ impl ViewerScene {
         linear_layout.shares.set_share(photo_info_id, 0.2);
 
         Self {
-            state: ViewerSceneState::new(photo, index),
+            state: ViewerSceneState::new(photo),
             tree: egui_tiles::Tree::new(
                 "viewer_scene_tree",
                 tiles.insert_container(linear_layout),
@@ -111,24 +109,22 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                         image_viewer::Request::Previous => {
                             photo_manager.with_lock_mut(|photo_manager| {
                                 let (prev_photo, new_index) = photo_manager
-                                    .previous_photo(self.scene_state.index, ui.ctx())
+                                    .previous_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()
                                     .unwrap();
 
                                 self.scene_state.photo = prev_photo;
-                                self.scene_state.index = new_index;
                                 self.scene_state.viewer_state = ImageViewerState::default();
                             });
                         }
                         image_viewer::Request::Next => {
                             photo_manager.with_lock_mut(|photo_manager| {
                                 let (next_photo, new_index) = photo_manager
-                                    .next_photo(self.scene_state.index, ui.ctx())
+                                    .next_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()
                                     .unwrap();
 
                                 self.scene_state.photo = next_photo;
-                                self.scene_state.index = new_index;
                                 self.scene_state.viewer_state = ImageViewerState::default();
                             });
                         }

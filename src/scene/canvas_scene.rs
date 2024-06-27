@@ -191,16 +191,8 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
                 match ImageGallery::show(ui, &mut self.scene_state.gallery_state) {
                     Some(response) => match response {
-                        ImageGalleryResponse::ViewPhotoAt(index) => {
-                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                            if let (index, Some(photo)) = photo_manager.with_lock(|photo_manager| {
-                                (
-                                    index,
-                                    photo_manager.photos.get_index(index).map(|x| x.1.clone()),
-                                )
-                            }) {
-                                self.navigator.push(Viewer(ViewerScene::new(photo, index)));
-                            }
+                        ImageGalleryResponse::ViewPhoto(photo) => {
+                            self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                         }
                         ImageGalleryResponse::EditPhotoAt(index) => {
                             let photo_manager: Singleton<PhotoManager> = Dependency::get();
