@@ -9,14 +9,14 @@ use sqlx::Either;
 
 use super::{
     canvas_scene::CanvasScene,
-    organize_scene::GalleryScene,
+    organize_scene::{GalleryScene, GallerySceneState},
     Scene, SceneResponse,
     SceneTransition::{self, Viewer},
 };
 
 pub struct OrganizeEditScene {
-    organize: Arc<RwLock<GalleryScene>>,
-    edit: Arc<RwLock<CanvasScene>>,
+    pub organize: Arc<RwLock<GalleryScene>>,
+    pub edit: Arc<RwLock<CanvasScene>>,
     current: Either<Arc<RwLock<GalleryScene>>, Arc<RwLock<CanvasScene>>>,
 }
 

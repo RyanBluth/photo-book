@@ -22,7 +22,7 @@ mod dependencies;
 mod error_sink;
 mod font_manager;
 mod history;
-mod persistence;
+mod project;
 mod photo;
 mod photo_manager;
 mod scene;

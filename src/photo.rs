@@ -20,15 +20,16 @@ use eframe::{
 use chrono::{DateTime, Utc};
 use egui::TextBuffer;
 use exif::{In, Reader, SRational, Tag, Value};
+use serde::{Deserialize, Serialize};
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
-        #[derive(Debug, Clone)]
+        #[derive(Debug, Clone, Serialize, Deserialize)]
         pub enum PhotoMetadataField {
             $( $name($type), )*
         }
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy)]
+        #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy, Serialize, Deserialize)]
         pub enum PhotoMetadataFieldLabel {
             $( $name, )*
         }
@@ -47,7 +48,7 @@ pub enum MaxPhotoDimension {
     Height,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum PhotoRotation {
     Normal,
     MirrorHorizontal,
@@ -115,9 +116,15 @@ impl Display for PhotoRotation {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataCollection {
     fields: HashMap<PhotoMetadataFieldLabel, PhotoMetadataField>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rational {
+    pub num: i32,
+    pub denom: i32,
 }
 
 impl MetadataCollection {
@@ -146,9 +153,9 @@ metadata_fields!(
     (Camera, String),
     (DateTime, DateTime<Utc>),
     (ISO, u32),
-    (ShutterSpeed, SRational),
-    (Aperture, SRational),
-    (FocalLength, SRational)
+    (ShutterSpeed, Rational),
+    (Aperture, Rational),
+    (FocalLength, Rational)
 );
 
 impl Display for PhotoMetadataField {
@@ -199,7 +206,7 @@ impl Display for PhotoMetadataFieldLabel {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PhotoMetadata {
     pub fields: MetadataCollection,
 }
@@ -313,7 +320,7 @@ impl PhotoMetadata {
                 match field.value {
                     Value::Rational(ref vec) => {
                         if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::ShutterSpeed(SRational {
+                            fields.insert(PhotoMetadataField::ShutterSpeed(Rational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
                             }));
@@ -321,7 +328,10 @@ impl PhotoMetadata {
                     }
                     Value::SRational(ref vec) => {
                         if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::ShutterSpeed(*value));
+                            fields.insert(PhotoMetadataField::ShutterSpeed(Rational {
+                                num: value.num as i32,
+                                denom: value.denom as i32,
+                            }));
                         }
                     }
                     _ => {}
@@ -332,7 +342,7 @@ impl PhotoMetadata {
                 match field.value {
                     Value::Rational(ref vec) => {
                         if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::Aperture(SRational {
+                            fields.insert(PhotoMetadataField::Aperture(Rational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
                             }));
@@ -346,7 +356,7 @@ impl PhotoMetadata {
                 match field.value {
                     Value::Rational(ref vec) => {
                         if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::FocalLength(SRational {
+                            fields.insert(PhotoMetadataField::FocalLength(Rational {
                                 num: value.num as i32,
                                 denom: value.denom as i32,
                             }));
@@ -423,7 +433,7 @@ impl PhotoMetadata {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,

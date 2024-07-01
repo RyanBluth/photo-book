@@ -4,10 +4,12 @@ use std::{
 };
 
 use egui::{Grid, Layout, Ui, Vec2};
+use organize_scene::GallerySceneState;
 use sqlx::Either;
 
 use crate::{
     photo::Photo,
+    project::v1,
     widget::{
         image_gallery::ImageGalleryState, image_viewer::ImageViewerState, page_canvas::CanvasState,
     },
@@ -64,14 +66,11 @@ pub trait Scene: Send + Sync {
 }
 
 pub struct SceneManager {
+    root_scene: OrganizeEditScene,
     scenes: Vec<Box<dyn Scene>>,
 }
 
 impl SceneManager {
-    pub fn empty() -> Self {
-        Self { scenes: vec![] }
-    }
-
     pub fn push(&mut self, scene: SceneTransition) {
         self.scenes.push(scene.scene());
     }
@@ -86,27 +85,33 @@ impl SceneManager {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        if let Some(scene) = self.scenes.last_mut() {
-            match scene.ui(ui) {
-                SceneResponse::None => {}
-                SceneResponse::Pop => {
-                    self.pop();
-                }
-                SceneResponse::Push(scene) => {
-                    self.push(scene);
-                }
+        let response = if let Some(scene) = self.scenes.last_mut() {
+            scene.ui(ui)
+        } else {
+            self.root_scene.ui(ui)
+        };
+
+        match response {
+            SceneResponse::None => {}
+            SceneResponse::Pop => {
+                self.pop();
+            }
+            SceneResponse::Push(scene) => {
+                self.push(scene);
             }
         }
+    }
+
+    pub fn root_scene(&self) -> &OrganizeEditScene {
+        &self.root_scene
     }
 }
 
 impl Default for SceneManager {
     fn default() -> Self {
         Self {
-            scenes: vec![Box::new(OrganizeEditScene::new(
-                GalleryScene::new(),
-                CanvasScene::new(),
-            ))],
+            root_scene: OrganizeEditScene::new(GalleryScene::new(), CanvasScene::new()),
+            scenes: vec![],
         }
     }
 }

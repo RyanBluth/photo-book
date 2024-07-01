@@ -30,10 +30,12 @@ use super::{
     SceneTransition::Viewer,
 };
 
+
+#[derive(Debug, Clone)]
 pub struct CanvasSceneState {
-    canvas_state: CanvasState,
+    pub canvas_state: CanvasState,
     pub gallery_state: ImageGalleryState,
-    pages_state: PagesState,
+    pub pages_state: PagesState,
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,

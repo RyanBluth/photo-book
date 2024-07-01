@@ -21,7 +21,7 @@ pub enum PagesResponse {
     SelectPage,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct PagesState {
     // This should probably be an indexmap where each page has an id
     pub pages: IndexMap<PageId, CanvasState>,

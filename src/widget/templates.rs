@@ -12,7 +12,7 @@ pub enum TemplatesResponse {
     SelectTemplate(Template),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct TemplatesState {
     pub templates: Vec<Template>,
 }
