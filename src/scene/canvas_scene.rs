@@ -9,7 +9,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
-    id::{next_page_id, LayerId},
+    id::{next_page_id, LayerId, PageId},
     model::{edit_state::EditablePage, page::Page},
     photo::Photo,
     photo_manager::{self, PhotoManager},
@@ -42,7 +42,7 @@ pub struct CanvasSceneState {
 }
 
 impl CanvasSceneState {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let page_id = next_page_id();
 
         Self {
@@ -55,15 +55,26 @@ impl CanvasSceneState {
         }
     }
 
-    fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
+    pub fn with_photo(photo: Photo, gallery_state: Option<ImageGalleryState>) -> Self {
         let canvas_state = CanvasState::with_photo(photo.clone());
-        let page_id = next_page_id();
+        let page_id: usize = next_page_id();
 
         Self {
             canvas_state: canvas_state.clone(),
             gallery_state: gallery_state.unwrap_or_default(),
             history_manager: CanvasHistoryManager::with_initial_state(canvas_state.clone()),
             pages_state: PagesState::new(indexmap! { page_id => canvas_state }, page_id),
+            templates_state: TemplatesState::new(),
+            export_task_id: None,
+        }
+    }
+
+    pub fn with_pages(pages: IndexMap<PageId, CanvasState>, selected_page: PageId) -> Self {
+        Self {
+            canvas_state: pages[&selected_page].clone(),
+            gallery_state: ImageGalleryState::default(),
+            history_manager: CanvasHistoryManager::new(),
+            pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
         }
@@ -119,6 +130,13 @@ impl CanvasScene {
         res.state = CanvasSceneState::with_photo(photo, gallery_state);
         res
     }
+
+    pub fn with_state(state: CanvasSceneState) -> Self {
+        let mut res = Self::new();
+        res.state = state;
+        res
+    }
+
 }
 
 impl Scene for CanvasScene {

@@ -5,6 +5,7 @@ use eframe::{
 };
 use egui::{Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
+use serde_json::value::Index;
 
 use crate::{
     cursor_manager::CursorManager,
@@ -61,6 +62,21 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
+        }
+    }
+
+    pub fn with_layers(
+        layers: IndexMap<LayerId, Layer>,
+        page: EditablePage,
+        template: Option<Template>,
+    ) -> Self {
+        Self {
+            layers,
+            zoom: 1.0,
+            offset: Vec2::ZERO,
+            multi_select: None,
+            page,
+            template,
         }
     }
 

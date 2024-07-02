@@ -71,6 +71,14 @@ pub struct SceneManager {
 }
 
 impl SceneManager {
+
+    pub fn new(root_scene: OrganizeEditScene) -> Self {
+        Self {
+            root_scene,
+            scenes: vec![],
+        }
+    }
+
     pub fn push(&mut self, scene: SceneTransition) {
         self.scenes.push(scene.scene());
     }

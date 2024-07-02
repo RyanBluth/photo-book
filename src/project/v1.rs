@@ -1,14 +1,35 @@
 use std::path::PathBuf;
 
-use egui::{Color32, FontId, Pos2, Rect, Vec2};
+use egui::{Color32, FontId, Id, Pos2, Rect, Vec2};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
 use crate::{
-    model::scale_mode::ScaleMode as AppScaleMode, model::unit::Unit as AppUnit,
-    photo_manager::PhotoManager, scene::SceneManager,
-    template::TemplateRegionKind as AppTemplateRegionKind,
-    widget::canvas_info::layers::LayerContent as AppLayerContent,
+    id::{next_layer_id, next_page_id, LayerId, PageId},
+    model::{
+        edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
+        unit::Unit as AppUnit,
+    },
+    photo::Photo as AppPhoto,
+    photo_manager::PhotoManager,
+    scene::{
+        canvas_scene::{CanvasScene, CanvasSceneState},
+        organize_edit_scene::{self, OrganizeEditScene},
+        organize_scene::GalleryScene,
+        Scene, SceneManager,
+    },
+    template::{TemplateRegion as AppTemplateRegion, TemplateRegionKind as AppTemplateRegionKind},
+    utils::IdExt,
+    widget::{
+        canvas_info::layers::{
+            CanvasText as AppCanvasText, CanvasTextEditState, Layer as AppLayer,
+            LayerContent as AppLayerContent, LayerTransformEditState,
+        },
+        page_canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
+        pages::PagesState,
+        transformable::{ResizeMode, TransformHandleMode::Resize, TransformableState},
+    },
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +116,9 @@ impl Project {
                                         relative_position: region.relative_position,
                                         relative_size: region.relative_size,
                                         kind: match region.kind {
-                                            AppTemplateRegionKind::Image => TemplateRegionKind::Image,
+                                            AppTemplateRegionKind::Image => {
+                                                TemplateRegionKind::Image
+                                            }
                                             AppTemplateRegionKind::Text {
                                                 sample_text,
                                                 font_size,
@@ -112,8 +135,7 @@ impl Project {
                                         color: text.color,
                                     },
                                 }
-                            
-                            },
+                            }
                         },
                         name: layer.name.clone(),
                         visible: layer.visible,
@@ -121,6 +143,7 @@ impl Project {
                         selected: layer.selected,
                         id: layer.id,
                         rect: layer.transform_state.rect,
+                        rotation: layer.transform_state.rotation,
                     })
                     .collect();
 
@@ -142,38 +165,173 @@ impl Project {
         Self { photos, pages }
     }
 
-    pub fn load(project: Self, photo_manager: &PhotoManager) -> SceneManager {
-       todo!()
+    pub fn load(project: Self, photo_manager: &mut PhotoManager) -> SceneManager {
+        photo_manager.load_photos(project.photos.into_iter().map(|photo| photo.path).collect());
+
+        let pages: IndexMap<PageId, CanvasState> = project
+            .pages
+            .into_iter()
+            .map(|page| {
+                let layers: IndexMap<LayerId, AppLayer> = page
+                    .layers
+                    .into_iter()
+                    .map(|layer| {
+                        let transformable_state = TransformableState {
+                            rect: layer.rect,
+                            active_handle: None,
+                            is_moving: false,
+                            handle_mode: Resize(ResizeMode::Free),
+                            rotation: layer.rotation,
+                            last_frame_rotation: layer.rotation,
+                            change_in_rotation: None,
+                            id: Id::random(),
+                        };
+
+                        let layer = AppLayer {
+                            content: match layer.content {
+                                LayerContent::Photo(photo) => {
+                                    AppLayerContent::Photo(AppCanvasPhoto {
+                                        photo: AppPhoto::new(photo.photo.path),
+                                    })
+                                }
+                                LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
+                                    text: text.text,
+                                    font_size: text.font_size,
+                                    font_id: text.font_id,
+                                    color: text.color,
+                                    edit_state: CanvasTextEditState::new(text.font_size),
+                                    layout: todo!(),
+                                }),
+                                LayerContent::TemplatePhoto {
+                                    region,
+                                    photo,
+                                    scale_mode,
+                                } => AppLayerContent::TemplatePhoto {
+                                    region: AppTemplateRegion {
+                                        relative_position: region.relative_position,
+                                        relative_size: region.relative_size,
+                                        kind: match region.kind {
+                                            TemplateRegionKind::Image => {
+                                                AppTemplateRegionKind::Image
+                                            }
+                                            TemplateRegionKind::Text {
+                                                sample_text,
+                                                font_size,
+                                            } => AppTemplateRegionKind::Text {
+                                                sample_text,
+                                                font_size,
+                                            },
+                                        },
+                                    },
+                                    photo: photo.map(|photo| AppCanvasPhoto {
+                                        photo: AppPhoto::new(photo.photo.path),
+                                    }),
+                                    scale_mode: match scale_mode {
+                                        ScaleMode::Fit => AppScaleMode::Fit,
+                                        ScaleMode::Fill => AppScaleMode::Fill,
+                                        ScaleMode::Stretch => AppScaleMode::Stretch,
+                                    },
+                                },
+                                LayerContent::TemplateText { region, text } => {
+                                    AppLayerContent::TemplateText {
+                                        region: AppTemplateRegion {
+                                            relative_position: region.relative_position,
+                                            relative_size: region.relative_size,
+                                            kind: match region.kind {
+                                                TemplateRegionKind::Image => {
+                                                    AppTemplateRegionKind::Image
+                                                }
+                                                TemplateRegionKind::Text {
+                                                    sample_text,
+                                                    font_size,
+                                                } => AppTemplateRegionKind::Text {
+                                                    sample_text,
+                                                    font_size,
+                                                },
+                                            },
+                                        },
+                                        text: AppCanvasText {
+                                            text: text.text,
+                                            font_size: text.font_size,
+                                            font_id: text.font_id,
+                                            color: text.color,
+                                            edit_state: CanvasTextEditState::new(text.font_size),
+                                            layout: todo!(),
+                                        },
+                                    }
+                                }
+                            },
+                            name: layer.name,
+                            visible: layer.visible,
+                            locked: layer.locked,
+                            selected: layer.selected,
+                            id: layer.id,
+                            transform_edit_state: LayerTransformEditState::from(
+                                &transformable_state,
+                            ),
+                            transform_state: transformable_state,
+                        };
+
+                        (next_layer_id(), layer)
+                    })
+                    .collect();
+
+                let canvas_state = CanvasState::with_layers(
+                    layers,
+                    EditablePage::new(AppPage::new(
+                        page.page.size,
+                        page.page.ppi,
+                        match page.page.unit {
+                            Unit::Pixels => AppUnit::Pixels,
+                            Unit::Inches => AppUnit::Inches,
+                            Unit::Centimeters => AppUnit::Centimeters,
+                        },
+                    )),
+                    todo!(),
+                );
+
+                (next_page_id(), canvas_state)
+            })
+            .collect();
+
+        let first_page_id = pages.first().map(|(id, _)| *id).unwrap();
+
+        let organize_scene = GalleryScene::new();
+        let edit_scene =
+            CanvasScene::with_state(CanvasSceneState::with_pages(pages, first_page_id));
+
+        //let organize_edit_scene = OrganizeEditScene::new(, );
+        todo!()
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CanvasPage {
+struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Page {
+struct Page {
     size: Vec2,
     ppi: i32,
     unit: Unit,
 }
 
 #[derive(Debug, Clone, PartialEq, Copy, Serialize, Deserialize)]
-pub enum Unit {
+enum Unit {
     Pixels,
     Inches,
     Centimeters,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Photo {
+struct Photo {
     pub path: PathBuf,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Layer {
+struct Layer {
     pub content: LayerContent,
     pub name: String,
     pub visible: bool,
@@ -181,35 +339,36 @@ pub struct Layer {
     pub selected: bool,
     pub id: usize,
     pub rect: Rect,
+    pub rotation: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ScaleMode {
+enum ScaleMode {
     Fit,
     Fill,
     Stretch,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TemplateRegion {
+struct TemplateRegion {
     pub relative_position: Pos2,
     pub relative_size: Vec2,
     pub kind: TemplateRegionKind,
 }
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-pub enum TemplateRegionKind {
+enum TemplateRegionKind {
     Image,
     Text { sample_text: String, font_size: f32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CanvasPhoto {
+struct CanvasPhoto {
     pub photo: Photo,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CanvasText {
+struct CanvasText {
     pub text: String,
     pub font_size: f32,
     pub font_id: FontId,
@@ -218,7 +377,7 @@ pub struct CanvasText {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum LayerContent {
+enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
     TemplatePhoto {

@@ -12,6 +12,14 @@ pub struct Page {
 
 impl Page {
 
+    pub fn new(size: Vec2, ppi: i32, unit: Unit) -> Self {
+        Self {
+            size,
+            ppi,
+            unit,
+        }
+    }
+
     pub fn with_size_inches(size: Vec2) -> Self {
         let ppi = 300;
         let unit = Unit::Inches;

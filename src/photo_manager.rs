@@ -144,6 +144,31 @@ impl PhotoManager {
         Ok(())
     }
 
+    pub fn load_photos(&mut self, photo_paths: Vec<PathBuf>) {
+        for photo_path in photo_paths {
+            self.photos
+                .insert(photo_path.clone(), Photo::new(photo_path));
+        }
+
+        self.photos.sort_by(|_, a, _, b| {
+            match (
+                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+            ) {
+                (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
+                    b.cmp(a)
+                }
+                _ => b.path.cmp(&a.path),
+            }
+        });
+
+        self.grouped_photos = None;
+
+        let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
+
+        Self::gen_thumbnails(PathBuf::new(), photo_paths);
+    }
+
     pub fn group_photos_by(
         &mut self,
         photos_grouping: PhotosGrouping,
