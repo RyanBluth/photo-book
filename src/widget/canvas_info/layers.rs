@@ -74,15 +74,15 @@ impl CanvasTextEditState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Display, EnumIter)]
-pub enum CanvasTextHorizontalAlignment {
+#[derive(Debug, Clone, PartialEq, Display, EnumIter, Copy)]
+pub enum TextHorizontalAlignment {
     Left,
     Center,
     Right,
 }
 
-#[derive(Debug, Clone, PartialEq, Display, EnumIter)]
-pub enum CanvasTextVerticalAlignment {
+#[derive(Debug, Clone, PartialEq, Display, EnumIter, Copy)]
+pub enum TextVerticalAlignment {
     Top,
     Center,
     Bottom,
@@ -95,7 +95,8 @@ pub struct CanvasText {
     pub font_id: FontId,
     pub color: Color32,
     pub edit_state: CanvasTextEditState,
-    pub layout: Layout
+    pub horizontal_alignment: TextHorizontalAlignment,
+    pub vertical_alignment: TextVerticalAlignment,
 }
 
 impl CanvasText {
@@ -104,7 +105,8 @@ impl CanvasText {
         font_size: f32,
         font_family: FontId,
         color: Color32,
-        layout: Layout,
+        horizontal_alignment: TextHorizontalAlignment,
+        vertical_alignment: TextVerticalAlignment,
     ) -> Self {
         Self {
             text,
@@ -112,7 +114,8 @@ impl CanvasText {
             font_id: font_family,
             edit_state: CanvasTextEditState::new(font_size),
             color,
-            layout,
+            horizontal_alignment,
+            vertical_alignment,
         }
     }
 }
@@ -203,7 +206,8 @@ impl Layer {
             20.0,
             FontId::default(),
             Color32::BLACK,
-            Layout::default(),
+            TextHorizontalAlignment::Left,
+            TextVerticalAlignment::Top,
         );
         let transform_state = TransformableState {
             rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
@@ -240,7 +244,8 @@ impl HistoricallyEqual for Layer {
                     && text.font_size == other_text.font_size
                     && text.font_id == other_text.font_id
                     && text.color == other_text.color
-                    && text.layout == other_text.layout
+                    && text.horizontal_alignment == other_text.horizontal_alignment
+                    && text.vertical_alignment == other_text.vertical_alignment
             }
             _ => false,
         };
@@ -282,7 +287,7 @@ impl<'a> Layers<'a> {
 
     pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> LayersResponse {
         let mut selected_layer_id = None;
-        
+
         ui.vertical(|ui| {
             let dnd_response = dnd(ui, "layers_dnd").show(
                 self.layers.iter().rev(),

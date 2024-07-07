@@ -12,8 +12,8 @@ use eframe::{
         load::{SizedTexture, TextureLoader},
         Context,
     },
-    epaint::util::FloatOrd,
 };
+use egui::emath::OrderedFloat;
 use image::{
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
     ExtendedColorType,
@@ -37,7 +37,7 @@ use fr::CpuExtensions;
 use image::io::Reader as ImageReader;
 use image::ImageEncoder;
 
-use fast_image_resize as fr;
+use fast_image_resize::{self as fr, IntoImageViewMut, ResizeOptions};
 
 use crate::dependencies::SingletonFor;
 
@@ -385,7 +385,7 @@ impl PhotoManager {
                     let texture = ctx.try_load_texture(
                         &uri,
                         eframe::egui::TextureOptions::default(),
-                        eframe::egui::SizeHint::Scale(1.0_f32.ord()),
+                        eframe::egui::SizeHint::Scale(OrderedFloat::from(1.0)),
                     );
 
                     let photo_manager = Dependency::<PhotoManager>::get();
@@ -423,7 +423,7 @@ impl PhotoManager {
                 let texture = ctx.try_load_texture(
                     uri,
                     eframe::egui::TextureOptions::default(),
-                    eframe::egui::SizeHint::Scale(1.0_f32.ord()),
+                    eframe::egui::SizeHint::Scale(OrderedFloat::from(1.0)),
                 );
 
                 match texture {
@@ -521,13 +521,9 @@ impl PhotoManager {
                 let width = img.width();
                 let height = img.height();
 
-                let non_zero_width =
-                    NonZeroU32::new(img.width()).ok_or(anyhow!("Invalid image width"))?;
-                let non_zero_height =
-                    NonZeroU32::new(img.height()).ok_or(anyhow!("Invalid image height"))?;
-                let mut src_image = fr::Image::from_vec_u8(
-                    non_zero_width,
-                    non_zero_height,
+                let mut src_image = fr::images::Image::from_vec_u8(
+                    img.width(),
+                    img.height(),
                     // TODO: This isn't going to cover every type of image
                     if color_type.has_alpha() {
                         img.to_rgba8().into_raw()
@@ -546,24 +542,22 @@ impl PhotoManager {
                 let alpha_mul_div = fr::MulDiv::default();
 
                 if color_type.has_alpha() {
-                    alpha_mul_div.multiply_alpha_inplace(&mut src_image.view_mut())?;
+                    alpha_mul_div.multiply_alpha_inplace(&mut src_image)?;
                 }
 
                 let ratio = height as f32 / width as f32;
                 let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
+                let dst_width: u32 = THUMBNAIL_SIZE as u32;
 
-                let dst_width = NonZeroU32::new(THUMBNAIL_SIZE as u32)
-                    .ok_or(anyhow!("Invalid destination image width"))?;
-                let dst_height = NonZeroU32::new(dst_height)
-                    .ok_or(anyhow!("Invalid destination image height"))?;
-                let mut dst_image = fr::Image::new(dst_width, dst_height, src_image.pixel_type());
-
-                // Get mutable view of destination image data
-                let mut dst_view = dst_image.view_mut();
+                let mut dst_image = fr::images::Image::new(
+                    dst_width,
+                    dst_height,
+                    src_image.pixel_type(),
+                );
 
                 // Create Resizer instance and resize source image
                 // into buffer of destination image
-                let mut resizer = fr::Resizer::new(fr::ResizeAlg::Nearest);
+                let mut resizer = fr::Resizer::new();
 
                 let mut cpu_extensions_vec = vec![CpuExtensions::None];
 
@@ -590,11 +584,19 @@ impl PhotoManager {
                     }
                 }
 
-                resizer.resize(&src_image.view(), &mut dst_view)?;
+                resizer.resize(
+                    &src_image,
+                    &mut dst_image,
+                    &ResizeOptions {
+                        algorithm: fast_image_resize::ResizeAlg::Nearest,
+                        cropping: fast_image_resize::SrcCropping::None,
+                        mul_div_alpha: false,
+                    },
+                )?;
 
                 if color_type.has_alpha() {
                     // Divide RGB channels of destination image by alpha
-                    alpha_mul_div.divide_alpha_inplace(&mut dst_view)?;
+                    alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
                 }
 
                 // Write destination image as PNG-file
@@ -608,16 +610,16 @@ impl PhotoManager {
                     "jpg" | "jpeg" => {
                         JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
                             dst_image.buffer(),
-                            dst_width.get(),
-                            dst_height.get(),
+                            dst_width,
+                            dst_height,
                             ExtendedColorType::Rgb8,
                         )?;
                     }
                     "png" => {
                         PngEncoder::new(&mut result_buf).write_image(
                             dst_image.buffer(),
-                            dst_width.get(),
-                            dst_height.get(),
+                            dst_width,
+                            dst_height,
                             ExtendedColorType::Rgba8,
                         )?;
                     }

@@ -25,6 +25,8 @@ use crate::{
         canvas_info::layers::{
             CanvasText as AppCanvasText, CanvasTextEditState, Layer as AppLayer,
             LayerContent as AppLayerContent, LayerTransformEditState,
+            TextHorizontalAlignment as AppTextHorizontalAlignment,
+            TextVerticalAlignment as AppTextVerticalAlignment,
         },
         page_canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
         pages::PagesState,
@@ -79,6 +81,26 @@ impl Project {
                                 font_size: canvas_text.font_size,
                                 font_id: canvas_text.font_id,
                                 color: canvas_text.color,
+                                horizontal_alignment: match canvas_text.horizontal_alignment {
+                                    AppTextHorizontalAlignment::Left => {
+                                        TextHorizontalAlignment::Left
+                                    }
+                                    AppTextHorizontalAlignment::Center => {
+                                        TextHorizontalAlignment::Center
+                                    }
+                                    AppTextHorizontalAlignment::Right => {
+                                        TextHorizontalAlignment::Right
+                                    }
+                                },
+                                vertical_alignment: match canvas_text.vertical_alignment {
+                                    AppTextVerticalAlignment::Top => TextVerticalAlignment::Top,
+                                    AppTextVerticalAlignment::Center => {
+                                        TextVerticalAlignment::Center
+                                    }
+                                    AppTextVerticalAlignment::Bottom => {
+                                        TextVerticalAlignment::Bottom
+                                    }
+                                },
                             }),
                             AppLayerContent::TemplatePhoto {
                                 region,
@@ -133,6 +155,28 @@ impl Project {
                                         font_size: text.font_size,
                                         font_id: text.font_id,
                                         color: text.color,
+                                        horizontal_alignment: match text.horizontal_alignment {
+                                            AppTextHorizontalAlignment::Left => {
+                                                TextHorizontalAlignment::Left
+                                            }
+                                            AppTextHorizontalAlignment::Center => {
+                                                TextHorizontalAlignment::Center
+                                            }
+                                            AppTextHorizontalAlignment::Right => {
+                                                TextHorizontalAlignment::Right
+                                            }
+                                        },
+                                        vertical_alignment: match text.vertical_alignment {
+                                            AppTextVerticalAlignment::Top => {
+                                                TextVerticalAlignment::Top
+                                            }
+                                            AppTextVerticalAlignment::Center => {
+                                                TextVerticalAlignment::Center
+                                            }
+                                            AppTextVerticalAlignment::Bottom => {
+                                                TextVerticalAlignment::Bottom
+                                            }
+                                        },
                                     },
                                 }
                             }
@@ -200,7 +244,26 @@ impl Project {
                                     font_id: text.font_id,
                                     color: text.color,
                                     edit_state: CanvasTextEditState::new(text.font_size),
-                                    layout: todo!(),
+                                    horizontal_alignment: match text.horizontal_alignment {
+                                        TextHorizontalAlignment::Left => {
+                                            AppTextHorizontalAlignment::Left
+                                        }
+                                        TextHorizontalAlignment::Center => {
+                                            AppTextHorizontalAlignment::Center
+                                        }
+                                        TextHorizontalAlignment::Right => {
+                                            AppTextHorizontalAlignment::Right
+                                        }
+                                    },
+                                    vertical_alignment: match text.vertical_alignment {
+                                        TextVerticalAlignment::Top => AppTextVerticalAlignment::Top,
+                                        TextVerticalAlignment::Center => {
+                                            AppTextVerticalAlignment::Center
+                                        }
+                                        TextVerticalAlignment::Bottom => {
+                                            AppTextVerticalAlignment::Bottom
+                                        }
+                                    },
                                 }),
                                 LayerContent::TemplatePhoto {
                                     region,
@@ -256,7 +319,28 @@ impl Project {
                                             font_id: text.font_id,
                                             color: text.color,
                                             edit_state: CanvasTextEditState::new(text.font_size),
-                                            layout: todo!(),
+                                            horizontal_alignment: match text.horizontal_alignment {
+                                                TextHorizontalAlignment::Left => {
+                                                    AppTextHorizontalAlignment::Left
+                                                }
+                                                TextHorizontalAlignment::Center => {
+                                                    AppTextHorizontalAlignment::Center
+                                                }
+                                                TextHorizontalAlignment::Right => {
+                                                    AppTextHorizontalAlignment::Right
+                                                }
+                                            },
+                                            vertical_alignment: match text.vertical_alignment {
+                                                TextVerticalAlignment::Top => {
+                                                    AppTextVerticalAlignment::Top
+                                                }
+                                                TextVerticalAlignment::Center => {
+                                                    AppTextVerticalAlignment::Center
+                                                }
+                                                TextVerticalAlignment::Bottom => {
+                                                    AppTextVerticalAlignment::Bottom
+                                                }
+                                            },
                                         },
                                     }
                                 }
@@ -300,8 +384,9 @@ impl Project {
         let edit_scene =
             CanvasScene::with_state(CanvasSceneState::with_pages(pages, first_page_id));
 
-        //let organize_edit_scene = OrganizeEditScene::new(, );
-        todo!()
+        let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
+
+        SceneManager::new(organize_edit_scene)
     }
 }
 
@@ -373,7 +458,8 @@ struct CanvasText {
     pub font_size: f32,
     pub font_id: FontId,
     pub color: Color32,
-    // layout: Layout TODO
+    pub horizontal_alignment: TextHorizontalAlignment,
+    pub vertical_alignment: TextVerticalAlignment,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,4 +475,18 @@ enum LayerContent {
         region: TemplateRegion,
         text: CanvasText,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum TextHorizontalAlignment {
+    Left,
+    Center,
+    Right,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum TextVerticalAlignment {
+    Top,
+    Center,
+    Bottom,
 }

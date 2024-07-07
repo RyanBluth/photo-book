@@ -20,20 +20,20 @@ mod assets;
 mod cursor_manager;
 mod dependencies;
 mod error_sink;
+mod export;
 mod font_manager;
 mod history;
-mod project;
+mod id;
+mod model;
 mod photo;
 mod photo_manager;
+mod project;
 mod scene;
 mod string_log;
+mod template;
+mod theme;
 mod utils;
 mod widget;
-mod id;
-mod template;
-mod model;
-mod export;
-mod theme;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
-        Box::new(|_cc| Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log))),
+        Box::new(|_cc| Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log)))),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
 }

@@ -3,7 +3,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Id, Layout, RichText, Stroke};
+use egui::{Align, Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
 use serde_json::value::Index;
 
@@ -20,7 +20,10 @@ use crate::{
 };
 
 use super::{
-    canvas_info::layers::{CanvasText, Layer, LayerContent, LayerTransformEditState},
+    canvas_info::layers::{
+        CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
+        TextVerticalAlignment,
+    },
     image_gallery::ImageGalleryState,
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
@@ -191,7 +194,8 @@ impl CanvasState {
                                 *font_size,
                                 FontId::default(),
                                 Color32::BLACK,
-                                Layout::default(),
+                                TextHorizontalAlignment::Left,
+                                TextVerticalAlignment::Top,
                             ),
                         },
                         name,
@@ -918,7 +922,8 @@ impl<'a> Canvas<'a> {
                                 transformed_rect,
                                 text.font_size * self.state.zoom,
                                 text.color,
-                                &text.layout,
+                                text.horizontal_alignment,
+                                text.vertical_alignment,
                             );
                         },
                     );
@@ -1084,7 +1089,8 @@ impl<'a> Canvas<'a> {
                     rect,
                     text.font_size * self.state.zoom,
                     text.color,
-                    &text.layout,
+                    text.horizontal_alignment,
+                    text.vertical_alignment,
                 );
 
                 if layer.selected {
@@ -1115,10 +1121,29 @@ impl<'a> Canvas<'a> {
         rect: Rect,
         font_size: f32,
         color: Color32,
-        layout: &Layout,
+        horizontal_alignment: TextHorizontalAlignment,
+        vertical_alignment: TextVerticalAlignment,
     ) {
         ui.allocate_ui_at_rect(rect, |ui| {
             ui.style_mut().interaction.selectable_labels = false;
+
+            let layout = Layout {
+                main_dir: egui::Direction::LeftToRight,
+                main_wrap: true,
+                main_align: match horizontal_alignment {
+                    TextHorizontalAlignment::Left => Align::Min,
+                    TextHorizontalAlignment::Center => Align::Center,
+                    TextHorizontalAlignment::Right => Align::Max,
+                },
+                main_justify: true,
+                cross_align: match vertical_alignment {
+                    TextVerticalAlignment::Top => Align::Min,
+                    TextVerticalAlignment::Center => Align::Center,
+                    TextVerticalAlignment::Bottom => Align::Max,
+                },
+                cross_justify: true,
+            };
+
             ui.with_layout(
                 layout
                     .with_main_wrap(true)

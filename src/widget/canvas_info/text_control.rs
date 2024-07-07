@@ -5,10 +5,11 @@ use eframe::{
 use egui::ComboBox;
 use strum::IntoEnumIterator;
 
-use crate::{utils::EditableValueTextEdit};
+use crate::utils::EditableValueTextEdit;
 
 use super::layers::{
-    CanvasTextHorizontalAlignment, CanvasTextVerticalAlignment, Layer, LayerContent::{Photo, TemplatePhoto, TemplateText, Text}
+    TextHorizontalAlignment, TextVerticalAlignment, Layer,
+    LayerContent::{Photo, TemplatePhoto, TemplateText, Text},
 };
 
 pub struct TextControlState<'a> {
@@ -124,17 +125,12 @@ impl<'a> TextControl<'a> {
                             let text = &mut self.state.layer.content;
                             match text {
                                 Text(text) | TemplateText { region: _, text } => {
-
-                                    let mut current_alignment = match text.layout.cross_align {
-                                        egui::Align::Min => CanvasTextHorizontalAlignment::Left,
-                                        egui::Align::Center => CanvasTextHorizontalAlignment::Center,
-                                        egui::Align::Max => CanvasTextHorizontalAlignment::Right,
-                                    };
+                                    let mut current_alignment = text.horizontal_alignment;
 
                                     ComboBox::from_label("Horizontal Alignment")
                                         .selected_text(format!("{}", current_alignment))
                                         .show_ui(ui, |ui| {
-                                            for alignment in CanvasTextHorizontalAlignment::iter() {
+                                            for alignment in TextHorizontalAlignment::iter() {
                                                 ui.selectable_value(
                                                     &mut current_alignment,
                                                     alignment.clone(),
@@ -143,11 +139,7 @@ impl<'a> TextControl<'a> {
                                             }
                                         });
 
-                                    text.layout.cross_align = match current_alignment {
-                                        CanvasTextHorizontalAlignment::Left => egui::Align::Min,
-                                        CanvasTextHorizontalAlignment::Center => egui::Align::Center,
-                                        CanvasTextHorizontalAlignment::Right => egui::Align::Max,
-                                    };
+                                    text.horizontal_alignment = current_alignment;
                                 }
                                 _ => (),
                             }
@@ -157,16 +149,12 @@ impl<'a> TextControl<'a> {
                             let text = &mut self.state.layer.content;
                             match text {
                                 Text(text) | TemplateText { region: _, text } => {
-                                    let mut current_alignment = match text.layout.main_align {
-                                        egui::Align::Min => CanvasTextVerticalAlignment::Top,
-                                        egui::Align::Center => CanvasTextVerticalAlignment::Center,
-                                        egui::Align::Max => CanvasTextVerticalAlignment::Bottom,
-                                    };
+                                    let mut current_alignment = text.vertical_alignment;
 
                                     ComboBox::from_label("Vertical Alignment")
                                         .selected_text(format!("{}", current_alignment))
                                         .show_ui(ui, |ui| {
-                                            for alignment in CanvasTextVerticalAlignment::iter() {
+                                            for alignment in TextVerticalAlignment::iter() {
                                                 ui.selectable_value(
                                                     &mut current_alignment,
                                                     alignment.clone(),
@@ -175,11 +163,7 @@ impl<'a> TextControl<'a> {
                                             }
                                         });
 
-                                    text.layout.main_align = match current_alignment {
-                                        CanvasTextVerticalAlignment::Top => egui::Align::Min,
-                                        CanvasTextVerticalAlignment::Center => egui::Align::Center,
-                                        CanvasTextVerticalAlignment::Bottom => egui::Align::Max,
-                                    };
+                                    text.vertical_alignment = current_alignment;
                                 }
                                 _ => (),
                             }
