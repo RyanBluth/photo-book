@@ -107,6 +107,11 @@ impl PhotoBookApp {
 impl eframe::App for PhotoBookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
+
+        ctx.input_mut(|input|{
+            input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
+        });
+
         if !self.loaded_fonts {
             self.loaded_fonts = true;
             // Just load all fonts at start up. Maybe there's a better time to do this?

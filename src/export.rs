@@ -155,6 +155,10 @@ impl Exporter {
         let mut backend = EguiSkia::new(pixels_per_point);
         egui_extras::install_image_loaders(&backend.egui_ctx);
 
+        backend.egui_ctx.input_mut(|input|{
+            input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
+        });
+
         let photo_manager = Singleton::new(PhotoManager::new());
         let mut history_manager = CanvasHistoryManager::new();
 
