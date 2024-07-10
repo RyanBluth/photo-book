@@ -28,7 +28,6 @@ impl Default for GallerySceneState {
         Self {
             image_gallery_state: ImageGalleryState {
                 selected_images: HashSet::new(),
-                current_dir: None,
                 scale: 0.5,
             },
         }
@@ -74,25 +73,6 @@ impl GalleryScene {
 
 impl Scene for GalleryScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
-        let ref mut current_dir = self.state.image_gallery_state.current_dir;
-
-        menu::bar(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("Open").clicked() {
-                    *current_dir = native_dialog::FileDialog::new()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
-                        .show_open_single_dir()
-                        .unwrap();
-
-                    info!("Opened {:?}", current_dir);
-
-                    PhotoManager::load_directory(current_dir.clone().unwrap());
-                }
-            });
-
-            // Temp way to go between gallery and pages
-            ui.menu_button("View", |ui| if ui.button("Gallery").clicked() {});
-        });
 
         let mut navigator = Navigator::new();
 

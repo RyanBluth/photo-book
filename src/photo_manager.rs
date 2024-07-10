@@ -7,11 +7,9 @@ use std::{
 };
 
 use chrono::Datelike;
-use eframe::{
-    egui::{
-        load::{SizedTexture, TextureLoader},
-        Context,
-    },
+use eframe::egui::{
+    load::{SizedTexture, TextureLoader},
+    Context,
 };
 use egui::emath::OrderedFloat;
 use image::{
@@ -166,7 +164,9 @@ impl PhotoManager {
 
         let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
 
-        Self::gen_thumbnails(PathBuf::new(), photo_paths);
+        tokio::task::spawn_blocking(move || {
+            Self::gen_thumbnails(PathBuf::new(), photo_paths);
+        });
     }
 
     pub fn group_photos_by(
@@ -549,11 +549,8 @@ impl PhotoManager {
                 let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
                 let dst_width: u32 = THUMBNAIL_SIZE as u32;
 
-                let mut dst_image = fr::images::Image::new(
-                    dst_width,
-                    dst_height,
-                    src_image.pixel_type(),
-                );
+                let mut dst_image =
+                    fr::images::Image::new(dst_width, dst_height, src_image.pixel_type());
 
                 // Create Resizer instance and resize source image
                 // into buffer of destination image

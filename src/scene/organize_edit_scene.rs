@@ -4,8 +4,15 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use egui::{Color32, Pos2, Rect, Ui, Vec2};
+use egui::{menu, Color32, Pos2, Rect, Ui, Vec2};
+use log::{error, info};
 use sqlx::Either;
+
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    photo_manager::PhotoManager,
+    project::v1::Project,
+};
 
 use super::{
     canvas_scene::CanvasScene,
@@ -62,7 +69,7 @@ impl Scene for OrganizeEditScene {
 
         ui.vertical(|ui| {
             ui.allocate_ui(Vec2::new(ui.available_width(), 50.0), |ui| {
-                let top_nav_button_width: f32 = ui.memory_mut(|memory| {
+                let top_nav_button_width: f32 = ui.memory_mut(|memory: &mut egui::Memory| {
                     memory
                         .data
                         .get_persisted("top_nav_button_width".into())
@@ -92,7 +99,88 @@ impl Scene for OrganizeEditScene {
                 });
             });
 
-            ui.add_space(10.0);
+            ui.add_space(12.0);
+
+            menu::bar(ui, |ui| {
+                ui.menu_button("File", |ui| {
+                    if ui.button("Open").clicked() {
+                        let open_path = native_dialog::FileDialog::new()
+                            .add_filter("Images", &["rpb"])
+                            .show_open_single_file();
+
+                        match open_path {
+                            Ok(Some(open_path)) => {
+                                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+                                photo_manager.with_lock_mut(|photo_manager| {
+                                    match Project::load(&open_path, photo_manager) {
+                                        Ok(scene) => {
+                                            *self = scene;
+                                            self.show_organize();
+                                        }
+                                        Err(err) => {
+                                            error!("Error loading project: {:?}", err);
+                                        }
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                error!("Error opening open file dialog: {:?}", e);
+                            }
+                            Ok(None) => {
+                                info!("No open path selected");
+                            }
+                        }
+                    }
+
+                    if ui.button("Save").clicked() {
+                        let save_path = native_dialog::FileDialog::new()
+                            .add_filter("Images", &["rpb"])
+                            .show_save_single_file();
+
+                        match save_path {
+                            Ok(Some(save_path)) => {
+                                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+                                photo_manager.with_lock(|photo_manager| {
+                                    if let Err(err) =
+                                        Project::save(&save_path, &self, photo_manager)
+                                    {
+                                        error!("Error saving project: {:?}", err);
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                error!("Error opening save file dialog: {:?}", e);
+                            }
+                            Ok(None) => {
+                                info!("No save path selected");
+                            }
+                        }
+                    }
+
+                    if ui.button("Import").clicked() {
+                        let import_dir = native_dialog::FileDialog::new()
+                            .add_filter("Images", &["png", "jpg", "jpeg"])
+                            .show_open_single_dir();
+
+                        match import_dir {
+                            Ok(Some(import_dir)) => {
+                                info!("Imported {:?}", import_dir);
+                                let _ = PhotoManager::load_directory(import_dir.clone());
+                            }
+                            Err(e) => {
+                                error!("Error opening import file dialog: {:?}", e);
+                            }
+                            Ok(None) => {
+                                info!("No import directory selected");
+                            }
+                        }
+                    }
+
+                    if ui.button("Export").clicked() {}
+                });
+            });
 
             let scene_response = ui
                 .allocate_ui(

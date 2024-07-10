@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use egui::{Color32, FontId, Id, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
+use thiserror::Error;
 
 use crate::{
     id::{next_layer_id, next_page_id, LayerId, PageId},
@@ -15,11 +15,14 @@ use crate::{
     photo_manager::PhotoManager,
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
-        organize_edit_scene::{self, OrganizeEditScene},
+        organize_edit_scene::OrganizeEditScene,
         organize_scene::GalleryScene,
-        Scene, SceneManager,
+        SceneManager,
     },
-    template::{TemplateRegion as AppTemplateRegion, TemplateRegionKind as AppTemplateRegionKind},
+    template::{
+        Template as AppTemplate, TemplateRegion as AppTemplateRegion,
+        TemplateRegionKind as AppTemplateRegionKind,
+    },
     utils::IdExt,
     widget::{
         canvas_info::layers::{
@@ -29,10 +32,18 @@ use crate::{
             TextVerticalAlignment as AppTextVerticalAlignment,
         },
         page_canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
-        pages::PagesState,
         transformable::{ResizeMode, TransformHandleMode::Resize, TransformableState},
     },
 };
+
+#[derive(Error, Debug)]
+pub enum ProjectError {
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[error("Serde error: {0}")]
+    SerdeError(#[from] serde_json::Error),
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
@@ -41,7 +52,11 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn save(scene_manager: SceneManager, photo_manager: &PhotoManager) -> Self {
+    pub fn save(
+        path: &PathBuf,
+        root_scene: &OrganizeEditScene,
+        photo_manager: &PhotoManager,
+    ) -> Result<(), ProjectError> {
         let photos = photo_manager
             .photos
             .iter()
@@ -49,8 +64,6 @@ impl Project {
                 path: photo.0.clone(),
             })
             .collect();
-
-        let root_scene = scene_manager.root_scene();
 
         let app_pages = root_scene
             .edit
@@ -191,6 +204,7 @@ impl Project {
                     })
                     .collect();
 
+                let template = canvas_state.template.clone();
                 CanvasPage {
                     layers: layers,
                     page: Page {
@@ -202,14 +216,56 @@ impl Project {
                             AppUnit::Centimeters => Unit::Centimeters,
                         },
                     },
+                    template: template.map(|template| Template {
+                        name: template.name,
+                        page: Page {
+                            size: template.page.size(),
+                            ppi: template.page.ppi(),
+                            unit: match template.page.unit() {
+                                AppUnit::Pixels => Unit::Pixels,
+                                AppUnit::Inches => Unit::Inches,
+                                AppUnit::Centimeters => Unit::Centimeters,
+                            },
+                        },
+                        regions: template
+                            .regions
+                            .iter()
+                            .map(|region| TemplateRegion {
+                                relative_position: region.relative_position,
+                                relative_size: region.relative_size,
+                                kind: match &region.kind {
+                                    AppTemplateRegionKind::Image => TemplateRegionKind::Image,
+                                    AppTemplateRegionKind::Text {
+                                        sample_text,
+                                        font_size,
+                                    } => TemplateRegionKind::Text {
+                                        sample_text: sample_text.clone(),
+                                        font_size: font_size.clone(),
+                                    },
+                                },
+                            })
+                            .collect(),
+                    }),
                 }
             })
             .collect();
 
-        Self { photos, pages }
+        let project = Project { photos, pages };
+
+        let project_data = serde_json::to_string_pretty(&project)?;
+
+        std::fs::write(path, project_data)?;
+
+        Ok(())
     }
 
-    pub fn load(project: Self, photo_manager: &mut PhotoManager) -> SceneManager {
+    pub fn load(
+        path: &PathBuf,
+        photo_manager: &mut PhotoManager,
+    ) -> Result<OrganizeEditScene, ProjectError> {
+        let file = std::fs::File::open(path)?;
+        let project: Project = serde_json::from_reader(file)?;
+
         photo_manager.load_photos(project.photos.into_iter().map(|photo| photo.path).collect());
 
         let pages: IndexMap<PageId, CanvasState> = project
@@ -371,7 +427,36 @@ impl Project {
                             Unit::Centimeters => AppUnit::Centimeters,
                         },
                     )),
-                    todo!(),
+                    page.template.map(|template| AppTemplate {
+                        name: template.name,
+                        page: AppPage::new(
+                            template.page.size,
+                            template.page.ppi,
+                            match template.page.unit {
+                                Unit::Pixels => AppUnit::Pixels,
+                                Unit::Inches => AppUnit::Inches,
+                                Unit::Centimeters => AppUnit::Centimeters,
+                            },
+                        ),
+                        regions: template
+                            .regions
+                            .iter()
+                            .map(|region| AppTemplateRegion {
+                                relative_position: region.relative_position,
+                                relative_size: region.relative_size,
+                                kind: match &region.kind {
+                                    TemplateRegionKind::Image => AppTemplateRegionKind::Image,
+                                    TemplateRegionKind::Text {
+                                        sample_text,
+                                        font_size,
+                                    } => AppTemplateRegionKind::Text {
+                                        sample_text: sample_text.clone(),
+                                        font_size: font_size.clone(),
+                                    },
+                                },
+                            })
+                            .collect(),
+                    }),
                 );
 
                 (next_page_id(), canvas_state)
@@ -386,7 +471,7 @@ impl Project {
 
         let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
 
-        SceneManager::new(organize_edit_scene)
+        Ok(organize_edit_scene)
     }
 }
 
@@ -394,6 +479,7 @@ impl Project {
 struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
+    pub template: Option<Template>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -432,6 +518,13 @@ enum ScaleMode {
     Fit,
     Fill,
     Stretch,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Template {
+    pub name: String,
+    pub page: Page,
+    pub regions: Vec<TemplateRegion>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
