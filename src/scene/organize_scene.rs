@@ -28,7 +28,7 @@ impl Default for GallerySceneState {
         Self {
             image_gallery_state: ImageGalleryState {
                 selected_images: HashSet::new(),
-                scale: 0.5,
+                scale: 1.0,
             },
         }
     }

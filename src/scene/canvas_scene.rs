@@ -141,6 +141,13 @@ impl CanvasScene {
 
 impl Scene for CanvasScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
+
+        // Apply the current canvas state to the pages state so they are in sync
+        self.state.pages_state.pages.insert(
+            self.state.pages_state.selected_page,
+            self.state.canvas_state.clone_with_new_widget_ids(),
+        );
+
         match self.state.export_task_id {
             Some(task_id) => {
                 let exporter: Singleton<Exporter> = Dependency::get();
@@ -304,11 +311,6 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Pages => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-
-                self.scene_state.pages_state.pages.insert(
-                    self.scene_state.pages_state.selected_page,
-                    self.scene_state.canvas_state.clone_with_new_widget_ids(),
-                );
 
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
                     PagesResponse::SelectPage => {

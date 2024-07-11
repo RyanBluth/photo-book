@@ -18,10 +18,19 @@ use crate::{
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ImageGalleryState {
     pub selected_images: HashSet<PathBuf>,
     pub scale: f32,
+}
+
+impl Default for ImageGalleryState {
+    fn default() -> Self {
+        Self {
+            selected_images: HashSet::new(),
+            scale: 1.0,
+        }
+    }
 }
 
 pub struct ImageGallery<'a> {
@@ -202,7 +211,7 @@ impl<'a> ImageGallery<'a> {
                             .maintain_aspect_ratio(true)
                             .fit_to_exact_size(Vec2::splat(20.0)),
                     );
-                    ui.add(Slider::new(&mut state.scale, 0.5..=1.5).show_value(false));
+                    ui.add(Slider::new(&mut state.scale, 0.5..=1.5).show_value(true));
                     ui.add(
                         Image::from(Asset::smaller())
                             .tint(Color32::WHITE)

@@ -108,7 +108,7 @@ impl eframe::App for PhotoBookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui_extras::install_image_loaders(ctx);
 
-        ctx.input_mut(|input|{
+        ctx.input_mut(|input| {
             input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
         });
 
@@ -132,7 +132,5 @@ impl eframe::App for PhotoBookApp {
         Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
             cursor_manager.end_frame(ctx);
         });
-
-        ctx.request_repaint();
     }
 }

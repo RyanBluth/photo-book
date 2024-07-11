@@ -17,7 +17,6 @@ use crate::{
         canvas_scene::{CanvasScene, CanvasSceneState},
         organize_edit_scene::OrganizeEditScene,
         organize_scene::GalleryScene,
-        SceneManager,
     },
     template::{
         Template as AppTemplate, TemplateRegion as AppTemplateRegion,
@@ -65,7 +64,7 @@ impl Project {
             })
             .collect();
 
-        let app_pages = root_scene
+        let mut app_pages = root_scene
             .edit
             .read()
             .unwrap()
@@ -75,78 +74,59 @@ impl Project {
             .clone();
 
         let pages: Vec<CanvasPage> = app_pages
-            .values()
+            .values_mut()
             .map(|canvas_state| {
                 let layers = canvas_state
                     .layers
-                    .values()
-                    .map(|layer| Layer {
-                        content: match layer.content.clone() {
-                            AppLayerContent::Photo(canvas_photo) => {
-                                LayerContent::Photo(CanvasPhoto {
-                                    photo: Photo {
-                                        path: canvas_photo.photo.path,
-                                    },
-                                })
-                            }
-                            AppLayerContent::Text(canvas_text) => LayerContent::Text(CanvasText {
-                                text: canvas_text.text,
-                                font_size: canvas_text.font_size,
-                                font_id: canvas_text.font_id,
-                                color: canvas_text.color,
-                                horizontal_alignment: match canvas_text.horizontal_alignment {
-                                    AppTextHorizontalAlignment::Left => {
-                                        TextHorizontalAlignment::Left
-                                    }
-                                    AppTextHorizontalAlignment::Center => {
-                                        TextHorizontalAlignment::Center
-                                    }
-                                    AppTextHorizontalAlignment::Right => {
-                                        TextHorizontalAlignment::Right
-                                    }
-                                },
-                                vertical_alignment: match canvas_text.vertical_alignment {
-                                    AppTextVerticalAlignment::Top => TextVerticalAlignment::Top,
-                                    AppTextVerticalAlignment::Center => {
-                                        TextVerticalAlignment::Center
-                                    }
-                                    AppTextVerticalAlignment::Bottom => {
-                                        TextVerticalAlignment::Bottom
-                                    }
-                                },
-                            }),
-                            AppLayerContent::TemplatePhoto {
-                                region,
-                                photo,
-                                scale_mode,
-                            } => LayerContent::TemplatePhoto {
-                                region: TemplateRegion {
-                                    relative_position: region.relative_position,
-                                    relative_size: region.relative_size,
-                                    kind: match region.kind {
-                                        AppTemplateRegionKind::Image => TemplateRegionKind::Image,
-                                        AppTemplateRegionKind::Text {
-                                            sample_text,
-                                            font_size,
-                                        } => TemplateRegionKind::Text {
-                                            sample_text,
-                                            font_size,
+                    .values_mut()
+                    .map(|layer| {
+                        layer.transform_edit_state.update(&layer.transform_state);
+
+                        Layer {
+                            content: match layer.content.clone() {
+                                AppLayerContent::Photo(canvas_photo) => {
+                                    LayerContent::Photo(CanvasPhoto {
+                                        photo: Photo {
+                                            path: canvas_photo.photo.path,
                                         },
-                                    },
-                                },
-                                photo: photo.map(|canvas_photo| CanvasPhoto {
-                                    photo: Photo {
-                                        path: canvas_photo.photo.path,
-                                    },
-                                }),
-                                scale_mode: match scale_mode {
-                                    AppScaleMode::Fit => ScaleMode::Fit,
-                                    AppScaleMode::Fill => ScaleMode::Fill,
-                                    AppScaleMode::Stretch => ScaleMode::Stretch,
-                                },
-                            },
-                            AppLayerContent::TemplateText { region, text } => {
-                                LayerContent::TemplateText {
+                                    })
+                                }
+                                AppLayerContent::Text(canvas_text) => {
+                                    LayerContent::Text(CanvasText {
+                                        text: canvas_text.text,
+                                        font_size: canvas_text.font_size,
+                                        font_id: canvas_text.font_id,
+                                        color: canvas_text.color,
+                                        horizontal_alignment: match canvas_text.horizontal_alignment
+                                        {
+                                            AppTextHorizontalAlignment::Left => {
+                                                TextHorizontalAlignment::Left
+                                            }
+                                            AppTextHorizontalAlignment::Center => {
+                                                TextHorizontalAlignment::Center
+                                            }
+                                            AppTextHorizontalAlignment::Right => {
+                                                TextHorizontalAlignment::Right
+                                            }
+                                        },
+                                        vertical_alignment: match canvas_text.vertical_alignment {
+                                            AppTextVerticalAlignment::Top => {
+                                                TextVerticalAlignment::Top
+                                            }
+                                            AppTextVerticalAlignment::Center => {
+                                                TextVerticalAlignment::Center
+                                            }
+                                            AppTextVerticalAlignment::Bottom => {
+                                                TextVerticalAlignment::Bottom
+                                            }
+                                        },
+                                    })
+                                }
+                                AppLayerContent::TemplatePhoto {
+                                    region,
+                                    photo,
+                                    scale_mode,
+                                } => LayerContent::TemplatePhoto {
                                     region: TemplateRegion {
                                         relative_position: region.relative_position,
                                         relative_size: region.relative_size,
@@ -163,44 +143,74 @@ impl Project {
                                             },
                                         },
                                     },
-                                    text: CanvasText {
-                                        text: text.text,
-                                        font_size: text.font_size,
-                                        font_id: text.font_id,
-                                        color: text.color,
-                                        horizontal_alignment: match text.horizontal_alignment {
-                                            AppTextHorizontalAlignment::Left => {
-                                                TextHorizontalAlignment::Left
-                                            }
-                                            AppTextHorizontalAlignment::Center => {
-                                                TextHorizontalAlignment::Center
-                                            }
-                                            AppTextHorizontalAlignment::Right => {
-                                                TextHorizontalAlignment::Right
-                                            }
+                                    photo: photo.map(|canvas_photo| CanvasPhoto {
+                                        photo: Photo {
+                                            path: canvas_photo.photo.path,
                                         },
-                                        vertical_alignment: match text.vertical_alignment {
-                                            AppTextVerticalAlignment::Top => {
-                                                TextVerticalAlignment::Top
-                                            }
-                                            AppTextVerticalAlignment::Center => {
-                                                TextVerticalAlignment::Center
-                                            }
-                                            AppTextVerticalAlignment::Bottom => {
-                                                TextVerticalAlignment::Bottom
-                                            }
-                                        },
+                                    }),
+                                    scale_mode: match scale_mode {
+                                        AppScaleMode::Fit => ScaleMode::Fit,
+                                        AppScaleMode::Fill => ScaleMode::Fill,
+                                        AppScaleMode::Stretch => ScaleMode::Stretch,
                                     },
+                                },
+                                AppLayerContent::TemplateText { region, text } => {
+                                    LayerContent::TemplateText {
+                                        region: TemplateRegion {
+                                            relative_position: region.relative_position,
+                                            relative_size: region.relative_size,
+                                            kind: match region.kind {
+                                                AppTemplateRegionKind::Image => {
+                                                    TemplateRegionKind::Image
+                                                }
+                                                AppTemplateRegionKind::Text {
+                                                    sample_text,
+                                                    font_size,
+                                                } => TemplateRegionKind::Text {
+                                                    sample_text,
+                                                    font_size,
+                                                },
+                                            },
+                                        },
+                                        text: CanvasText {
+                                            text: text.text,
+                                            font_size: text.font_size,
+                                            font_id: text.font_id,
+                                            color: text.color,
+                                            horizontal_alignment: match text.horizontal_alignment {
+                                                AppTextHorizontalAlignment::Left => {
+                                                    TextHorizontalAlignment::Left
+                                                }
+                                                AppTextHorizontalAlignment::Center => {
+                                                    TextHorizontalAlignment::Center
+                                                }
+                                                AppTextHorizontalAlignment::Right => {
+                                                    TextHorizontalAlignment::Right
+                                                }
+                                            },
+                                            vertical_alignment: match text.vertical_alignment {
+                                                AppTextVerticalAlignment::Top => {
+                                                    TextVerticalAlignment::Top
+                                                }
+                                                AppTextVerticalAlignment::Center => {
+                                                    TextVerticalAlignment::Center
+                                                }
+                                                AppTextVerticalAlignment::Bottom => {
+                                                    TextVerticalAlignment::Bottom
+                                                }
+                                            },
+                                        },
+                                    }
                                 }
-                            }
-                        },
-                        name: layer.name.clone(),
-                        visible: layer.visible,
-                        locked: layer.locked,
-                        selected: layer.selected,
-                        id: layer.id,
-                        rect: layer.transform_state.rect,
-                        rotation: layer.transform_state.rotation,
+                            },
+                            name: layer.name.clone(),
+                            visible: layer.visible,
+                            locked: layer.locked,
+                            selected: layer.selected,
+                            id: layer.id,
+                            rect: layer.transform_state.rect,
+                            rotation: layer.transform_state.rotation,
+                        }
                     })
                     .collect();
 
@@ -466,6 +476,7 @@ impl Project {
         let first_page_id = pages.first().map(|(id, _)| *id).unwrap();
 
         let organize_scene = GalleryScene::new();
+
         let edit_scene =
             CanvasScene::with_state(CanvasSceneState::with_pages(pages, first_page_id));
 

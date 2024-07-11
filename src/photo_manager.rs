@@ -165,7 +165,10 @@ impl PhotoManager {
         let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
 
         tokio::task::spawn_blocking(move || {
-            Self::gen_thumbnails(PathBuf::new(), photo_paths);
+            // TODO: Parallelize this
+            for photo_path in photo_paths {
+                Self::gen_thumbnail(&photo_path).unwrap();
+            }
         });
     }
 
@@ -466,7 +469,7 @@ impl PhotoManager {
             // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             //thread::spawn(move || {
             partition.into_iter().for_each(|photo| {
-                let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
+                let res = Self::gen_thumbnail(&photo);
                 if res.is_err() {
                     error!("{:?}", res);
                     panic!("{:?}", res);
@@ -480,7 +483,7 @@ impl PhotoManager {
         Ok(())
     }
 
-    fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
+    fn gen_thumbnail(photo_path: &PathBuf) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
         let extension = photo_path.extension();
 
@@ -489,6 +492,8 @@ impl PhotoManager {
                 || extension.to_ascii_lowercase() == "png"
                 || extension.to_ascii_lowercase() == "jpeg"
             {
+                let thumbnail_dir = photo_path.parent().unwrap().join(".thumb");
+
                 let thumbnail_path = thumbnail_dir.join(file_name);
 
                 if thumbnail_path.exists() {
