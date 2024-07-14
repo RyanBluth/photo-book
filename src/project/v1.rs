@@ -422,7 +422,7 @@ impl Project {
                             transform_state: transformable_state,
                         };
 
-                        (next_layer_id(), layer)
+                        (layer.id, layer)
                     })
                     .collect();
 
@@ -519,7 +519,7 @@ struct Layer {
     pub visible: bool,
     pub locked: bool,
     pub selected: bool,
-    pub id: usize,
+    pub id: LayerId,
     pub rect: Rect,
     pub rotation: f32,
 }

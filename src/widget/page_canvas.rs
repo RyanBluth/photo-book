@@ -1145,10 +1145,7 @@ impl<'a> Canvas<'a> {
             };
 
             ui.with_layout(
-                layout
-                    .with_main_wrap(true)
-                    .with_main_justify(true)
-                    .with_cross_justify(true),
+                layout,
                 |ui| {
                     ui.label(
                         RichText::new(text)
