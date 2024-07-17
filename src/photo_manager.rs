@@ -12,6 +12,7 @@ use eframe::egui::{
     Context,
 };
 use egui::emath::OrderedFloat;
+use fxhash::hash64;
 use image::{
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
     ExtendedColorType,
@@ -23,6 +24,7 @@ use tokio::task::spawn_blocking;
 
 use crate::{
     dependencies::{Dependency, DependencyFor},
+    dirs::Dirs,
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel},
 };
 
@@ -69,7 +71,7 @@ pub struct PhotoManager {
     grouped_photos: Option<(PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>)>,
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
-    thumbnail_existence_cache: HashSet<PathBuf>,
+    thumbnail_existence_cache: HashSet<String>,
 }
 
 impl PhotoManager {
@@ -134,7 +136,7 @@ impl PhotoManager {
                         .collect::<Vec<PathBuf>>()
                 });
 
-            Self::gen_thumbnails(path.clone(), photo_paths);
+            Self::gen_thumbnails(photo_paths);
 
             Ok(())
         });
@@ -163,11 +165,12 @@ impl PhotoManager {
         self.grouped_photos = None;
 
         let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
+        let thumbnail_dir = Dirs::Thumbnails.path();
 
         tokio::task::spawn_blocking(move || {
             // TODO: Parallelize this
             for photo_path in photo_paths {
-                Self::gen_thumbnail(&photo_path).unwrap();
+                Self::gen_thumbnail(&photo_path, &thumbnail_dir.clone()).unwrap();
             }
         });
     }
@@ -229,7 +232,7 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_existence_cache.contains(&photo.path) {
+        if !self.thumbnail_existence_cache.contains(&photo.thumbnail_hash) {
             return Ok(None);
         }
 
@@ -248,7 +251,7 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
             Some((_, photo)) => {
-                if !self.thumbnail_existence_cache.contains(&photo.path) {
+                if !self.thumbnail_existence_cache.contains(&photo.thumbnail_hash) {
                     return Ok(None);
                 }
                 Self::load_texture(
@@ -444,23 +447,8 @@ impl PhotoManager {
         }
     }
 
-    fn gen_thumbnails(dir: PathBuf, photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
-        let path: PathBuf = dir;
-
-        if !path.exists() {
-            return Err(anyhow::anyhow!("Path does not exist"));
-        }
-
-        if !path.is_dir() {
-            return Err(anyhow::anyhow!("Path is not a directory"));
-        }
-
-        let thumbnail_dir = path.join(".thumb");
-
-        if !thumbnail_dir.exists() {
-            info!("Creating thumbnail directory: {:?}", &thumbnail_dir);
-            create_dir(&thumbnail_dir)?;
-        }
+    fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
+        let thumbnail_dir = Dirs::Thumbnails.path();
 
         let partitions = utils::partition_iterator(photo_paths.into_iter(), 8);
 
@@ -469,7 +457,7 @@ impl PhotoManager {
             // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
             //thread::spawn(move || {
             partition.into_iter().for_each(|photo| {
-                let res = Self::gen_thumbnail(&photo);
+                let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
                 if res.is_err() {
                     error!("{:?}", res);
                     panic!("{:?}", res);
@@ -483,35 +471,27 @@ impl PhotoManager {
         Ok(())
     }
 
-    fn gen_thumbnail(photo_path: &PathBuf) -> anyhow::Result<()> {
+    fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
         let extension = photo_path.extension();
 
-        if let (Some(file_name), Some(extension)) = (file_name, extension) {
+        if let (Some(_), Some(extension)) = (file_name, extension) {
             if extension.to_ascii_lowercase() == "jpg"
                 || extension.to_ascii_lowercase() == "png"
                 || extension.to_ascii_lowercase() == "jpeg"
             {
-                let thumbnail_dir = photo_path.parent().unwrap().join(".thumb");
+                // TODO: incorporate the last modified date of the photo into the hash
+                let hash = hash64(&photo_path.to_string_lossy()).to_string();
 
-                let thumbnail_path = thumbnail_dir.join(file_name);
+                let mut thumbnail_path = thumbnail_dir.join(&hash);
+                thumbnail_path.set_extension(extension);
 
                 if thumbnail_path.exists() {
-                    info!("Thumbnail already exists: {:?}", &thumbnail_path);
-
-                    // let _tex_result = ctx.try_load_texture(
-                    //     &format!("file://{}", thumbnail_path.to_str().unwrap()),
-                    //     TextureOptions {
-                    //         magnification: egui::TextureFilter::Linear,
-                    //         minification: egui::TextureFilter::Linear,
-                    //     },
-                    //     egui::SizeHint::Scale(1.0_f32.ord()),
-                    // )?;
-
+                    info!("Thumbnail already exists for: {:?}", &photo_path);
                     Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                         photo_manager
                             .thumbnail_existence_cache
-                            .insert(photo_path.clone());
+                            .insert(hash);
                     });
 
                     return Ok(());
@@ -647,7 +627,7 @@ impl PhotoManager {
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                     photo_manager
                         .thumbnail_existence_cache
-                        .insert(photo_path.clone());
+                        .insert(hash);
                 });
 
                 //ctx.request_repaint();

@@ -1128,7 +1128,7 @@ impl<'a> Canvas<'a> {
             ui.style_mut().interaction.selectable_labels = false;
 
             let layout = Layout {
-                main_dir: egui::Direction::LeftToRight,
+                main_dir: egui::Direction::TopDown,
                 main_wrap: true,
                 main_align: match horizontal_alignment {
                     TextHorizontalAlignment::Left => Align::Min,
@@ -1141,7 +1141,7 @@ impl<'a> Canvas<'a> {
                     TextVerticalAlignment::Center => Align::Center,
                     TextVerticalAlignment::Bottom => Align::Max,
                 },
-                cross_justify: true,
+                cross_justify: false,
             };
 
             ui.with_layout(
@@ -1157,7 +1157,7 @@ impl<'a> Canvas<'a> {
             );
 
             // TODO: It seems like there isn't a way to rotate when drawing text with ui.label
-            // The following sort of works but it makes laying out the text more difficult because we can't use eguis layout system
+            // The following sort of works but it makes laying out t vhe text more difficult because we can't use eguis layout system
 
             // let painter = ui.painter();
 

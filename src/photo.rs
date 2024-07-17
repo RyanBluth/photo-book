@@ -9,7 +9,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::{dependencies::SingletonFor, utils::ExifDateTimeExt};
+use crate::{dependencies::SingletonFor, dirs::Dirs, utils::ExifDateTimeExt};
 
 use anyhow::anyhow;
 use eframe::{
@@ -20,6 +20,7 @@ use eframe::{
 use chrono::{DateTime, Utc};
 use egui::TextBuffer;
 use exif::{In, Reader, SRational, Tag, Value};
+use fxhash::hash64;
 use serde::{Deserialize, Serialize};
 
 macro_rules! metadata_fields {
@@ -437,13 +438,18 @@ impl PhotoMetadata {
 pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,
+    pub thumbnail_hash: String,
 }
 
 impl Photo {
     pub fn new(path: PathBuf) -> Self {
         let metadata = PhotoMetadata::from_path(&path);
-
-        Self { path, metadata }
+        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        Self {
+            path,
+            metadata,
+            thumbnail_hash,
+        }
     }
 
     pub fn file_name(&self) -> &str {
@@ -466,16 +472,10 @@ impl Photo {
     }
 
     pub fn thumbnail_path(&self) -> anyhow::Result<PathBuf> {
-        let mut path = self.path.clone();
-        let file_name = path
-            .file_name()
-            .ok_or(anyhow!("Failed to get file name"))?
-            .to_str()
-            .ok_or(anyhow!("Failed to convert file name to str"))?
-            .to_string();
-        path.pop();
-        path.push(".thumb");
-        path.push(file_name);
+        let path = Dirs::Thumbnails
+            .path()
+            .join(&self.thumbnail_hash)
+            .with_extension(self.path.extension().unwrap_or_default());
         Ok(path)
     }
 

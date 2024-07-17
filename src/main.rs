@@ -34,6 +34,7 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
+mod dirs;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -49,6 +50,8 @@ async fn main() -> anyhow::Result<()> {
         .max_blocking_threads(16)
         .build()
         .unwrap();
+
+    dirs::initialize_dirs();
 
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
