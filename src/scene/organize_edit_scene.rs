@@ -9,6 +9,8 @@ use log::{error, info};
 use sqlx::Either;
 
 use crate::{
+    auto_persisting::AutoPersisting,
+    config::{Config, ConfigModification},
     dependencies::{Dependency, Singleton, SingletonFor},
     photo_manager::PhotoManager,
     project::v1::Project,
@@ -115,6 +117,16 @@ impl Scene for OrganizeEditScene {
                                 photo_manager.with_lock_mut(|photo_manager| {
                                     match Project::load(&open_path, photo_manager) {
                                         Ok(scene) => {
+                                            let config: Singleton<AutoPersisting<Config>> =
+                                                Dependency::get();
+                                            config.with_lock_mut(|config| {
+                                                config.modify(
+                                                    ConfigModification::AddRecentProject(
+                                                        open_path.clone(),
+                                                    ),
+                                                );
+                                            });
+
                                             *self = scene;
                                             self.show_organize();
                                         }
@@ -132,6 +144,42 @@ impl Scene for OrganizeEditScene {
                             }
                         }
                     }
+
+                    ui.menu_button("Open Recent", |ui| {
+                        let config: Singleton<AutoPersisting<Config>> = Dependency::get();
+                        let recents = config.with_lock_mut(|config| {
+                            config.read().unwrap().recent_projects().to_vec()
+                        });
+
+                        if recents.is_empty() {
+                            ui.label("No recent projects");
+                        } else {
+                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                            photo_manager.with_lock_mut(|photo_manager| {
+                                for recent in &recents {
+                                    if ui.button(&recent.display().to_string()).clicked() {
+                                        match Project::load(&recent.into(), photo_manager) {
+                                            Ok(scene) => {
+                                                config.with_lock_mut(|config| {
+                                                    config.modify(
+                                                        ConfigModification::AddRecentProject(
+                                                            recent.into(),
+                                                        ),
+                                                    );
+                                                });
+
+                                                *self = scene;
+                                                self.show_organize();
+                                            }
+                                            Err(err) => {
+                                                error!("Error loading project: {:?}", err);
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    });
 
                     if ui.button("Save").clicked() {
                         let save_path = native_dialog::FileDialog::new()

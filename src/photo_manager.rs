@@ -232,7 +232,10 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_existence_cache.contains(&photo.thumbnail_hash) {
+        if !self
+            .thumbnail_existence_cache
+            .contains(&photo.thumbnail_hash)
+        {
             return Ok(None);
         }
 
@@ -251,7 +254,10 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photos.get_index(at) {
             Some((_, photo)) => {
-                if !self.thumbnail_existence_cache.contains(&photo.thumbnail_hash) {
+                if !self
+                    .thumbnail_existence_cache
+                    .contains(&photo.thumbnail_hash)
+                {
                     return Ok(None);
                 }
                 Self::load_texture(
@@ -489,9 +495,7 @@ impl PhotoManager {
                 if thumbnail_path.exists() {
                     info!("Thumbnail already exists for: {:?}", &photo_path);
                     Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                        photo_manager
-                            .thumbnail_existence_cache
-                            .insert(hash);
+                        photo_manager.thumbnail_existence_cache.insert(hash);
                     });
 
                     return Ok(());
@@ -625,9 +629,7 @@ impl PhotoManager {
                 // )?;
 
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                    photo_manager
-                        .thumbnail_existence_cache
-                        .insert(hash);
+                    photo_manager.thumbnail_existence_cache.insert(hash);
                 });
 
                 //ctx.request_repaint();

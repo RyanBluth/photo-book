@@ -9,6 +9,7 @@ use eframe::egui::{self, ViewportBuilder, Widget};
 use egui::Color32;
 use font_manager::FontManager;
 
+use dirs::Dirs;
 use photo_manager::PhotoManager;
 use scene::SceneManager;
 use tokio::runtime;
@@ -17,8 +18,11 @@ use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
 mod assets;
+mod auto_persisting;
+mod config;
 mod cursor_manager;
 mod dependencies;
+mod dirs;
 mod error_sink;
 mod export;
 mod font_manager;
@@ -34,7 +38,6 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
-mod dirs;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -51,7 +54,7 @@ async fn main() -> anyhow::Result<()> {
         .build()
         .unwrap();
 
-    dirs::initialize_dirs();
+    Dirs::initialize_dirs();
 
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
