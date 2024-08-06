@@ -338,9 +338,9 @@ impl PhotoManager {
             Some((_, next_photo)) => {
                 if let Some((_, current_photo)) = self.photos.get_index(current_index) {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
-                        info!("Freeing texture for photo {}", current_photo.uri());
-                        ctx.forget_image(&current_photo.uri());
-                        ctx.tex_manager().write().free(texture.id);
+                        // info!("Freeing texture for photo {}", current_photo.uri());
+                        // ctx.forget_image(&current_photo.uri());
+                        // ctx.tex_manager().write().free(texture.id);
                     }
                 }
 
@@ -363,9 +363,9 @@ impl PhotoManager {
             Some((_, previous_photo)) => {
                 if let Some((_, current_photo)) = self.photos.get_index(current_index) {
                     if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
-                        info!("Freeing texture for photo {}", current_photo.uri());
-                        ctx.forget_image(&current_photo.uri());
-                        ctx.tex_manager().write().free(texture.id);
+                        // info!("Freeing texture for photo {}", current_photo.uri());
+                        // ctx.forget_image(&current_photo.uri());
+                        // ctx.tex_manager().write().free(texture.id);
                     }
                 }
 
