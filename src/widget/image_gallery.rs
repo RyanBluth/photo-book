@@ -40,7 +40,7 @@ pub struct ImageGallery<'a> {
 
 pub enum ImageGalleryResponse {
     ViewPhoto(Photo),
-    EditPhotoAt(usize),
+    EditPhoto(Photo),
 }
 
 impl<'a> ImageGallery<'a> {
@@ -181,8 +181,8 @@ impl<'a> ImageGallery<'a> {
                                                         ));
                                                 } else if image_response.middle_clicked() {
                                                     response =
-                                                        Some(ImageGalleryResponse::EditPhotoAt(
-                                                            offest + i,
+                                                        Some(ImageGalleryResponse::EditPhoto(
+                                                            photo.clone(),
                                                         ));
                                                 }
                                             });

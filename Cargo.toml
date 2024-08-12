@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 egui = { version = "0.28", features = ["persistence"] }
-eframe = { version = "0.28", features = ["wgpu"] }
+eframe = { version = "0.28", features = ["glow"] }
 egui_extras = { version = "0.28", features = ["all_loaders"] }
 native-dialog = "0.6.4"
 env_logger = "0.10.0"

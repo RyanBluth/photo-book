@@ -1,4 +1,3 @@
-use eframe::wgpu::core::error;
 use egui::{Pos2, Rect, Ui};
 use log::{error, info};
 
@@ -155,7 +154,7 @@ impl Exporter {
         let mut backend = EguiSkia::new(pixels_per_point);
         egui_extras::install_image_loaders(&backend.egui_ctx);
 
-        backend.egui_ctx.input_mut(|input|{
+        backend.egui_ctx.input_mut(|input| {
             input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
         });
 

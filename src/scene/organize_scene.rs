@@ -6,6 +6,7 @@ use log::info;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
+    photo::SaveOnDropPhoto,
     photo_manager::{PhotoLoadResult, PhotoManager},
     widget::{
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
@@ -73,7 +74,6 @@ impl GalleryScene {
 
 impl Scene for GalleryScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
-
         let mut navigator = Navigator::new();
 
         self.tree.ui(
@@ -108,8 +108,6 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
         _tile_id: egui_tiles::TileId,
         component: &mut GalleryScenePane,
     ) -> egui_tiles::UiResponse {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
         match component {
             GalleryScenePane::Gallery => {
                 let gallery_response =
@@ -118,24 +116,15 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                 if let Some(gallery_response) = gallery_response {
                     match gallery_response {
                         ImageGalleryResponse::ViewPhoto(photo) => {
-                            photo_manager.with_lock(|photo_manager| {
-
-                                self.navigator
-                                    .push(SceneTransition::Viewer(ViewerScene::new(photo)));
-                            });
+                            self.navigator
+                                .push(SceneTransition::Viewer(ViewerScene::new(photo)));
                         }
-                        ImageGalleryResponse::EditPhotoAt(index) => {
-                            photo_manager.with_lock(|photo_manager| {
-                                // TODO: Allow clicking on a pending photo
-                                let photo = photo_manager.photos[index].clone();
-
-                                self.navigator.push(SceneTransition::Canvas(
-                                    CanvasScene::with_photo(
-                                        photo,
-                                        Some(self.scene_state.image_gallery_state.clone()),
-                                    ),
-                                ));
-                            });
+                        ImageGalleryResponse::EditPhoto(photo) => {
+                            self.navigator
+                                .push(SceneTransition::Canvas(CanvasScene::with_photo(
+                                    photo,
+                                    Some(self.scene_state.image_gallery_state.clone()),
+                                )));
                         }
                     }
                 }
@@ -146,11 +135,10 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                 let gallery_state = &self.scene_state.image_gallery_state;
 
                 if let Some(selected_image) = gallery_state.selected_images.iter().next() {
-                    photo_manager.with_lock(|photo_manager| {
-                        let photo = photo_manager.photos[selected_image].clone();
+                    let mut photo = photo_manager
+                        .with_lock(|photo_manager| photo_manager.photos[selected_image].clone());
 
-                        PhotoInfo::new(&photo).ui(ui);
-                    });
+                    PhotoInfo::new(SaveOnDropPhoto::new(&mut photo)).show(ui);
                 }
             }
         }

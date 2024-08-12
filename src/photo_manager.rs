@@ -227,6 +227,10 @@ impl PhotoManager {
         &self.grouped_photos.as_ref().unwrap().1
     }
 
+    pub fn update_photo(&mut self, photo: Photo) {
+        self.photos.insert(photo.path.clone(), photo);
+    }
+
     pub fn thumbnail_texture_for(
         &mut self,
         photo: &Photo,

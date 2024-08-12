@@ -3,7 +3,7 @@ use egui_tiles::UiResponse;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    photo::Photo,
+    photo::{Photo, SaveOnDropPhoto},
     photo_manager::PhotoManager,
     widget::{
         image_viewer::{self, ImageViewer, ImageViewerState},
@@ -62,7 +62,6 @@ impl ViewerScene {
 }
 
 impl Scene for ViewerScene {
-
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         let mut navigator = Navigator::new();
 
@@ -134,7 +133,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
             }
             ViewerScenePane::PhotoInfo => {
                 ui.set_max_width(600.0);
-                PhotoInfo::new(&self.scene_state.photo).ui(ui);
+                PhotoInfo::new(SaveOnDropPhoto::new(&mut self.scene_state.photo)).show(ui);
             }
         }
 

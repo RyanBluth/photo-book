@@ -5,11 +5,17 @@ use std::{
     fs::File,
     hash::{Hash, Hasher},
     io::BufReader,
+    ops::{Deref, DerefMut},
     path::PathBuf,
     str::FromStr,
 };
 
-use crate::{dependencies::SingletonFor, dirs::Dirs, utils::ExifDateTimeExt};
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    dirs::Dirs,
+    photo_manager::{self, PhotoManager},
+    utils::ExifDateTimeExt,
+};
 
 use anyhow::anyhow;
 use eframe::{
@@ -22,6 +28,7 @@ use egui::TextBuffer;
 use exif::{In, Reader, SRational, Tag, Value};
 use fxhash::hash64;
 use serde::{Deserialize, Serialize};
+use strum_macros::EnumIter;
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
@@ -434,22 +441,48 @@ impl PhotoMetadata {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumIter, PartialEq)]
+pub enum PhotoRating {
+    Yes,
+    Maybe,
+    No,
+}
+
+impl Display for PhotoRating {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PhotoRating::Yes => f.write_str("Yes"),
+            PhotoRating::Maybe => f.write_str("Maybe"),
+            PhotoRating::No => f.write_str("No"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,
     pub thumbnail_hash: String,
+    pub rating: PhotoRating,
 }
 
 impl Photo {
     pub fn new(path: PathBuf) -> Self {
         let metadata = PhotoMetadata::from_path(&path);
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let rating = PhotoRating::Maybe;
         Self {
             path,
             metadata,
             thumbnail_hash,
+            rating,
         }
+    }
+
+    pub fn with_rating(path: PathBuf, rating: PhotoRating) -> Self {
+        let mut res = Self::new(path);
+        res.rating = rating;
+        res
     }
 
     pub fn file_name(&self) -> &str {
@@ -519,5 +552,38 @@ impl Eq for Photo {}
 impl Hash for Photo {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.path.hash(state);
+    }
+}
+
+pub struct SaveOnDropPhoto<'a> {
+    pub photo: &'a mut Photo,
+}
+
+impl<'a> SaveOnDropPhoto<'a> {
+    pub fn new(photo: &'a mut Photo) -> Self {
+        Self { photo }
+    }
+}
+
+impl<'a> Deref for SaveOnDropPhoto<'a> {
+    type Target = Photo;
+
+    fn deref(&self) -> &Self::Target {
+        &self.photo
+    }
+}
+
+impl DerefMut for SaveOnDropPhoto<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.photo
+    }
+}
+
+impl<'a> Drop for SaveOnDropPhoto<'a> {
+    fn drop(&mut self) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|photo_manager| {
+            photo_manager.update_photo(self.photo.clone());
+        });
     }
 }

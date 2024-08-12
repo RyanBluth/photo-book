@@ -30,7 +30,6 @@ use super::{
     SceneTransition::Viewer,
 };
 
-
 #[derive(Debug, Clone)]
 pub struct CanvasSceneState {
     pub canvas_state: CanvasState,
@@ -136,12 +135,10 @@ impl CanvasScene {
         res.state = state;
         res
     }
-
 }
 
 impl Scene for CanvasScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
-
         // Apply the current canvas state to the pages state so they are in sync
         self.state.pages_state.pages.insert(
             self.state.pages_state.selected_page,
@@ -221,54 +218,47 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                         ImageGalleryResponse::ViewPhoto(photo) => {
                             self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                         }
-                        ImageGalleryResponse::EditPhotoAt(index) => {
-                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                            if let Some(photo) = photo_manager.with_lock(|photo_manager| {
-                                photo_manager.photos.get_index(index).map(|x| x.1.clone())
-                            }) {
-                                let is_template = self.scene_state.canvas_state.template.is_some();
+                        ImageGalleryResponse::EditPhoto(photo) => {
+                            let is_template = self.scene_state.canvas_state.template.is_some();
 
-                                if is_template {
-                                    let mut selected_template_photos: Vec<_> = self
-                                        .scene_state
-                                        .canvas_state
-                                        .layers
-                                        .iter_mut()
-                                        .filter(|(_, layer)| {
-                                            matches!(
-                                                layer.content,
-                                                LayerContent::TemplatePhoto { .. }
-                                            ) && layer.selected
-                                        })
-                                        .collect();
+                            if is_template {
+                                let mut selected_template_photos: Vec<_> = self
+                                    .scene_state
+                                    .canvas_state
+                                    .layers
+                                    .iter_mut()
+                                    .filter(|(_, layer)| {
+                                        matches!(layer.content, LayerContent::TemplatePhoto { .. })
+                                            && layer.selected
+                                    })
+                                    .collect();
 
-                                    if selected_template_photos.len() == 1 {
-                                        if let LayerContent::TemplatePhoto {
-                                            region: _,
-                                            photo: canvas_photo,
-                                            scale_mode: _,
-                                        } = &mut selected_template_photos[0].1.content
-                                        {
-                                            *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
-                                        }
-
-                                        self.scene_state.history_manager.save_history(
-                                            CanvasHistoryKind::AddPhoto,
-                                            &mut self.scene_state.canvas_state,
-                                        );
-                                    } else if selected_template_photos.len() > 1
-                                        || selected_template_photos.is_empty()
+                                if selected_template_photos.len() == 1 {
+                                    if let LayerContent::TemplatePhoto {
+                                        region: _,
+                                        photo: canvas_photo,
+                                        scale_mode: _,
+                                    } = &mut selected_template_photos[0].1.content
                                     {
-                                        // TODO: Show error message saying that only one template photo can be selected
+                                        *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
                                     }
-                                } else {
-                                    let layer = Layer::with_photo(photo.clone());
-                                    self.scene_state.canvas_state.layers.insert(layer.id, layer);
+
                                     self.scene_state.history_manager.save_history(
                                         CanvasHistoryKind::AddPhoto,
                                         &mut self.scene_state.canvas_state,
                                     );
+                                } else if selected_template_photos.len() > 1
+                                    || selected_template_photos.is_empty()
+                                {
+                                    // TODO: Show error message saying that only one template photo can be selected
                                 }
+                            } else {
+                                let layer = Layer::with_photo(photo.clone());
+                                self.scene_state.canvas_state.layers.insert(layer.id, layer);
+                                self.scene_state.history_manager.save_history(
+                                    CanvasHistoryKind::AddPhoto,
+                                    &mut self.scene_state.canvas_state,
+                                );
                             }
                         }
                     },
