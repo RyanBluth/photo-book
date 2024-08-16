@@ -1,4 +1,3 @@
-use std::marker::PhantomData;
 
 pub trait PersistentModifiable<T> {
     type Error;

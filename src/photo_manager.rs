@@ -1,14 +1,13 @@
 use std::{
     collections::{HashMap, HashSet},
     fs::read_dir,
-    hash::Hash,
     io::BufWriter,
     path::PathBuf,
 };
 
 use chrono::Datelike;
 use eframe::egui::{
-    load::{SizedTexture, TextureLoader},
+    load::SizedTexture,
     Context,
 };
 use egui::emath::OrderedFloat;
@@ -28,16 +27,14 @@ use crate::{
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel},
 };
 
-use std::fs::create_dir;
 
-use std::num::NonZeroU32;
 
 use anyhow::{anyhow, Ok};
 use fr::CpuExtensions;
 use image::io::Reader as ImageReader;
 use image::ImageEncoder;
 
-use fast_image_resize::{self as fr, IntoImageViewMut, ResizeOptions};
+use fast_image_resize::{self as fr, ResizeOptions};
 
 use crate::dependencies::SingletonFor;
 
@@ -218,7 +215,7 @@ impl PhotoManager {
                     }
                 }
 
-                grouped_photos.sort_by(|a, _, b, _| b.cmp(&a));
+                grouped_photos.sort_by(|a, _, b, _| b.cmp(a));
 
                 self.grouped_photos = Some((PhotosGrouping::Date, grouped_photos));
             }

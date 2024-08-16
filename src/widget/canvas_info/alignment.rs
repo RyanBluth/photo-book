@@ -65,7 +65,7 @@ impl<'a> AlignmentInfo<'a> {
                 let aligment_actions = Aligment::iter().filter_map(|alignment| {
                     ui.button(alignment.to_string())
                         .clicked()
-                        .then(|| alignment)
+                        .then_some(alignment)
                 });
 
                 for alignment in aligment_actions {

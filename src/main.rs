@@ -6,7 +6,6 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, ViewportBuilder, Widget};
 
-use egui::Color32;
 use font_manager::FontManager;
 
 use dirs::Dirs;
@@ -102,7 +101,7 @@ impl PhotoBookApp {
     fn new(log: Arc<StringLog>) -> Self {
         Self {
             photo_manager: Dependency::<PhotoManager>::get(),
-            log: log,
+            log,
 
             loaded_fonts: false,
             scene_manager: SceneManager::default(),

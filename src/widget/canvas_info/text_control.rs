@@ -133,7 +133,7 @@ impl<'a> TextControl<'a> {
                                             for alignment in TextHorizontalAlignment::iter() {
                                                 ui.selectable_value(
                                                     &mut current_alignment,
-                                                    alignment.clone(),
+                                                    alignment,
                                                     RichText::new(alignment.to_string()),
                                                 );
                                             }
@@ -157,7 +157,7 @@ impl<'a> TextControl<'a> {
                                             for alignment in TextVerticalAlignment::iter() {
                                                 ui.selectable_value(
                                                     &mut current_alignment,
-                                                    alignment.clone(),
+                                                    alignment,
                                                     RichText::new(alignment.to_string()),
                                                 );
                                             }

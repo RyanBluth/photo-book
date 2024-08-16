@@ -2,11 +2,9 @@ use eframe::egui::{self};
 use egui::{Pos2, Rect, Sense, Vec2};
 
 use egui_extras::Column;
-use indexmap::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::{
-    id::LayerId,
     model::page::Page,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
@@ -129,7 +127,7 @@ impl<'a> QuickLayout<'a> {
             self.state.canvas_state.layers = selected_layout.layers;
             self.state
                 .history_manager
-                .save_history(CanvasHistoryKind::QuickLayout, &self.state.canvas_state);
+                .save_history(CanvasHistoryKind::QuickLayout, self.state.canvas_state);
         }
     }
 

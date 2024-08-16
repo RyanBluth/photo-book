@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     auto_persisting::AutoPersisting,
-    config::{Config, ConfigError},
+    config::Config,
     cursor_manager::CursorManager,
     export::Exporter,
     font_manager::FontManager,

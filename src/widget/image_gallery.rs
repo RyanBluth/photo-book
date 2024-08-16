@@ -5,9 +5,8 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{Color32, Image, Layout, Pos2, Rect, Sense, Slider};
-use egui_extras::{Column, TableRow};
-use skia_safe::luma_color_filter::new;
+use egui::{Color32, Image, Layout, Slider};
+use egui_extras::Column;
 
 use crate::{
     assets::Asset,
@@ -93,7 +92,7 @@ impl<'a> ImageGallery<'a> {
                     let row_metadatas: Vec<RowMetadata> = {
                         grouped_photos
                             .iter()
-                            .map(|(title, group)| {
+                            .flat_map(|(title, group)| {
                                 let rows = group.len().div_ceil(num_columns);
 
                                 let mut metadatas: Vec<RowMetadata> = vec![RowMetadata {
@@ -114,7 +113,6 @@ impl<'a> ImageGallery<'a> {
 
                                 metadatas
                             })
-                            .flatten()
                             .collect()
                     };
 

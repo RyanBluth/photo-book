@@ -1,9 +1,7 @@
 use egui::{
-    Color32, Galley, Key, LayerId, Rect, Response, RichText, Sense, Style, Ui, Vec2, Widget, WidgetText
+    Rect, Response, Sense, Ui, Vec2, Widget
 };
-use std::fmt::Display;
 
-use super::canvas_info::layers::Layer;
 
 pub struct SegmentControl<'a, T: PartialEq + Clone> {
     segments: &'a [(T, String)],
@@ -61,11 +59,9 @@ impl<'a, T: PartialEq + Clone> Widget for SegmentControl<'a, T> {
                     text_color,
                 );
 
-                if response.clicked_by(egui::PointerButton::Primary) {
-                    if segment_rect.contains(response.interact_pointer_pos().unwrap()) {
-                        *self.selected = value.clone();
-                        response.mark_changed();
-                    }
+                if response.clicked_by(egui::PointerButton::Primary) && segment_rect.contains(response.interact_pointer_pos().unwrap()) {
+                    *self.selected = value.clone();
+                    response.mark_changed();
                 }
             }
         }

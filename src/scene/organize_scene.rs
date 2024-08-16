@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 
-use egui::{menu, Color32, Widget};
+use egui::Widget;
 use egui_tiles::UiResponse;
-use log::info;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::SaveOnDropPhoto,
-    photo_manager::{PhotoLoadResult, PhotoManager},
+    photo_manager::PhotoManager,
     widget::{
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         photo_info::PhotoInfo,

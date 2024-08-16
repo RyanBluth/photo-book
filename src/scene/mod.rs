@@ -1,15 +1,7 @@
-use std::{
-    rc::Rc,
-    sync::{Arc, RwLock},
-};
 
-use egui::{Grid, Layout, Ui, Vec2};
-use organize_scene::GallerySceneState;
-use sqlx::Either;
 
 use crate::{
     photo::Photo,
-    project::v1,
     widget::{
         image_gallery::ImageGalleryState, image_viewer::ImageViewerState, page_canvas::CanvasState,
     },

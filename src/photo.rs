@@ -7,25 +7,22 @@ use std::{
     io::BufReader,
     ops::{Deref, DerefMut},
     path::PathBuf,
-    str::FromStr,
 };
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     dirs::Dirs,
-    photo_manager::{self, PhotoManager},
+    photo_manager::{PhotoManager},
     utils::ExifDateTimeExt,
 };
 
-use anyhow::anyhow;
 use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
 
 use chrono::{DateTime, Utc};
-use egui::TextBuffer;
-use exif::{In, Reader, SRational, Tag, Value};
+use exif::{In, Reader, Tag, Value};
 use fxhash::hash64;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
@@ -293,28 +290,19 @@ impl PhotoMetadata {
             }
 
             if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
-                match field.value {
-                    Value::Ascii(ref vec) => {
-                        if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::Camera(
-                                String::from_utf8_lossy(value).to_string(),
-                            ));
-                        }
+                if let Value::Ascii(ref vec) = field.value {
+                    if let Some(value) = vec.first() {
+                        fields.insert(PhotoMetadataField::Camera(
+                            String::from_utf8_lossy(value).to_string(),
+                        ));
                     }
-                    _ => {}
                 }
             };
             if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
-                match field.value {
-                    Value::Ascii(ref vec) => {
-                        vec.first()
-                            .and_then(|value| exif::DateTime::from_ascii(value).ok())
-                            .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok())
-                            .map(|date_time| {
-                                fields.insert(PhotoMetadataField::DateTime(date_time))
-                            });
-                    }
-                    _ => {}
+                if let Value::Ascii(ref vec) = field.value {
+                    if let Some(date_time) = vec.first()
+                        .and_then(|value| exif::DateTime::from_ascii(value).ok())
+                        .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok()) { fields.insert(PhotoMetadataField::DateTime(date_time)) }
                 }
             }
 
@@ -337,8 +325,8 @@ impl PhotoMetadata {
                     Value::SRational(ref vec) => {
                         if let Some(value) = vec.first() {
                             fields.insert(PhotoMetadataField::ShutterSpeed(Rational {
-                                num: value.num as i32,
-                                denom: value.denom as i32,
+                                num: value.num,
+                                denom: value.denom,
                             }));
                         }
                     }
@@ -347,30 +335,24 @@ impl PhotoMetadata {
             }
 
             if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
-                match field.value {
-                    Value::Rational(ref vec) => {
-                        if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::Aperture(Rational {
-                                num: value.num as i32,
-                                denom: value.denom as i32,
-                            }));
-                        }
+                if let Value::Rational(ref vec) = field.value {
+                    if let Some(value) = vec.first() {
+                        fields.insert(PhotoMetadataField::Aperture(Rational {
+                            num: value.num as i32,
+                            denom: value.denom as i32,
+                        }));
                     }
-                    _ => {}
                 }
             }
 
             if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
-                match field.value {
-                    Value::Rational(ref vec) => {
-                        if let Some(value) = vec.first() {
-                            fields.insert(PhotoMetadataField::FocalLength(Rational {
-                                num: value.num as i32,
-                                denom: value.denom as i32,
-                            }));
-                        }
+                if let Value::Rational(ref vec) = field.value {
+                    if let Some(value) = vec.first() {
+                        fields.insert(PhotoMetadataField::FocalLength(Rational {
+                            num: value.num as i32,
+                            denom: value.denom as i32,
+                        }));
                     }
-                    _ => {}
                 }
             }
         } else {
@@ -569,13 +551,13 @@ impl<'a> Deref for SaveOnDropPhoto<'a> {
     type Target = Photo;
 
     fn deref(&self) -> &Self::Target {
-        &self.photo
+        self.photo
     }
 }
 
 impl DerefMut for SaveOnDropPhoto<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.photo
+        self.photo
     }
 }
 

@@ -100,36 +100,33 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                 let viewer_response =
                     ImageViewer::new(&self.scene_state.photo, &mut self.scene_state.viewer_state)
                         .show(ui);
-                match viewer_response.request {
-                    Some(request) => match request {
-                        image_viewer::Request::Exit => {
-                            self.navigator.pop();
-                        }
-                        image_viewer::Request::Previous => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let (prev_photo, new_index) = photo_manager
-                                    .previous_photo(&self.scene_state.photo, ui.ctx())
-                                    .unwrap()
-                                    .unwrap();
+                if let Some(request) = viewer_response.request { match request {
+                    image_viewer::Request::Exit => {
+                        self.navigator.pop();
+                    }
+                    image_viewer::Request::Previous => {
+                        photo_manager.with_lock_mut(|photo_manager| {
+                            let (prev_photo, new_index) = photo_manager
+                                .previous_photo(&self.scene_state.photo, ui.ctx())
+                                .unwrap()
+                                .unwrap();
 
-                                self.scene_state.photo = prev_photo;
-                                self.scene_state.viewer_state = ImageViewerState::default();
-                            });
-                        }
-                        image_viewer::Request::Next => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let (next_photo, new_index) = photo_manager
-                                    .next_photo(&self.scene_state.photo, ui.ctx())
-                                    .unwrap()
-                                    .unwrap();
+                            self.scene_state.photo = prev_photo;
+                            self.scene_state.viewer_state = ImageViewerState::default();
+                        });
+                    }
+                    image_viewer::Request::Next => {
+                        photo_manager.with_lock_mut(|photo_manager| {
+                            let (next_photo, new_index) = photo_manager
+                                .next_photo(&self.scene_state.photo, ui.ctx())
+                                .unwrap()
+                                .unwrap();
 
-                                self.scene_state.photo = next_photo;
-                                self.scene_state.viewer_state = ImageViewerState::default();
-                            });
-                        }
-                    },
-                    None => {}
-                }
+                            self.scene_state.photo = next_photo;
+                            self.scene_state.viewer_state = ImageViewerState::default();
+                        });
+                    }
+                } }
             }
             ViewerScenePane::PhotoInfo => {
                 ui.set_max_width(600.0);

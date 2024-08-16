@@ -5,7 +5,6 @@ use eframe::{
 };
 use egui::{Align, Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
-use serde_json::value::Index;
 
 use crate::{
     cursor_manager::CursorManager,
@@ -24,7 +23,6 @@ use super::{
         CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
         TextVerticalAlignment,
     },
-    image_gallery::ImageGalleryState,
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
         TransformableWidgetResponse,
@@ -213,7 +211,7 @@ impl CanvasState {
         }
 
         Self {
-            layers: layers,
+            layers,
             zoom: 1.0,
             offset: Vec2::ZERO,
             multi_select: None,
@@ -383,7 +381,7 @@ impl<'a> Canvas<'a> {
     ) -> Self {
         Self {
             state,
-            photo_manager: photo_manager,
+            photo_manager,
             available_rect,
             history_manager,
         }
@@ -600,7 +598,7 @@ impl<'a> Canvas<'a> {
                         || transform_response.ended_rotating)
                 {
                     self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, &mut self.state);
+                        .save_history(CanvasHistoryKind::Transform, self.state);
                 }
             }
         }
@@ -821,7 +819,7 @@ impl<'a> Canvas<'a> {
                     || transform_response.ended_rotating
                 {
                     self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, &mut self.state);
+                        .save_history(CanvasHistoryKind::Transform, self.state);
                 }
             }
         }
@@ -1198,7 +1196,7 @@ impl<'a> Canvas<'a> {
             if input.key_pressed(egui::Key::Delete) {
                 self.state.layers.retain(|_, layer| !layer.selected);
                 self.history_manager
-                    .save_history(CanvasHistoryKind::DeletePhoto, &mut self.state);
+                    .save_history(CanvasHistoryKind::DeletePhoto, self.state);
             }
 
             // Move the selected photo
@@ -1256,15 +1254,15 @@ impl<'a> Canvas<'a> {
 
             if save_transform_history {
                 self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, &mut self.state);
+                    .save_history(CanvasHistoryKind::Transform, self.state);
             }
 
             // Undo/Redo
             if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
                 if input.modifiers.shift {
-                    self.history_manager.redo(&mut self.state);
+                    self.history_manager.redo(self.state);
                 } else {
-                    self.history_manager.undo(&mut self.state);
+                    self.history_manager.undo(self.state);
                 }
             }
 
@@ -1285,7 +1283,7 @@ impl<'a> Canvas<'a> {
         let layer = Layer::with_photo(photo);
         self.state.layers.insert(layer.id, layer);
         self.history_manager
-            .save_history(CanvasHistoryKind::AddPhoto, &mut self.state);
+            .save_history(CanvasHistoryKind::AddPhoto, self.state);
     }
 
     fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {
@@ -1306,7 +1304,7 @@ impl<'a> Canvas<'a> {
     fn deselect_photo(&mut self, layer_id: &LayerId) {
         self.state.layers.get_mut(layer_id).unwrap().selected = false;
         self.history_manager
-            .save_history(CanvasHistoryKind::DeselectLayer, &mut self.state);
+            .save_history(CanvasHistoryKind::DeselectLayer, self.state);
     }
 
     fn deselect_all_photos(&mut self) {
@@ -1314,6 +1312,6 @@ impl<'a> Canvas<'a> {
             layer.selected = false;
         }
         self.history_manager
-            .save_history(CanvasHistoryKind::DeselectLayer, &mut self.state);
+            .save_history(CanvasHistoryKind::DeselectLayer, self.state);
     }
 }

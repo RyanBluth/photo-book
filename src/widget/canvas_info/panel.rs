@@ -1,10 +1,7 @@
 use eframe::egui::{self};
 use egui::InnerResponse;
-use indexmap::IndexMap;
 
 use crate::{
-    id::LayerId,
-    model::edit_state::EditablePage,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
         canvas_info::{
@@ -105,7 +102,7 @@ impl<'a> CanvasInfo<'a> {
 
                 ui.separator();
 
-                HistoryInfo::new(&mut HistoryInfoState::new(&mut self.history_manager)).show(ui);
+                HistoryInfo::new(&mut HistoryInfoState::new(self.history_manager)).show(ui);
             })
         });
 

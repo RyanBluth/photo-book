@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    id::{next_layer_id, next_page_id, LayerId, PageId},
+    id::{next_page_id, LayerId, PageId},
     model::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
@@ -216,7 +216,7 @@ impl Project {
 
                 let template = canvas_state.template.clone();
                 CanvasPage {
-                    layers: layers,
+                    layers,
                     page: Page {
                         size: canvas_state.page.size(),
                         ppi: canvas_state.page.ppi(),
@@ -250,7 +250,7 @@ impl Project {
                                         font_size,
                                     } => TemplateRegionKind::Text {
                                         sample_text: sample_text.clone(),
-                                        font_size: font_size.clone(),
+                                        font_size: *font_size,
                                     },
                                 },
                             })
@@ -461,7 +461,7 @@ impl Project {
                                         font_size,
                                     } => AppTemplateRegionKind::Text {
                                         sample_text: sample_text.clone(),
-                                        font_size: font_size.clone(),
+                                        font_size: *font_size,
                                     },
                                 },
                             })

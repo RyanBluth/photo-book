@@ -1,13 +1,12 @@
-use egui::{Pos2, Rect, Ui};
+use egui::{Pos2, Rect};
 use log::{error, info};
 
 use skia_safe::surfaces::raster_n32_premul;
 use skia_safe::EncodedImageFormat;
 
-use printpdf::{Image, ImageTransform, Mm, PdfDocument, Pt};
+use printpdf::{ImageTransform, Mm, PdfDocument};
 use std::collections::HashMap;
 use std::default;
-use std::error::Error;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
@@ -22,7 +21,6 @@ use thiserror::Error;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
-use crate::model::page;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas_info::layers::LayerContent;
@@ -129,7 +127,7 @@ impl Exporter {
         });
 
         let mut tasks = self.tasks.lock().unwrap();
-        tasks.insert(task_id.clone(), ExportTaskStatus::InProgress(0.0));
+        tasks.insert(task_id, ExportTaskStatus::InProgress(0.0));
 
         task_id
     }

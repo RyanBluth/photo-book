@@ -1,8 +1,8 @@
 use eframe::egui::{Grid, Widget};
-use egui::{ComboBox, Key, Ui};
+use egui::{Key, Ui};
 use strum::IntoEnumIterator;
 
-use crate::photo::{Photo, PhotoMetadataField, PhotoRating, SaveOnDropPhoto};
+use crate::photo::{PhotoMetadataField, PhotoRating, SaveOnDropPhoto};
 
 use super::{segment_control::SegmentControl, spacer::Spacer};
 

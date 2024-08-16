@@ -1,17 +1,15 @@
 use eframe::egui::{self};
-use egui::{Color32, Sense, Stroke, Vec2};
+use egui::{Sense, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
 
 use crate::{
     id::{next_page_id, PageId},
-    scene::canvas_scene::CanvasHistoryManager,
-    template, theme,
+    scene::canvas_scene::CanvasHistoryManager, theme,
 };
 
 use super::{
-    image_gallery::ImageGalleryState,
     page_canvas::{Canvas, CanvasState},
     spacer::Spacer,
 };

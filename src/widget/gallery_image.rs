@@ -2,11 +2,10 @@ use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::{Color32, Vec2},
 };
-use egui::Rect;
 use log::error;
 
 use crate::{
-    photo::Photo, photo_manager::PhotoLoadResult, utils::Truncate,
+    photo::Photo, utils::Truncate,
     widget::placeholder::RectPlaceholder,
 };
 

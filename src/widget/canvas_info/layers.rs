@@ -1,7 +1,7 @@
 use std::hash::Hasher;
 
 use eframe::epaint::Color32;
-use egui::{CursorIcon, FontId, Id, Image, Layout, Pos2, Rect, Vec2};
+use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 

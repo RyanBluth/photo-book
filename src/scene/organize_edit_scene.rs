@@ -1,8 +1,4 @@
-use std::{
-    any::Any,
-    borrow::Borrow,
-    sync::{Arc, RwLock},
-};
+use std::sync::{Arc, RwLock};
 
 use egui::{menu, Color32, Pos2, Rect, Ui, Vec2};
 use log::{error, info};
@@ -18,9 +14,9 @@ use crate::{
 
 use super::{
     canvas_scene::CanvasScene,
-    organize_scene::{GalleryScene, GallerySceneState},
+    organize_scene::GalleryScene,
     Scene, SceneResponse,
-    SceneTransition::{self, Viewer},
+    SceneTransition::{self},
 };
 
 pub struct OrganizeEditScene {
@@ -157,7 +153,7 @@ impl Scene for OrganizeEditScene {
                             let photo_manager: Singleton<PhotoManager> = Dependency::get();
                             photo_manager.with_lock_mut(|photo_manager| {
                                 for recent in &recents {
-                                    if ui.button(&recent.display().to_string()).clicked() {
+                                    if ui.button(recent.display().to_string()).clicked() {
                                         match Project::load(&recent.into(), photo_manager) {
                                             Ok(scene) => {
                                                 config.with_lock_mut(|config| {
@@ -192,7 +188,7 @@ impl Scene for OrganizeEditScene {
 
                                 photo_manager.with_lock(|photo_manager| {
                                     if let Err(err) =
-                                        Project::save(&save_path, &self, photo_manager)
+                                        Project::save(&save_path, self, photo_manager)
                                     {
                                         error!("Error saving project: {:?}", err);
                                     }
