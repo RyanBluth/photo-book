@@ -1,10 +1,10 @@
 use eframe::egui::{Grid, Widget};
-use egui::{ComboBox, Ui};
+use egui::{ComboBox, Key, Ui};
 use strum::IntoEnumIterator;
 
 use crate::photo::{Photo, PhotoMetadataField, PhotoRating, SaveOnDropPhoto};
 
-use super::spacer::Spacer;
+use super::{segment_control::SegmentControl, spacer::Spacer};
 
 pub struct PhotoInfo<'a> {
     pub photo: SaveOnDropPhoto<'a>,
@@ -25,17 +25,16 @@ impl<'a> PhotoInfo<'a> {
                 .show(ui, |ui| {
                     ui.label("Rating");
 
-                    ComboBox::from_id_source("rating_combo_box")
-                        .selected_text(format!("{:?}", self.photo.rating))
-                        .show_ui(ui, |ui| {
-                            for rating in PhotoRating::iter() {
-                                ui.selectable_value(
-                                    &mut self.photo.rating,
-                                    rating,
-                                    format!("{:?}", rating),
-                                );
-                            }
-                        });
+                    SegmentControl::new(
+                        PhotoRating::iter()
+                            .enumerate()
+                            .map(|pr| (pr.1, format!("({}) {}", pr.0 + 1, pr.1)))
+                            .collect::<Vec<_>>()
+                            .as_slice(),
+                        &mut self.photo.rating,
+                    )
+                    .ui(ui);
+
                     ui.end_row();
 
                     for (label, value) in self.photo.metadata.iter() {
@@ -51,5 +50,15 @@ impl<'a> PhotoInfo<'a> {
                     }
                 });
         });
+
+        ui.ctx().input(|input| {
+            if input.key_down(Key::Num1) {
+                self.photo.rating = PhotoRating::Yes;
+            } else if input.key_down(Key::Num2) {
+                self.photo.rating = PhotoRating::Maybe;
+            } else if input.key_down(Key::Num3) {
+                self.photo.rating = PhotoRating::No;
+            }
+        })
     }
 }

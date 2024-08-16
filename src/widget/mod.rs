@@ -9,3 +9,4 @@ pub mod placeholder;
 pub mod spacer;
 pub mod transformable;
 pub mod templates;
+pub mod segment_control;

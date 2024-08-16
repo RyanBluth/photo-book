@@ -228,7 +228,14 @@ impl PhotoManager {
     }
 
     pub fn update_photo(&mut self, photo: Photo) {
-        self.photos.insert(photo.path.clone(), photo);
+        self.photos.insert(photo.path.clone(), photo.clone());
+        if let Some((_, photos)) = self.grouped_photos.as_mut() {
+            for (_, group) in photos.iter_mut() {
+                if group.contains_key(&photo.path) {
+                    group.insert(photo.path.clone(), photo.clone());
+                }
+            }
+        }
     }
 
     pub fn thumbnail_texture_for(
