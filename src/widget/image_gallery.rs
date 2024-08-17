@@ -79,7 +79,7 @@ impl<'a> ImageGallery<'a> {
                         .max(0.0);
 
                     let grouped_photos = photo_manager.with_lock_mut(|photo_manager| {
-                        photo_manager.group_photos_by(PhotosGrouping::Date).clone()
+                        photo_manager.group_photos_by(PhotosGrouping::Rating).clone()
                     });
 
                     struct RowMetadata {

@@ -6,10 +6,7 @@ use std::{
 };
 
 use chrono::Datelike;
-use eframe::egui::{
-    load::SizedTexture,
-    Context,
-};
+use eframe::egui::{load::SizedTexture, Context};
 use egui::emath::OrderedFloat;
 use fxhash::hash64;
 use image::{
@@ -18,16 +15,15 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
+use rand::seq::index;
 use rayon::prelude::ParallelIterator;
 use tokio::task::spawn_blocking;
 
 use crate::{
-    dependencies::{Dependency, DependencyFor},
+    dependencies::{Dependency, DependencyFor, Singleton},
     dirs::Dirs,
-    photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel},
+    photo::{self, Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
-
-
 
 use anyhow::{anyhow, Ok};
 use fr::CpuExtensions;
@@ -57,15 +53,22 @@ impl PhotoLoadResult {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
 pub enum PhotosGrouping {
     Date,
+    Rating,
+}
+
+impl Default for PhotosGrouping {
+    fn default() -> Self {
+        Self::Date
+    }
 }
 
 #[derive(Debug)]
 pub struct PhotoManager {
     pub photos: IndexMap<PathBuf, Photo>,
-    grouped_photos: Option<(PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>)>,
+    grouped_photos: (PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>),
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
     thumbnail_existence_cache: HashSet<String>,
@@ -75,7 +78,7 @@ impl PhotoManager {
     pub fn new() -> Self {
         Self {
             photos: IndexMap::new(),
-            grouped_photos: None,
+            grouped_photos: (PhotosGrouping::default(), IndexMap::new()),
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
             thumbnail_existence_cache: HashSet::new(),
@@ -120,8 +123,6 @@ impl PhotoManager {
                         _ => b.path.cmp(&a.path),
                     }
                 });
-
-                photo_manager.grouped_photos = None;
             });
 
             let photo_paths: Vec<PathBuf> =
@@ -159,8 +160,6 @@ impl PhotoManager {
             }
         });
 
-        self.grouped_photos = None;
-
         let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
         let thumbnail_dir = Dirs::Thumbnails.path();
 
@@ -169,19 +168,28 @@ impl PhotoManager {
             for photo_path in photo_paths {
                 Self::gen_thumbnail(&photo_path, &thumbnail_dir.clone()).unwrap();
             }
+
+            let photo_manager: Singleton<PhotoManager> = Dependency::get();
+            photo_manager.with_lock_mut(|photo_manager| {
+                let grouping = photo_manager.grouped_photos.0;
+                photo_manager.group_photos_by(grouping);
+            });
         });
+    }
+
+    pub fn grouped_photos(&self) -> &IndexMap<String, IndexMap<PathBuf, Photo>> {
+        &self.grouped_photos.1
+    }
+
+    fn regroup_photos(&mut self) {
+        let grouping = self.grouped_photos.0;
+        self.group_photos_by(grouping);
     }
 
     pub fn group_photos_by(
         &mut self,
         photos_grouping: PhotosGrouping,
     ) -> &IndexMap<String, IndexMap<PathBuf, Photo>> {
-        if let Some((grouping, _)) = &self.grouped_photos {
-            if grouping == &photos_grouping {
-                return &self.grouped_photos.as_ref().unwrap().1;
-            }
-        }
-
         let photos = &self.photos;
         match photos_grouping {
             PhotosGrouping::Date => {
@@ -217,20 +225,47 @@ impl PhotoManager {
 
                 grouped_photos.sort_by(|a, _, b, _| b.cmp(a));
 
-                self.grouped_photos = Some((PhotosGrouping::Date, grouped_photos));
+                self.grouped_photos = (PhotosGrouping::Date, grouped_photos);
+            }
+            PhotosGrouping::Rating => {
+                let mut grouped_photos: IndexMap<String, IndexMap<PathBuf, Photo>> =
+                    IndexMap::new();
+
+                for (photo_path, photo) in photos.iter() {
+                    let rating = photo.rating;
+                    let key = format!("{:?}", rating);
+
+                    if let Some(group) = grouped_photos.get_mut(&key) {
+                        group.insert(photo_path.clone(), photo.clone());
+                    } else {
+                        let mut group = IndexMap::new();
+                        group.insert(photo_path.clone(), photo.clone());
+                        grouped_photos.insert(key, group);
+                    }
+                }
+
+                if let Some(yes_index) = grouped_photos.get_index_of(&PhotoRating::Yes.to_string()) {
+                    grouped_photos.move_index(yes_index, 0);
+                }
+
+                if let Some(no_index) = grouped_photos.get_index_of(&PhotoRating::No.to_string()) {
+                    grouped_photos.move_index(no_index, grouped_photos.len() - 1);
+                }
+                
+                self.grouped_photos = (PhotosGrouping::Rating, grouped_photos);
             }
         }
 
-        &self.grouped_photos.as_ref().unwrap().1
+        &self.grouped_photos.1
     }
 
     pub fn update_photo(&mut self, photo: Photo) {
         self.photos.insert(photo.path.clone(), photo.clone());
-        if let Some((_, photos)) = self.grouped_photos.as_mut() {
-            for (_, group) in photos.iter_mut() {
-                if group.contains_key(&photo.path) {
-                    group.insert(photo.path.clone(), photo.clone());
-                }
+        for group in self.grouped_photos.1.values_mut() {
+            if group.contains_key(&photo.path) {
+                group.insert(photo.path.clone(), photo.clone());
+                self.regroup_photos(); // TODO: This isn't very efficient
+                return;
             }
         }
     }

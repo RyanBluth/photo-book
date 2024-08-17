@@ -425,9 +425,9 @@ impl PhotoMetadata {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumIter, PartialEq)]
 pub enum PhotoRating {
-    Yes,
-    Maybe,
-    No,
+    Yes = 0,
+    Maybe = 1,
+    No = 2,
 }
 
 impl Display for PhotoRating {

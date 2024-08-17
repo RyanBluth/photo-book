@@ -5,11 +5,7 @@ use log::{error, info};
 use sqlx::Either;
 
 use crate::{
-    auto_persisting::AutoPersisting,
-    config::{Config, ConfigModification},
-    dependencies::{Dependency, Singleton, SingletonFor},
-    photo_manager::PhotoManager,
-    project::v1::Project,
+    auto_persisting::AutoPersisting, config::{Config, ConfigModification}, dependencies::{Dependency, Singleton, SingletonFor}, photo, photo_manager::{PhotoManager, PhotosGrouping}, project::v1::Project
 };
 
 use super::{
@@ -223,6 +219,18 @@ impl Scene for OrganizeEditScene {
                     }
 
                     if ui.button("Export").clicked() {}
+                });
+
+                ui.menu_button("Group By", |ui|{
+                    let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                    photo_manager.with_lock_mut(|photo_manager|{
+                        if ui.button("Date").clicked() {
+                            photo_manager.group_photos_by(PhotosGrouping::Date);
+                        }
+                        if ui.button("Rating").clicked() {
+                            photo_manager.group_photos_by(PhotosGrouping::Rating);
+                        }
+                    });
                 });
             });
 
