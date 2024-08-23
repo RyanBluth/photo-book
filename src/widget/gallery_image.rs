@@ -2,10 +2,13 @@ use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::{Color32, Vec2},
 };
+use egui::Spinner;
 use log::error;
 
 use crate::{
-    photo::Photo, utils::Truncate,
+    photo::{Photo, PhotoRotation},
+    theme::color,
+    utils::Truncate,
     widget::placeholder::RectPlaceholder,
 };
 
@@ -41,13 +44,11 @@ impl Widget for GalleryImage {
                 let image_size = match self.photo.max_dimension() {
                     crate::photo::MaxPhotoDimension::Width => Vec2::new(
                         size.x,
-                        self.photo.metadata.height() as f32
-                            / self.photo.metadata.width() as f32
+                        self.photo.metadata.height() as f32 / self.photo.metadata.width() as f32
                             * size.x,
                     ),
                     crate::photo::MaxPhotoDimension::Height => Vec2::new(
-                        self.photo.metadata.width() as f32
-                            / self.photo.metadata.height() as f32
+                        self.photo.metadata.width() as f32 / self.photo.metadata.height() as f32
                             * size.y,
                         size.y,
                     ),
@@ -91,12 +92,29 @@ impl Widget for GalleryImage {
                             let width_scale = available_size.x / image_size.x;
                             let height_scale = available_size.y / image_size.y;
                             let scale: f32 = width_scale.min(height_scale);
-                            let scaled_image_size = image_size * scale * if self.photo.metadata.rotation().is_horizontal() { 0.9 } else { 0.75 };
+                            let scaled_image_size: Vec2 = image_size
+                                * scale
+                                * if self.photo.metadata.rotation().is_horizontal() {
+                                    0.9
+                                } else {
+                                    0.75
+                                };
+                            let rotated_scaled_image_size =
+                                if self.photo.metadata.does_rotation_alter_dimensions() {
+                                    scaled_image_size.rot90().abs()
+                                } else {
+                                    scaled_image_size
+                                };
 
-                            let verical_spacing = (available_size.y - scaled_image_size.y) / 2.0;
+                            let verical_spacing = if matches!(self.texture, Ok(Some(_))) {
+                                (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0)
+                            } else {
+                                (0.0 as f32)
+                                    .max((available_size.y - rotated_scaled_image_size.y) / 2.0)
+                            };
 
                             ui.add_space(verical_spacing);
-                            
+
                             match self.texture {
                                 Ok(Some(texture)) => {
                                     let rotation = self.photo.metadata.rotation();
@@ -107,17 +125,20 @@ impl Widget for GalleryImage {
                                     );
                                 }
                                 Ok(None) => {
-                                    RectPlaceholder::new(
-                                        scaled_image_size,
-                                        Color32::from_rgb(50, 50, 50),
+                                    let response = RectPlaceholder::new(
+                                        rotated_scaled_image_size,
+                                        color::PLACEHOLDER,
                                     )
                                     .ui(ui);
+
+                                    ui.put(response.rect, Spinner::new());
+
                                 }
                                 Err(err) => {
                                     // Show red square for error for now
                                     // TODO: Show error message or something
                                     RectPlaceholder::new(
-                                        scaled_image_size,
+                                        rotated_scaled_image_size,
                                         Color32::from_rgb(255, 0, 0),
                                     )
                                     .ui(ui);

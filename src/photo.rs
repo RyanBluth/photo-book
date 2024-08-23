@@ -53,7 +53,7 @@ pub enum MaxPhotoDimension {
     Height,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub enum PhotoRotation {
     Normal,
     MirrorHorizontal,
@@ -396,6 +396,22 @@ impl PhotoMetadata {
         match self.fields.get(PhotoMetadataFieldLabel::RotatedHeight) {
             Some(PhotoMetadataField::RotatedHeight(rotated_height)) => *rotated_height,
             _ => 0,
+        }
+    }
+
+    pub fn does_rotation_alter_dimensions(&self) -> bool {
+        match self.fields.get(PhotoMetadataFieldLabel::Rotation) {
+            Some(PhotoMetadataField::Rotation(rotation)) => match rotation {
+                PhotoRotation::Normal => false,
+                PhotoRotation::MirrorHorizontal => false,
+                PhotoRotation::Rotate180 => false,
+                PhotoRotation::MirrorVerticalAndRotate180 => false,
+                PhotoRotation::MirrorHorizontalAndRotate90CW => true,
+                PhotoRotation::Rotate90CW => true,
+                PhotoRotation::MirrorHorizontalAndRotate270CW => true,
+                PhotoRotation::Rotate270CW => true,
+            },
+            _ => false,
         }
     }
 
