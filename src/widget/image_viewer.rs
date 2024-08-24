@@ -11,6 +11,8 @@ use crate::{
         Photo,
     },
     photo_manager::PhotoManager,
+    theme::color,
+    utils::RectExt,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -273,8 +275,12 @@ impl<'a> Widget for ImageViewer<'a> {
                         .paint_at(ui, image_rect);
                 }
                 Ok(None) | Err(_) => {
-                    ui.painter()
-                        .rect_filled(image_rect, 0.0, Color32::from_rgb(50, 50, 50));
+                    ui.painter().rect_filled(
+                        image_rect
+                            .rotate_bb_around_center(self.photo.metadata.rotation().radians()),
+                        0.0,
+                        color::PLACEHOLDER,
+                    );
                 }
             },
             Err(error) => {

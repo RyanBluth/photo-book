@@ -244,14 +244,15 @@ impl PhotoManager {
                     }
                 }
 
-                if let Some(yes_index) = grouped_photos.get_index_of(&PhotoRating::Yes.to_string()) {
+                if let Some(yes_index) = grouped_photos.get_index_of(&PhotoRating::Yes.to_string())
+                {
                     grouped_photos.move_index(yes_index, 0);
                 }
 
                 if let Some(no_index) = grouped_photos.get_index_of(&PhotoRating::No.to_string()) {
                     grouped_photos.move_index(no_index, grouped_photos.len() - 1);
                 }
-                
+
                 self.grouped_photos = (PhotosGrouping::Rating, grouped_photos);
             }
         }
@@ -503,19 +504,19 @@ impl PhotoManager {
 
         for partition in partitions {
             let thumbnail_dir = thumbnail_dir.clone();
-            // tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            //thread::spawn(move || {
-            partition.into_iter().for_each(|photo| {
-                let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
-                if res.is_err() {
-                    error!("{:?}", res);
-                    panic!("{:?}", res);
-                }
-            });
-            //});
+            tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+                //thread::spawn(move || {
+                partition.into_iter().for_each(|photo| {
+                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
+                    if res.is_err() {
+                        error!("{:?}", res);
+                        panic!("{:?}", res);
+                    }
+                });
+                //});
 
-            //Ok(())
-            //});
+                Ok(())
+            });
         }
         Ok(())
     }
