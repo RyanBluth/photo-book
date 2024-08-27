@@ -11,8 +11,8 @@ use crate::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
-    photo::Photo as AppPhoto,
-    photo_manager::PhotoManager,
+    photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
+    photo_manager::{PhotoManager, PhotosGrouping as AppPhotosGrouping},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
         organize_edit_scene::OrganizeEditScene,
@@ -48,6 +48,7 @@ pub enum ProjectError {
 pub struct Project {
     pub photos: Vec<Photo>,
     pub pages: Vec<CanvasPage>,
+    pub group_by: PhotosGrouping,
 }
 
 impl Project {
@@ -61,6 +62,7 @@ impl Project {
             .iter()
             .map(|photo| Photo {
                 path: photo.0.clone(),
+                rating: photo.1.rating.into(),
             })
             .collect();
 
@@ -88,6 +90,7 @@ impl Project {
                                     LayerContent::Photo(CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path,
+                                            rating: canvas_photo.photo.rating.into(),
                                         },
                                     })
                                 }
@@ -146,6 +149,7 @@ impl Project {
                                     photo: photo.map(|canvas_photo| CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path,
+                                            rating: canvas_photo.photo.rating.into(),
                                         },
                                     }),
                                     scale_mode: match scale_mode {
@@ -260,7 +264,13 @@ impl Project {
             })
             .collect();
 
-        let project = Project { photos, pages };
+        let group_by = photo_manager.photo_grouping();
+
+        let project = Project {
+            photos,
+            pages,
+            group_by: group_by.into(),
+        };
 
         let project_data = serde_json::to_string_pretty(&project)?;
 
@@ -276,7 +286,13 @@ impl Project {
         let file = std::fs::File::open(path)?;
         let project: Project = serde_json::from_reader(file)?;
 
-        photo_manager.load_photos(project.photos.into_iter().map(|photo| photo.path).collect());
+        photo_manager.load_photos(
+            project
+                .photos
+                .into_iter()
+                .map(|photo| (photo.path, Some(photo.rating.into())))
+                .collect(),
+        );
 
         let pages: IndexMap<PageId, CanvasState> = project
             .pages
@@ -301,7 +317,10 @@ impl Project {
                             content: match layer.content {
                                 LayerContent::Photo(photo) => {
                                     AppLayerContent::Photo(AppCanvasPhoto {
-                                        photo: AppPhoto::new(photo.photo.path),
+                                        photo: AppPhoto::with_rating(
+                                            photo.photo.path,
+                                            photo.photo.rating.into(),
+                                        ),
                                     })
                                 }
                                 LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
@@ -353,7 +372,10 @@ impl Project {
                                         },
                                     },
                                     photo: photo.map(|photo| AppCanvasPhoto {
-                                        photo: AppPhoto::new(photo.photo.path),
+                                        photo: AppPhoto::with_rating(
+                                            photo.photo.path,
+                                            photo.photo.rating.into(),
+                                        ),
                                     }),
                                     scale_mode: match scale_mode {
                                         ScaleMode::Fit => AppScaleMode::Fit,
@@ -482,6 +504,8 @@ impl Project {
 
         let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
 
+        photo_manager.group_photos_by(project.group_by.into());
+
         Ok(organize_edit_scene)
     }
 }
@@ -510,6 +534,7 @@ enum Unit {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Photo {
     pub path: PathBuf,
+    pub rating: PhotoRating,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -593,4 +618,55 @@ pub enum TextVerticalAlignment {
     Top,
     Center,
     Bottom,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PhotoRating {
+    Yes,
+    No,
+    Maybe,
+}
+
+impl Into<AppPhotoRating> for PhotoRating {
+    fn into(self) -> AppPhotoRating {
+        match self {
+            PhotoRating::Yes => AppPhotoRating::Yes,
+            PhotoRating::No => AppPhotoRating::No,
+            PhotoRating::Maybe => AppPhotoRating::Maybe,
+        }
+    }
+}
+
+impl Into<PhotoRating> for AppPhotoRating {
+    fn into(self) -> PhotoRating {
+        match self {
+            AppPhotoRating::Yes => PhotoRating::Yes,
+            AppPhotoRating::No => PhotoRating::No,
+            AppPhotoRating::Maybe => PhotoRating::Maybe,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PhotosGrouping {
+    Rating,
+    Date,
+}
+
+impl Into<AppPhotosGrouping> for PhotosGrouping {
+    fn into(self) -> AppPhotosGrouping {
+        match self {
+            PhotosGrouping::Rating => AppPhotosGrouping::Rating,
+            PhotosGrouping::Date => AppPhotosGrouping::Date,
+        }
+    }
+}
+
+impl Into<PhotosGrouping> for AppPhotosGrouping {
+    fn into(self) -> PhotosGrouping {
+        match self {
+            AppPhotosGrouping::Rating => PhotosGrouping::Rating,
+            AppPhotosGrouping::Date => PhotoGrouping::Date,
+        }
+    }
 }

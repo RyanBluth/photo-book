@@ -12,7 +12,7 @@ use std::{
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     dirs::Dirs,
-    photo_manager::{PhotoManager},
+    photo_manager::PhotoManager,
     utils::ExifDateTimeExt,
 };
 
@@ -300,9 +300,13 @@ impl PhotoMetadata {
             };
             if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
                 if let Value::Ascii(ref vec) = field.value {
-                    if let Some(date_time) = vec.first()
+                    if let Some(date_time) = vec
+                        .first()
                         .and_then(|value| exif::DateTime::from_ascii(value).ok())
-                        .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok()) { fields.insert(PhotoMetadataField::DateTime(date_time)) }
+                        .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok())
+                    {
+                        fields.insert(PhotoMetadataField::DateTime(date_time))
+                    }
                 }
             }
 
@@ -444,6 +448,12 @@ pub enum PhotoRating {
     Yes = 0,
     Maybe = 1,
     No = 2,
+}
+
+impl Default for PhotoRating {
+    fn default() -> Self {
+        PhotoRating::Maybe
+    }
 }
 
 impl Display for PhotoRating {

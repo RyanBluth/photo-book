@@ -142,10 +142,12 @@ impl PhotoManager {
         Ok(())
     }
 
-    pub fn load_photos(&mut self, photo_paths: Vec<PathBuf>) {
-        for photo_path in photo_paths {
-            self.photos
-                .insert(photo_path.clone(), Photo::new(photo_path));
+    pub fn load_photos(&mut self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
+        for (path, rating) in photos {
+            self.photos.insert(
+                path.clone(),
+                Photo::with_rating(path, rating.unwrap_or_default()),
+            );
         }
 
         self.photos.sort_by(|_, a, _, b| {
@@ -184,6 +186,10 @@ impl PhotoManager {
     fn regroup_photos(&mut self) {
         let grouping = self.grouped_photos.0;
         self.group_photos_by(grouping);
+    }
+
+    pub fn photo_grouping(&self) -> PhotosGrouping {
+        self.grouped_photos.0
     }
 
     pub fn group_photos_by(
