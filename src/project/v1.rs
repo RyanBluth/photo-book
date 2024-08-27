@@ -666,7 +666,7 @@ impl Into<PhotosGrouping> for AppPhotosGrouping {
     fn into(self) -> PhotosGrouping {
         match self {
             AppPhotosGrouping::Rating => PhotosGrouping::Rating,
-            AppPhotosGrouping::Date => PhotoGrouping::Date,
+            AppPhotosGrouping::Date => PhotosGrouping::Date,
         }
     }
 }
