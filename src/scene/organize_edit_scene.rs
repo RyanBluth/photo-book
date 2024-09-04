@@ -5,7 +5,13 @@ use log::{error, info};
 use sqlx::Either;
 
 use crate::{
-    auto_persisting::AutoPersisting, config::{Config, ConfigModification}, dependencies::{Dependency, Singleton, SingletonFor}, photo, photo_manager::{PhotoManager, PhotosGrouping}, project::v1::Project
+    auto_persisting::AutoPersisting,
+    config::{Config, ConfigModification},
+    dependencies::{Dependency, Singleton, SingletonFor},
+    export::Exporter,
+    photo,
+    photo_manager::{PhotoManager, PhotosGrouping},
+    project::v1::Project,
 };
 
 use super::{
@@ -183,8 +189,7 @@ impl Scene for OrganizeEditScene {
                                 let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
                                 photo_manager.with_lock(|photo_manager| {
-                                    if let Err(err) =
-                                        Project::save(&save_path, self, photo_manager)
+                                    if let Err(err) = Project::save(&save_path, self, photo_manager)
                                     {
                                         error!("Error saving project: {:?}", err);
                                     }
@@ -218,12 +223,49 @@ impl Scene for OrganizeEditScene {
                         }
                     }
 
-                    if ui.button("Export").clicked() {}
+                    if ui.button("Export").clicked() {
+                        let export_path = native_dialog::FileDialog::new()
+                            .set_filename("export.pdf")
+                            .show_save_single_file();
+
+                        match export_path {
+                            Ok(Some(export_path)) => {
+                                let exporter: Singleton<Exporter> = Dependency::get();
+
+                                let directory = export_path.parent().unwrap();
+                                let file_name = export_path.file_name().unwrap();
+
+                                exporter.with_lock_mut(|exporter| {
+                                    exporter.export(
+                                        ui.ctx().clone(),
+                                        self.edit
+                                            .read()
+                                            .unwrap()
+                                            .state
+                                            .pages_state
+                                            .pages
+                                            .values()
+                                            .into_iter()
+                                            .map(|x| x.clone())
+                                            .collect::<Vec<_>>(),
+                                        directory.into(),
+                                        file_name.to_str().unwrap(),
+                                    );
+                                });
+                            }
+                            Err(e) => {
+                                error!("Error opening export file dialog: {:?}", e);
+                            }
+                            Ok(None) => {
+                                info!("No export directory selected");
+                            }
+                        }
+                    }
                 });
 
-                ui.menu_button("Group By", |ui|{
+                ui.menu_button("Group By", |ui| {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                    photo_manager.with_lock_mut(|photo_manager|{
+                    photo_manager.with_lock_mut(|photo_manager| {
                         if ui.button("Date").clicked() {
                             photo_manager.group_photos_by(PhotosGrouping::Date);
                         }

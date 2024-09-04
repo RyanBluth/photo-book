@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use chrono::Datelike;
+use chrono::{DateTime, Datelike, Utc};
 use eframe::egui::{load::SizedTexture, Context};
 use egui::emath::OrderedFloat;
 use fxhash::hash64;
@@ -29,6 +29,8 @@ use anyhow::{anyhow, Ok};
 use fr::CpuExtensions;
 use image::io::Reader as ImageReader;
 use image::ImageEncoder;
+
+use core::result::Result;
 
 use fast_image_resize::{self as fr, ResizeOptions};
 
@@ -67,8 +69,8 @@ impl Default for PhotosGrouping {
 
 #[derive(Debug)]
 pub struct PhotoManager {
-    pub photos: IndexMap<PathBuf, Photo>,
-    grouped_photos: (PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>),
+    pub photos: IndexMap<PathBuf, Photo>, // TODO: Use an Arc or something
+    grouped_photos: (PhotosGrouping, IndexMap<String, IndexMap<PathBuf, Photo>>), // TODO: Use an Arc or something
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
     thumbnail_existence_cache: HashSet<String>,
@@ -123,6 +125,8 @@ impl PhotoManager {
                         _ => b.path.cmp(&a.path),
                     }
                 });
+
+                photo_manager.regroup_photos();
             });
 
             let photo_paths: Vec<PathBuf> =
@@ -173,8 +177,7 @@ impl PhotoManager {
 
             let photo_manager: Singleton<PhotoManager> = Dependency::get();
             photo_manager.with_lock_mut(|photo_manager| {
-                let grouping = photo_manager.grouped_photos.0;
-                photo_manager.group_photos_by(grouping);
+                photo_manager.regroup_photos();
             });
         });
     }
@@ -203,29 +206,54 @@ impl PhotoManager {
                     IndexMap::new();
 
                 for (photo_path, photo) in photos.iter() {
-                    let date_time = photo
+                    let exif_date_time = photo
                         .metadata
                         .fields
                         .get(PhotoMetadataFieldLabel::DateTime)
                         .and_then(|field| match field {
-                            PhotoMetadataField::DateTime(date_time) => Some(date_time),
-                            _ => None,
+                            PhotoMetadataField::DateTime(date_time) => Some(date_time.clone()),
+                            _ => {
+                                if let Result::Ok(file_metadata) = std::fs::metadata(photo_path) {
+                                    if let Result::Ok(modified) = file_metadata.modified() {
+                                        let modified_date_time: DateTime<Utc> = modified.into();
+                                        return Some(modified_date_time);
+                                    } else if let Result::Ok(created) = file_metadata.created() {
+                                        let created_date_time: DateTime<Utc> = created.into();
+                                        return Some(created_date_time);
+                                    } else {
+                                        return None;
+                                    }
+                                } else {
+                                    return None;
+                                }
+                            }
                         });
 
-                    if let Some(date_time) = date_time {
+                    let key = if let Some(date_time) = exif_date_time {
                         let year = date_time.year();
                         let month = date_time.month();
                         let day = date_time.day();
 
-                        let key = format!("{:04}-{:02}-{:02}", year, month, day);
+                        Some(format!("{:04}-{:02}-{:02}", year, month, day))
+                    } else {
+                        // Get the last modified date of the file
+                        let metadata = std::fs::metadata(photo_path).unwrap();
+                        let modified = metadata.modified().unwrap();
+                        let modified_date_time: DateTime<Utc> = modified.into();
+                        let year = modified_date_time.year();
+                        let month: u32 = modified_date_time.month();
+                        let day = modified_date_time.day();
 
-                        if let Some(group) = grouped_photos.get_mut(&key) {
-                            group.insert(photo_path.clone(), photo.clone());
-                        } else {
-                            let mut group = IndexMap::new();
-                            group.insert(photo_path.clone(), photo.clone());
-                            grouped_photos.insert(key, group);
-                        }
+                        Some(format!("{:04}-{:02}-{:02}", year, month, day))
+                    }
+                    .unwrap_or_else(|| "Unknown Date".to_string());
+
+                    if let Some(group) = grouped_photos.get_mut(&key) {
+                        group.insert(photo_path.clone(), photo.clone());
+                    } else {
+                        let mut group = IndexMap::new();
+                        group.insert(photo_path.clone(), photo.clone());
+                        grouped_photos.insert(key, group);
                     }
                 }
 
