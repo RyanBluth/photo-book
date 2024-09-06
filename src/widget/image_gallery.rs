@@ -13,6 +13,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
     photo_manager::{PhotoManager, PhotosGrouping},
+    utils::EguiUiExt,
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
@@ -78,9 +79,8 @@ impl<'a> ImageGallery<'a> {
                         - ui.spacing().item_spacing.x)
                         .max(0.0);
 
-                    let grouped_photos = photo_manager.with_lock_mut(|photo_manager| {
-                        photo_manager.grouped_photos().clone()
-                    });
+                    let grouped_photos = photo_manager
+                        .with_lock_mut(|photo_manager| photo_manager.grouped_photos().clone());
 
                     struct RowMetadata {
                         height: f32,
@@ -219,7 +219,7 @@ impl<'a> ImageGallery<'a> {
                 });
             });
         } else {
-            ui.label("No folder selected");
+            ui.both_centered(|ui| ui.heading("Import photos or open a project to get started"));
         }
 
         response

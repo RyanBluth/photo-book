@@ -15,6 +15,7 @@ use crate::{
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::CanvasInfo,
+            quick_layout::{QuickLayout, QuickLayoutState},
         },
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         page_canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
@@ -84,6 +85,7 @@ pub enum CanvasScenePane {
     Info,
     Pages,
     Templates,
+    QuickLayout,
 }
 
 pub struct CanvasScene {
@@ -95,22 +97,27 @@ impl CanvasScene {
     pub fn new() -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
-        let tabs = vec![
+        let left_tabs = vec![
             tiles.insert_pane(CanvasScenePane::Gallery),
             tiles.insert_pane(CanvasScenePane::Pages),
             tiles.insert_pane(CanvasScenePane::Templates),
         ];
 
-        let tabs_id = tiles.insert_tab_tile(tabs);
+        let left_tabs_ids = tiles.insert_tab_tile(left_tabs);
         let canvas_id = tiles.insert_pane(CanvasScenePane::Canvas);
-        let info_id = tiles.insert_pane(CanvasScenePane::Info);
 
-        let children = vec![tabs_id, canvas_id, info_id];
+        let right_tabs = vec![
+            tiles.insert_pane(CanvasScenePane::Info),
+            tiles.insert_pane(CanvasScenePane::QuickLayout),
+        ];
+        let right_tabs_id = tiles.insert_tab_tile(right_tabs);
+
+        let children = vec![left_tabs_ids, canvas_id, right_tabs_id];
 
         let mut linear_layout =
             egui_tiles::Linear::new(egui_tiles::LinearDir::Horizontal, children);
-        linear_layout.shares.set_share(tabs_id, 0.2);
-        linear_layout.shares.set_share(info_id, 0.2);
+        linear_layout.shares.set_share(left_tabs_ids, 0.2);
+        linear_layout.shares.set_share(right_tabs_id, 0.2);
 
         Self {
             state: CanvasSceneState::new(),
@@ -211,54 +218,57 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state) { match response {
-                    ImageGalleryResponse::ViewPhoto(photo) => {
-                        self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
-                    }
-                    ImageGalleryResponse::EditPhoto(photo) => {
-                        let is_template = self.scene_state.canvas_state.template.is_some();
+                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state)
+                {
+                    match response {
+                        ImageGalleryResponse::ViewPhoto(photo) => {
+                            self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
+                        }
+                        ImageGalleryResponse::EditPhoto(photo) => {
+                            let is_template = self.scene_state.canvas_state.template.is_some();
 
-                        if is_template {
-                            let mut selected_template_photos: Vec<_> = self
-                                .scene_state
-                                .canvas_state
-                                .layers
-                                .iter_mut()
-                                .filter(|(_, layer)| {
-                                    matches!(layer.content, LayerContent::TemplatePhoto { .. })
-                                        && layer.selected
-                                })
-                                .collect();
+                            if is_template {
+                                let mut selected_template_photos: Vec<_> = self
+                                    .scene_state
+                                    .canvas_state
+                                    .layers
+                                    .iter_mut()
+                                    .filter(|(_, layer)| {
+                                        matches!(layer.content, LayerContent::TemplatePhoto { .. })
+                                            && layer.selected
+                                    })
+                                    .collect();
 
-                            if selected_template_photos.len() == 1 {
-                                if let LayerContent::TemplatePhoto {
-                                    region: _,
-                                    photo: canvas_photo,
-                                    scale_mode: _,
-                                } = &mut selected_template_photos[0].1.content
+                                if selected_template_photos.len() == 1 {
+                                    if let LayerContent::TemplatePhoto {
+                                        region: _,
+                                        photo: canvas_photo,
+                                        scale_mode: _,
+                                    } = &mut selected_template_photos[0].1.content
+                                    {
+                                        *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
+                                    }
+
+                                    self.scene_state.history_manager.save_history(
+                                        CanvasHistoryKind::AddPhoto,
+                                        &mut self.scene_state.canvas_state,
+                                    );
+                                } else if selected_template_photos.len() > 1
+                                    || selected_template_photos.is_empty()
                                 {
-                                    *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
+                                    // TODO: Show error message saying that only one template photo can be selected
                                 }
-
+                            } else {
+                                let layer = Layer::with_photo(photo.clone());
+                                self.scene_state.canvas_state.layers.insert(layer.id, layer);
                                 self.scene_state.history_manager.save_history(
                                     CanvasHistoryKind::AddPhoto,
                                     &mut self.scene_state.canvas_state,
                                 );
-                            } else if selected_template_photos.len() > 1
-                                || selected_template_photos.is_empty()
-                            {
-                                // TODO: Show error message saying that only one template photo can be selected
                             }
-                        } else {
-                            let layer = Layer::with_photo(photo.clone());
-                            self.scene_state.canvas_state.layers.insert(layer.id, layer);
-                            self.scene_state.history_manager.save_history(
-                                CanvasHistoryKind::AddPhoto,
-                                &mut self.scene_state.canvas_state,
-                            );
                         }
                     }
-                } }
+                }
             }
             CanvasScenePane::Canvas => {
                 Canvas::new(
@@ -339,6 +349,13 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     TemplatesResponse::None => {}
                 }
             }
+            CanvasScenePane::QuickLayout => {
+                QuickLayout::new(&mut QuickLayoutState::new(
+                    &mut self.scene_state.canvas_state,
+                    &mut self.scene_state.history_manager,
+                ))
+                .show(ui);
+            }
         }
 
         UiResponse::None
@@ -351,6 +368,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Info => "Info".into(),
             CanvasScenePane::Pages => "Pages".into(),
             CanvasScenePane::Templates => "Templates".into(),
+            CanvasScenePane::QuickLayout => "Quick Layout".into(),
         }
     }
 }

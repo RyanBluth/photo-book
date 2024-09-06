@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Pos2, Rect, Sense, Vec2};
+use egui::{Align, Layout, Pos2, Rect, RichText, Sense, Vec2};
 
 use egui_extras::Column;
 use strum::IntoEnumIterator;
@@ -7,6 +7,7 @@ use strum::IntoEnumIterator;
 use crate::{
     model::page::Page,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    utils::EguiUiExt,
     widget::{
         page_canvas::{Canvas, CanvasState},
         spacer::Spacer,
@@ -56,26 +57,35 @@ impl<'a> QuickLayout<'a> {
     pub fn show(&mut self, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing = Vec2::splat(10.0);
 
-        let window_width = ui.available_width();
-        let window_height = ui.available_height();
+        let available_layouts = self.available_layouts();
+
+        if available_layouts.is_empty() {
+            ui.both_centered(|ui| {
+                ui.heading("Add photos to view available layouts.");
+            });
+
+            return;
+        }
+
+        let available_width = ui.available_width();
+        let available_height = ui.available_height();
         let column_width = 256.0;
         let row_height = 256.0;
-        let num_columns: usize = (window_width / column_width).floor() as usize;
+        let num_columns: usize = (available_width / column_width).floor() as usize;
 
         //let padding_size = num_columns as f32 * 10.0;
-        let spacer_width = (window_width
+        let spacer_width = (available_width
             - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
             - 10.0
             - ui.spacing().item_spacing.x)
             .max(0.0);
 
-        let available_layouts = self.available_layouts();
         let num_rows = available_layouts.len();
 
         let mut selected_layout = None;
 
         egui_extras::TableBuilder::new(ui)
-            .min_scrolled_height(window_height)
+            .min_scrolled_height(available_height)
             .columns(Column::exact(column_width), num_columns)
             .column(Column::exact(spacer_width))
             .body(|body| {

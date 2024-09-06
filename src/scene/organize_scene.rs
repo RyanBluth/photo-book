@@ -7,6 +7,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::SaveOnDropPhoto,
     photo_manager::PhotoManager,
+    utils::EguiUiExt,
     widget::{
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         photo_info::PhotoInfo,
@@ -51,14 +52,16 @@ impl GalleryScene {
         let mut tiles = egui_tiles::Tiles::default();
 
         let gallery_pane_id = tiles.insert_pane(GalleryScenePane::Gallery);
-        let info_pane_id = tiles.insert_pane(GalleryScenePane::PhotoInfo);
+
+        let right_tabs = vec![tiles.insert_pane(GalleryScenePane::PhotoInfo)];
+        let right_tabs_id = tiles.insert_tab_tile(right_tabs);
 
         let mut linear_layout = egui_tiles::Linear::new(
             egui_tiles::LinearDir::Horizontal,
-            vec![gallery_pane_id, info_pane_id],
+            vec![gallery_pane_id, right_tabs_id],
         );
 
-        linear_layout.shares.set_share(info_pane_id, 0.2);
+        linear_layout.shares.set_share(right_tabs_id, 0.2);
 
         Self {
             state: GallerySceneState::default(),
@@ -98,7 +101,10 @@ struct GalleryTreeBehavior<'a> {
 
 impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
     fn tab_title_for_pane(&mut self, _pane: &GalleryScenePane) -> egui::WidgetText {
-        "Gallery".into()
+        match _pane {
+            GalleryScenePane::Gallery => "Gallery".into(),
+            GalleryScenePane::PhotoInfo => "Photo Info".into(),
+        }
     }
 
     fn pane_ui(
@@ -138,6 +144,10 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
                         .with_lock(|photo_manager| photo_manager.photos[selected_image].clone());
 
                     PhotoInfo::new(SaveOnDropPhoto::new(&mut photo)).show(ui);
+                } else {
+                    ui.both_centered(|ui| {
+                        ui.heading("Nothing selected");
+                    });
                 }
             }
         }

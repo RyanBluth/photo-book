@@ -5,7 +5,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Id, InnerResponse, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
 use crate::{
     cursor_manager::CursorManager,
@@ -238,11 +238,12 @@ impl IdExt for Id {
     }
 }
 
-pub trait EguiExt {
+pub trait EguiUiExt {
     fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
+    fn both_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
 }
 
-impl EguiExt for Ui {
+impl EguiUiExt for Ui {
     fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
         let response = self.allocate_ui(self.max_rect().size(), add_contents);
 
@@ -257,6 +258,19 @@ impl EguiExt for Ui {
             response.inner,
             self.interact(response.response.rect, self.next_auto_id(), Sense::click()),
         )
+    }
+
+    fn both_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+        let centered_layout = Layout {
+            main_dir: egui::Direction::TopDown,
+            main_wrap: true,
+            main_align: Align::Center,
+            main_justify: true,
+            cross_align: Align::Center,
+            cross_justify: false,
+        };
+
+        self.with_layout(centered_layout, add_contents)
     }
 }
 

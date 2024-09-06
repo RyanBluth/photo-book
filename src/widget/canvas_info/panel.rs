@@ -83,8 +83,6 @@ impl<'a> CanvasInfo<'a> {
                     }
                 }
 
-                QuickLayout::new(&mut QuickLayoutState::new(self.canvas_state, self.history_manager)).show(ui);
-
                 ui.separator();
 
                 match Layers::new(&mut self.canvas_state.layers).show(ui) {

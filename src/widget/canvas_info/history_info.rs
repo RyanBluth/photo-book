@@ -1,11 +1,12 @@
 use eframe::egui::{self};
-use egui::{RichText};
+use egui::RichText;
 
 use egui_extras::{Column, TableBuilder};
 use strum::IntoEnumIterator;
 
 use crate::{
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, utils::EguiExt,
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    utils::EguiUiExt,
 };
 
 #[derive(Debug, PartialEq)]
