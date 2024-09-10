@@ -1,12 +1,13 @@
 use std::sync::{Arc, RwLock};
 
-use egui::{menu, Color32, Pos2, Rect, Ui, Vec2};
+use egui::{menu, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Ui, Vec2};
 use log::{error, info};
 use sqlx::Either;
 
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
+    cursor_manager::{self, CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
     photo,
@@ -57,6 +58,39 @@ impl OrganizeEditScene {
             .image_gallery_state
             .clone();
     }
+
+    fn mode_selector(&mut self, ui: &mut Ui) {
+        let mut organize_text = RichText::new("Organize");
+        let mut edit_text = RichText::new("Edit");
+
+        if self.current.is_left() {
+            organize_text = organize_text.strong();
+        } else {
+            edit_text = edit_text.strong();
+        }
+
+        let organize_heading = ui.heading(organize_text);
+        let edit_heading = ui.heading(edit_text);
+
+        if organize_heading.hovered()
+            || edit_heading.hovered()
+            || organize_heading.is_pointer_button_down_on()
+            || edit_heading.is_pointer_button_down_on()
+        {
+            let cursor_manager: Singleton<CursorManager> = Dependency::get();
+            cursor_manager.with_lock_mut(|cursor_manager| {
+                cursor_manager.set_cursor(CursorIcon::PointingHand);
+            });
+        }
+
+        if organize_heading.clicked() {
+            self.show_organize();
+        }
+
+        if edit_heading.clicked() {
+            self.show_edit();
+        }
+    }
 }
 
 impl Scene for OrganizeEditScene {
@@ -82,12 +116,7 @@ impl Scene for OrganizeEditScene {
                     ui.add_space(ui.available_width() / 2.0 - top_nav_button_width / 2.0);
 
                     let nav_buttons_response = ui.horizontal(|ui| {
-                        if ui.button("Organize").clicked() {
-                            self.show_organize();
-                        }
-                        if ui.button("Edit").clicked() {
-                            self.show_edit();
-                        }
+                        self.mode_selector(ui);
                     });
 
                     ui.memory_mut(|memory| {
@@ -99,7 +128,7 @@ impl Scene for OrganizeEditScene {
                 });
             });
 
-            ui.add_space(12.0);
+            ui.add_space(-20.0);
 
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
@@ -275,6 +304,8 @@ impl Scene for OrganizeEditScene {
                     });
                 });
             });
+
+            ui.add_space(10.0);
 
             let scene_response = ui
                 .allocate_ui(
