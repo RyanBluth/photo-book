@@ -9,6 +9,7 @@ use eframe::egui::{self, ViewportBuilder, Widget};
 use font_manager::FontManager;
 
 use dirs::Dirs;
+use modal::{Modal, ModalContent, ModalManager};
 use photo_manager::PhotoManager;
 use scene::SceneManager;
 use tokio::runtime;
@@ -27,6 +28,7 @@ mod export;
 mod font_manager;
 mod history;
 mod id;
+mod modal;
 mod model;
 mod photo;
 mod photo_manager;
@@ -132,6 +134,11 @@ impl eframe::App for PhotoBookApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             self.scene_manager.ui(ui);
+
+            let modal_manager: Singleton<ModalManager> = Dependency::get();
+            modal_manager.with_lock_mut(|modal_manager| {
+                modal_manager.show_next(ui);
+            });
         });
 
         Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {

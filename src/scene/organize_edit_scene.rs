@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use egui::{menu, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Ui, Vec2};
+use egui::{menu, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
 use sqlx::Either;
 
@@ -10,6 +10,7 @@ use crate::{
     cursor_manager::{self, CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
+    modal::{ModalContent, ModalManager},
     photo,
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
@@ -60,6 +61,8 @@ impl OrganizeEditScene {
     }
 
     fn mode_selector(&mut self, ui: &mut Ui) {
+        ui.style_mut().interaction.selectable_labels = false;
+
         let mut organize_text = RichText::new("Organize");
         let mut edit_text = RichText::new("Edit");
 
@@ -69,8 +72,8 @@ impl OrganizeEditScene {
             edit_text = edit_text.strong();
         }
 
-        let organize_heading = ui.heading(organize_text);
-        let edit_heading = ui.heading(edit_text);
+        let organize_heading = ui.heading(organize_text).interact(Sense::click());
+        let edit_heading = ui.heading(edit_text).interact(Sense::click());
 
         if organize_heading.hovered()
             || edit_heading.hovered()
@@ -159,6 +162,10 @@ impl Scene for OrganizeEditScene {
                                         }
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
+
+                                            ModalManager::push_modal(ModalContent::Message(
+                                                format!("Error loading project: {:?}", err),
+                                            ));
                                         }
                                     }
                                 });
@@ -200,6 +207,10 @@ impl Scene for OrganizeEditScene {
                                             }
                                             Err(err) => {
                                                 error!("Error loading project: {:?}", err);
+
+                                                ModalManager::push_modal(ModalContent::Message(
+                                                    format!("Error loading project: {:?}", err),
+                                                ));
                                             }
                                         }
                                     }
