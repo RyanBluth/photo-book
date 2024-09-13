@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use egui::{menu, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
@@ -10,7 +10,7 @@ use crate::{
     cursor_manager::{self, CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
-    modal::{ModalContent, ModalManager},
+    modal::{ModalAction, ModalContent, ModalManager},
     photo,
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
@@ -163,9 +163,10 @@ impl Scene for OrganizeEditScene {
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
 
-                                            ModalManager::push_modal(ModalContent::Message(
+                                            ModalManager::push_basic_modal(
+                                                "Error",
                                                 format!("Error loading project: {:?}", err),
-                                            ));
+                                            );
                                         }
                                     }
                                 });
@@ -207,10 +208,10 @@ impl Scene for OrganizeEditScene {
                                             }
                                             Err(err) => {
                                                 error!("Error loading project: {:?}", err);
-
-                                                ModalManager::push_modal(ModalContent::Message(
+                                                ModalManager::push_basic_modal(
+                                                    "Error",
                                                     format!("Error loading project: {:?}", err),
-                                                ));
+                                                );
                                             }
                                         }
                                     }
