@@ -2,13 +2,18 @@ use std::sync::{Arc, Mutex, RwLockWriteGuard};
 
 use egui::{
     Align::{Center, Min},
-    Color32, Layout, Response, Vec2, Widget,
+    Color32, Layout, ProgressBar, Response, Vec2, Widget,
 };
+use indexmap::IndexMap;
 
-use crate::dependencies::{Dependency, Singleton, SingletonFor};
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    id::{next_modal_id, ModalId},
+};
 
 pub enum ModalContent {
     Message(String),
+    Progress { message: String, progress: f32 },
 }
 
 pub struct ModalAction {
@@ -34,16 +39,16 @@ pub struct Modal {
 
 impl Modal {
     pub fn new(
-        title: String,
+        title: impl Into<String>,
         content: ModalContent,
-        dismiss_label: String,
+        dismiss_label: impl Into<String>,
         actions: Option<Vec<ModalAction>>,
     ) -> Self {
         Self {
             state: ModalState {
-                title,
+                title: title.into(),
                 content,
-                dismiss_label,
+                dismiss_label: dismiss_label.into(),
                 actions,
             },
         }
@@ -67,6 +72,11 @@ impl Modal {
                 match &self.state.content {
                     ModalContent::Message(message) => {
                         ui.label(message);
+                    }
+                    ModalContent::Progress { message, progress } => {
+                        ui.label(message);
+                        ui.add_space(10.0);
+                        ui.add(ProgressBar::new(*progress));
                     }
                 }
 
@@ -92,19 +102,23 @@ impl Modal {
 }
 
 pub struct ModalManager {
-    modals: Vec<Modal>,
+    modals: IndexMap<ModalId, Modal>,
 }
 
 impl ModalManager {
     pub fn new() -> Self {
-        Self { modals: Vec::new() }
+        Self {
+            modals: IndexMap::new(),
+        }
     }
 
-    pub fn push(&mut self, modal: Modal) {
-        self.modals.push(modal);
+    pub fn push(&mut self, modal: Modal) -> ModalId {
+        let id = next_modal_id();
+        self.modals.insert(id, modal);
+        id
     }
 
-    pub fn push_basic_modal(title: impl Into<String>, message: impl Into<String>) {
+    pub fn push_basic_modal(title: impl Into<String>, message: impl Into<String>) -> ModalId {
         let modal_manager: Singleton<ModalManager> = Dependency::get();
         modal_manager.with_lock_mut(|modals| {
             modals.push(Modal::new(
@@ -112,8 +126,8 @@ impl ModalManager {
                 ModalContent::Message(message.into()),
                 "OK".to_string(),
                 None,
-            ));
-        });
+            ))
+        })
     }
 
     pub fn push_modal(
@@ -121,7 +135,7 @@ impl ModalManager {
         content: ModalContent,
         dismiss_label: impl Into<String>,
         actions: Option<Vec<ModalAction>>,
-    ) {
+    ) -> ModalId {
         let modal_manager: Singleton<ModalManager> = Dependency::get();
         modal_manager.with_lock_mut(|modals| {
             modals.push(Modal::new(
@@ -129,8 +143,18 @@ impl ModalManager {
                 content,
                 dismiss_label.into(),
                 actions,
-            ));
-        });
+            ))
+        })
+    }
+
+    pub fn update_content(&mut self, id: ModalId, content: ModalContent) {
+        if let Some(modal) = self.modals.get_mut(&id) {
+            modal.state.content = content;
+        }
+    }
+
+    pub fn dismiss(&mut self, id: ModalId) {
+        self.modals.shift_remove(&id);
     }
 
     pub fn show_next(&mut self, ui: &mut egui::Ui) {
@@ -138,7 +162,7 @@ impl ModalManager {
             .modals
             .last()
             .as_ref()
-            .and_then(|modal| Some(modal.show(ui)));
+            .and_then(|(_, modal)| Some(modal.show(ui)));
 
         match modal_response {
             Some(ModalResponse::Dismiss) => {

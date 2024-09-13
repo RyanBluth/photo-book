@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 
 pub type LayerId = usize;
 pub type PageId = usize;
+pub type ModalId = usize;
 
 struct IdGenerator {
     next_id: LayerId,
@@ -23,5 +24,9 @@ pub fn next_layer_id() -> LayerId {
 }
 
 pub fn next_page_id() -> PageId {
+    next_id()
+}
+
+pub fn next_modal_id() -> ModalId {
     next_id()
 }

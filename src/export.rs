@@ -21,6 +21,7 @@ use thiserror::Error;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
+use crate::modal::{Modal, ModalContent, ModalManager};
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas_info::layers::LayerContent;
@@ -98,6 +99,19 @@ impl Exporter {
         }
 
         spawn_blocking(move || {
+            let modal_manager: Singleton<ModalManager> = Dependency::get();
+            let modal_id = modal_manager.with_lock_mut(|modal_manager| {
+                modal_manager.push(Modal::new(
+                    "Exporting",
+                    ModalContent::Progress {
+                        message: "Preparing".into(),
+                        progress: 0.0,
+                    },
+                    "Cancel",
+                    None,
+                ))
+            });
+
             let mut page_number = 0;
             let num_pages = pages.len();
             for page in &pages {
@@ -111,6 +125,15 @@ impl Exporter {
                 let progress = page_number as f32 / (num_pages as f32 + 1.0); // +1 for the PDF generation
                 let mut tasks = tasks.lock().unwrap();
                 tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
+                modal_manager.with_lock_mut(|modal_manager| {
+                    modal_manager.update_content(
+                        modal_id,
+                        ModalContent::Progress {
+                            message: format!("Exporting page {}/{}", page_number, num_pages),
+                            progress,
+                        },
+                    );
+                });
                 ctx.request_repaint();
             }
 
@@ -123,6 +146,9 @@ impl Exporter {
 
             let mut tasks = tasks.lock().unwrap();
             tasks.insert(task_id, ExportTaskStatus::Completed);
+            modal_manager.with_lock_mut(|modal_manager| {
+                modal_manager.dismiss(modal_id);
+            });
             ctx.request_repaint();
         });
 
