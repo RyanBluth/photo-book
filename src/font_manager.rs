@@ -119,6 +119,21 @@ impl FontManager {
                     );
                 });
 
+            let material_symbols_def =
+                egui::FontData::from_static(include_bytes!("assets/MaterialSymbols.ttf"));
+
+            let material_symbols_family = FontFamily::Name(Arc::from("Material Symbols Outlined"));
+            let material_symbols_family_name = material_symbols_family.to_string();
+
+            valid_font_definitions
+                .font_data
+                .insert(material_symbols_family_name.clone(), material_symbols_def);
+
+            valid_font_definitions.families.insert(
+                material_symbols_family,
+                vec![material_symbols_family_name],
+            );
+
             ctx.set_fonts(valid_font_definitions.clone());
 
             self.font_definitions = Some(valid_font_definitions);

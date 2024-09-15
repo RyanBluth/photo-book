@@ -1,12 +1,15 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{Pos2, RichText, Vec2};
+use egui::{emath::align, FontId, Pos2, RichText, Vec2};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::utils::RectExt;
+use crate::{
+    icon::Icon,
+    utils::RectExt,
+};
 
 use super::layers::Layer;
 
@@ -23,7 +26,7 @@ impl AlignmentInfoState<'_> {
 }
 
 #[derive(Debug, PartialEq, EnumIter)]
-enum Aligment {
+enum Alignment {
     Left,
     CenterHorizontal,
     CenterVertical,
@@ -32,15 +35,28 @@ enum Aligment {
     Bottom,
 }
 
-impl Display for Aligment {
+impl Display for Alignment {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Aligment::Left => write!(f, "Left"),
-            Aligment::CenterHorizontal => write!(f, "Center Horizontal"),
-            Aligment::CenterVertical => write!(f, "Center Vertical"),
-            Aligment::Right => write!(f, "Right"),
-            Aligment::Top => write!(f, "Top"),
-            Aligment::Bottom => write!(f, "Bottom"),
+            Alignment::Left => write!(f, "Left"),
+            Alignment::CenterHorizontal => write!(f, "Center Horizontal"),
+            Alignment::CenterVertical => write!(f, "Center Vertical"),
+            Alignment::Right => write!(f, "Right"),
+            Alignment::Top => write!(f, "Top"),
+            Alignment::Bottom => write!(f, "Bottom"),
+        }
+    }
+}
+
+impl Alignment {
+    fn icon(&self) -> Icon {
+        match self {
+            Alignment::Left => Icon::AlignHorizontalLeft,
+            Alignment::CenterHorizontal => Icon::AlignHorizontalCenter,
+            Alignment::CenterVertical => Icon::AlignVerticalCenter,
+            Alignment::Right => Icon::AlignHorizontalRight,
+            Alignment::Top => Icon::AlignVerticalTop,
+            Alignment::Bottom => Icon::AlignVerticalBottom,
         }
     }
 }
@@ -62,49 +78,50 @@ impl<'a> AlignmentInfo<'a> {
             ui.label(RichText::new("Alignment").heading());
 
             ui.horizontal(|ui| {
-                let aligment_actions = Aligment::iter().filter_map(|alignment| {
-                    ui.button(alignment.to_string())
+                let alignment_actions = Alignment::iter().filter_map(|alignment| {
+                    ui.button(alignment.icon().rich_text())
+                        .on_hover_text(alignment.to_string())
                         .clicked()
                         .then_some(alignment)
                 });
 
-                for alignment in aligment_actions {
+                for alignment in alignment_actions {
                     if self.state.layers.len() == 1 {
                         let layer = self.state.layers.first_mut().unwrap();
                         // Align within the page
                         match alignment {
-                            Aligment::Left => {
+                            Alignment::Left => {
                                 layer.transform_state.rect = layer
                                     .transform_state
                                     .rect
                                     .translate(Vec2::new(-layer.transform_state.rect.left(), 0.0));
                             }
-                            Aligment::CenterHorizontal => {
+                            Alignment::CenterHorizontal => {
                                 layer.transform_state.rect.set_center(Pos2::new(
                                     self.state.page_size.x / 2.0,
                                     layer.transform_state.rect.center().y,
                                 ));
                             }
-                            Aligment::CenterVertical => {
+                            Alignment::CenterVertical => {
                                 layer.transform_state.rect.set_center(Pos2::new(
                                     layer.transform_state.rect.center().x,
                                     self.state.page_size.y / 2.0,
                                 ));
                             }
-                            Aligment::Right => {
+                            Alignment::Right => {
                                 layer.transform_state.rect =
                                     layer.transform_state.rect.translate(Vec2::new(
                                         self.state.page_size.x - layer.transform_state.rect.right(),
                                         0.0,
                                     ));
                             }
-                            Aligment::Top => {
+                            Alignment::Top => {
                                 layer.transform_state.rect = layer
                                     .transform_state
                                     .rect
                                     .translate(Vec2::new(0.0, -layer.transform_state.rect.top()))
                             }
-                            Aligment::Bottom => {
+                            Alignment::Bottom => {
                                 layer.transform_state.rect =
                                     layer.transform_state.rect.translate(Vec2::new(
                                         0.0,
@@ -128,13 +145,13 @@ impl<'a> AlignmentInfo<'a> {
                         }
 
                         match alignment {
-                            Aligment::Left => {
+                            Alignment::Left => {
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect =
                                         layer.transform_state.rect.translate_left_to(min_x);
                                 }
                             }
-                            Aligment::CenterHorizontal => {
+                            Alignment::CenterHorizontal => {
                                 let center_x = min_x + (max_x - min_x) / 2.0;
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect.set_center(Pos2::new(
@@ -143,7 +160,7 @@ impl<'a> AlignmentInfo<'a> {
                                     ));
                                 }
                             }
-                            Aligment::CenterVertical => {
+                            Alignment::CenterVertical => {
                                 let center_y = min_y + (max_y - min_y) / 2.0;
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect.set_center(Pos2::new(
@@ -152,19 +169,19 @@ impl<'a> AlignmentInfo<'a> {
                                     ));
                                 }
                             }
-                            Aligment::Right => {
+                            Alignment::Right => {
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect =
                                         layer.transform_state.rect.translate_right_to(max_x);
                                 }
                             }
-                            Aligment::Top => {
+                            Alignment::Top => {
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect =
                                         layer.transform_state.rect.translate_top_to(min_y);
                                 }
                             }
-                            Aligment::Bottom => {
+                            Alignment::Bottom => {
                                 for layer in &mut self.state.layers {
                                     layer.transform_state.rect =
                                         layer.transform_state.rect.translate_bottom_to(max_y);

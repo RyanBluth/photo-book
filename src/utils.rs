@@ -5,12 +5,10 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Response, RichText, Sense, Ui};
 
 use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    model::editable_value::EditableValue,
+    cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, icon::Icon, model::editable_value::EditableValue
 };
 
 macro_rules! guard_let {
@@ -241,6 +239,7 @@ impl IdExt for Id {
 pub trait EguiUiExt {
     fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
     fn both_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
+    fn icon_button(&mut self, icon: Icon) -> Response;
 }
 
 impl EguiUiExt for Ui {
@@ -272,6 +271,11 @@ impl EguiUiExt for Ui {
 
         self.with_layout(centered_layout, add_contents)
     }
+
+    fn icon_button(&mut self, icon: Icon) -> Response {
+        self.button(icon.rich_text())
+    }
+
 }
 
 pub trait ExifDateTimeExt {
