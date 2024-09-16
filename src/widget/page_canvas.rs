@@ -52,6 +52,7 @@ pub struct CanvasState {
     pub multi_select: Option<MultiSelect>,
     pub page: EditablePage,
     pub template: Option<Template>,
+    computed_initial_zoom: bool,
 }
 
 impl CanvasState {
@@ -63,6 +64,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
+            computed_initial_zoom: false,
         }
     }
 
@@ -78,6 +80,7 @@ impl CanvasState {
             multi_select: None,
             page,
             template,
+            computed_initial_zoom: false,
         }
     }
 
@@ -131,6 +134,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
+            computed_initial_zoom: false,
         }
     }
 
@@ -217,6 +221,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(template.page.clone()),
             template: Some(template),
+            computed_initial_zoom: false,
         }
     }
 
@@ -390,6 +395,14 @@ impl<'a> Canvas<'a> {
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
         if let Some(response) = self.handle_keys(ui.ctx()) {
             return Some(response);
+        }
+
+        // Adjust the zoom so that the page fits in the available rect
+        if !self.state.computed_initial_zoom {
+            let page_size = self.state.page.size_pixels() * 1.1;
+            self.state.zoom = (self.available_rect.width() / page_size.x)
+                .min(self.available_rect.height() / page_size.y);
+            self.state.computed_initial_zoom = true;
         }
 
         let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
