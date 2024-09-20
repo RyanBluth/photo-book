@@ -1,10 +1,13 @@
+use std::collections::HashMap;
+
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Id, Layout, RichText, Stroke};
+use egui::{Align, Id, Layout, Painter, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
+use skia_safe::Color;
 
 use crate::{
     cursor_manager::CursorManager,
@@ -406,162 +409,49 @@ impl<'a> Canvas<'a> {
         }
 
         let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
-        let rect = canvas_response.rect;
+        let canvas_rect = canvas_response.rect;
 
         let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
 
-        ui.set_clip_rect(rect);
+        ui.set_clip_rect(canvas_rect);
 
-        if let Some(_pointer_pos) = ui.ctx().pointer_hover_pos() {
+        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
-                    let _page_rect: Rect = Rect::from_center_size(
-                        rect.center() + self.state.offset * self.state.zoom,
-                        self.state.page.size_pixels() * self.state.zoom,
-                    );
-                    if input.raw_scroll_delta.y != 0.0 {
-                        // let pointer_direction = (pointer_pos - rect.center()).normalized();
+                    // if input.raw_scroll_delta.y != 0.0 {
+                    let zoom_factor = if input.raw_scroll_delta.y > 0.0 {
+                        1.1
+                    } else if input.raw_scroll_delta.y < 0.0 {
+                        1.0 / 1.1
+                    } else {
+                        1.0
+                    };
+                    let new_zoom = self.state.zoom * zoom_factor;
 
-                        // println!("Pointer direction: {:?}", pointer_direction);
+                    if let Some(pointer_pos) = input.pointer.hover_pos() {
+                        let current_page_rect: Rect = Rect::from_center_size(
+                            canvas_rect.center() + self.state.offset,
+                            self.state.page.size_pixels() * self.state.zoom,
+                        );
+                        let old_pointer_to_page = pointer_pos - current_page_rect.center();
+                        let new_page_rect: Rect = Rect::from_center_size(
+                            canvas_rect.center() + self.state.offset,
+                            self.state.page.size_pixels() * new_zoom,
+                        );
+                        let new_pointer_to_page = pointer_pos - new_page_rect.center();
 
-                        // let pre_zoom_width = rect.width() * self.state.zoom;
+                        // Corrected offset calculation
+                        self.state.offset += old_pointer_to_page
+                            - new_pointer_to_page * (new_zoom / self.state.zoom);
 
-                        // let scale_delta = if input.raw_scroll_delta.y > 0.0 {
-                        //     1.1
-                        // } else {
-                        //     0.9
-                        // };
-
-                        // self.state.zoom *= scale_delta;
-
-                        // let post_zoom_width = rect.width() * self.state.zoom;
-
-                        // let multiplier_x = (pointer_pos.x - rect.center().x) / rect.center().x;
-                        // let multiplier_y = (pointer_pos.y - rect.center().y) / rect.center().y;
-
-                        // self.state.offset.x -= ((post_zoom_width - pre_zoom_width) / self.state.zoom ) * multiplier_x / self.state.zoom;
-                        // self.state.offset.y -= ((post_zoom_width - pre_zoom_width) / self.state.zoom ) * multiplier_y / self.state.zoom;
-
-                        /////////////////////////
-
-                        // let pointer_rel_doc_center = pointer_pos - rect.center();
-
-                        // let pointer_pos = pointer_pos;// + self.state.offset; //- rect.center().to_vec2();
-
-                        // println!("Offset: {:?}", self.state.offset);
-                        // println!("Pointer pos: {:?}", pointer_pos);
-
-                        // let page_rect: Rect = Rect::from_center_size(
-                        //     rect.center() + self.state.offset,
-                        //     self.state.page.size_pixels() * self.state.zoom,
-                        // );
-
-                        // println!("Page rect: {:?}", page_rect);
-
-                        // let mouse_to_page_left =  page_rect.left() - pointer_pos.x;
-                        // let mouse_to_page_top =  page_rect.top() - pointer_pos.y;
-
-                        // let mouse_to_page_center =  page_rect.center() - pointer_pos;
-
-                        // println!("Mouse to page left: {}, Mouse to page top: {}", mouse_to_page_left, mouse_to_page_top);
-
-                        // let mut scale_delta = 1.0;
-
-                        // if input.raw_scroll_delta.y > 0.0 {
-                        //     scale_delta = 1.1;
-                        // } else if input.raw_scroll_delta.y < 0.0 {
-                        //     scale_delta = 0.9;
-                        // }
-
-                        // self.state.zoom *= scale_delta;
-
-                        // let page_rect: Rect = Rect::from_center_size(
-                        //     rect.center() + self.state.offset,
-                        //     self.state.page.size_pixels() * self.state.zoom,
-                        // );
-
-                        // let post_mouse_to_page_left = page_rect.left() - pointer_pos.x;
-                        // let post_mouse_to_page_top =  page_rect.top() - pointer_pos.y;
-
-                        // let post_mouse_to_page_center =  page_rect.center() - pointer_pos;
-
-                        // println!("Offseting by: {}, {}", (post_mouse_to_page_left - mouse_to_page_left), (post_mouse_to_page_top - mouse_to_page_top));
-
-                        // println!("");
-
-                        // self.state.offset.x += (mouse_to_page_left - post_mouse_to_page_left);
-                        // self.state.offset.y += ( mouse_to_page_top - post_mouse_to_page_top);
-
-                        // self.state.offset.x += (post_mouse_to_page_center.x - mouse_to_page_center.x) * self.state.zoom;
-                        // self.state.offset.y += (post_mouse_to_page_center.y - mouse_to_page_center.y) * self.state.zoom;
-
-                        //////////////////////////////////////
-
-                        // let mut scale_delta = 1.0;
-
-                        // let pre_zoom_width = rect.width() * self.state.zoom;
-                        // let pre_zoom_height = rect.height() * self.state.zoom;
-
-                        // let pre_page_width = self.state.page.size_pixels().x * self.state.zoom;
-                        // let pre_page_height = self.state.page.size_pixels().y * self.state.zoom;
-
-                        // if input.raw_scroll_delta.y > 0.0 {
-                        //     scale_delta = 1.1;
-                        // } else if input.raw_scroll_delta.y < 0.0 {
-                        //     scale_delta = 0.9;
-                        // }
-
-                        // self.state.zoom *= scale_delta;
-
-                        // let post_zoom_width = rect.width() * self.state.zoom;
-                        // let post_zoom_height = rect.height() * self.state.zoom;
-
-                        // let post_page_width = self.state.page.size_pixels().x * self.state.zoom;
-                        // let post_page_height = self.state.page.size_pixels().y * self.state.zoom;
-
-                        // let multiplier_x = (pointer_pos.x - rect.center().x) / rect.center().x;
-                        // let multiplier_y = (pointer_pos.y - rect.center().y) / rect.center().y;
-
-                        // let offset_x = (post_page_width - pre_page_width) * (multiplier_x * 0.5);
-                        // let offset_y = (post_page_height - pre_page_height) * (multiplier_y * 0.5);
-
-                        // self.state.offset.x -= offset_x;
-                        // self.state.offset.y -= offset_y;
-
-                        ////////////////////////////////////////////
-
-                        // let mut factor = 0.95;
-                        // if input.raw_scroll_delta.y > 0.0 {
-                        //     factor = 1.0/factor;
-                        // }
-
-                        // self.state.zoom += factor - 1.0;
-
-                        // let page_rect = Rect::from_center_size(
-                        //     rect.center() + self.state.offset,
-                        //     self.state.page.size_pixels() * self.state.zoom,
-                        // );
-
-                        // let dx = (pointer_pos.x - page_rect.left()) * (factor - 1.0);
-                        // let dy = (pointer_pos.y - page_rect.top()) * (factor - 1.0);
-
-                        // self.state.offset.x -= dx* 2.0;
-                        // self.state.offset.y -= dy * 2.0;
-
-                        //////////////////////////
-
-                        if input.raw_scroll_delta.y > 0.0 {
-                            self.state.zoom *= 1.1;
-                        } else if input.raw_scroll_delta.y < 0.0 {
-                            self.state.zoom *= 0.9;
-                        }
+                        self.state.zoom = new_zoom;
                     }
                 });
             }
         }
 
         let page_rect: Rect = Rect::from_center_size(
-            rect.center() + self.state.offset,
+            canvas_rect.center() + self.state.offset,
             self.state.page.size_pixels() * self.state.zoom,
         );
 
@@ -577,7 +467,7 @@ impl<'a> Canvas<'a> {
             }
         });
 
-        ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+        ui.painter().rect_filled(canvas_rect, 0.0, Color32::BLACK);
         ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
         self.draw_template(ui, page_rect);
@@ -1155,19 +1045,14 @@ impl<'a> Canvas<'a> {
                 cross_justify: false,
             };
 
-            ui.with_layout(
-                layout,
-                |ui| {
-                    ui.label(
-                        RichText::new(text)
-                            .color(color)
-                            .family(font_id.family.clone())
-                            .size(font_size),
-                    )
-                },
-            );
-
-            
+            ui.with_layout(layout, |ui| {
+                ui.label(
+                    RichText::new(text)
+                        .color(color)
+                        .family(font_id.family.clone())
+                        .size(font_size),
+                )
+            });
 
             // TODO: It seems like there isn't a way to rotate when drawing text with ui.label
             // The following sort of works but it makes laying out t vhe text more difficult because we can't use eguis layout system
