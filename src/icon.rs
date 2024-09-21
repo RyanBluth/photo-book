@@ -8,6 +8,9 @@ const ALIGN_HORIZONTAL_CENTER: &'static str = "\u{e00f}";
 const ALIGN_VERTICAL_CENTER: &'static str = "\u{e011}";
 const ALIGN_VERTICAL_TOP: &'static str = "\u{e00c}";
 const ALIGN_VERTICAL_BOTTOM: &'static str = "\u{e015}";
+const DISTRIBUTE_VERTICAL: &'static str = "\u{e076}";
+const DISTRIBUTE_HORIZONTAL: &'static str = "\u{e014}";
+
 
 static ICON_FONT_MEDIUM: once_cell::sync::Lazy<FontId> = once_cell::sync::Lazy::new(|| {
     FontId::new(16.0, FontFamily::Name("Material Symbols Outlined".into()))
@@ -21,6 +24,8 @@ pub enum Icon {
     AlignHorizontalRight,
     AlignVerticalTop,
     AlignVerticalBottom,
+    DistributeVertical,
+    DistributeHorizontal,
 }
 
 impl Icon {
@@ -32,6 +37,8 @@ impl Icon {
             Icon::AlignHorizontalRight => ALIGN_HORIZONTAL_RIGHT,
             Icon::AlignVerticalTop => ALIGN_VERTICAL_TOP,
             Icon::AlignVerticalBottom => ALIGN_VERTICAL_BOTTOM,
+            Icon::DistributeVertical => DISTRIBUTE_VERTICAL,
+            Icon::DistributeHorizontal => DISTRIBUTE_HORIZONTAL,
         }
     }
 

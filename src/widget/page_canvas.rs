@@ -415,7 +415,7 @@ impl<'a> Canvas<'a> {
 
         ui.set_clip_rect(canvas_rect);
 
-        if let Some(pointer_pos) = ui.ctx().pointer_hover_pos() {
+        if ui.ctx().pointer_hover_pos().is_some() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
                     // if input.raw_scroll_delta.y != 0.0 {
