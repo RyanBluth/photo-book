@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{emath::align, FontId, Pos2, RichText, Vec2};
+use egui::{emath::align, FontId, Pos2, RichText, Ui, Vec2};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
@@ -100,13 +100,13 @@ impl<'a> AlignmentInfo<'a> {
 
             self.alignment(ui);
 
-            self.distribute(ui);
+            self.distribution(ui);
 
             ui.separator();
         });
     }
 
-    fn distribute(&mut self, ui: &mut egui::Ui) {
+    fn distribution(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             let distribution_actions = Distruibution::iter().filter_map(|distribution| {
                 ui.button(distribution.icon().rich_text())
@@ -130,45 +130,46 @@ impl<'a> AlignmentInfo<'a> {
                                 },
                             );
 
-                            let mut sorted_by_x_indicies =
-                                (0..self.state.layers.len()).collect::<Vec<_>>();
-                            sorted_by_x_indicies.sort_by(|a, b| {
-                                self.state
-                                    .layers
-                                    .get(*a)
-                                    .unwrap()
+                            let available_space = max - min - width_total;
+                            let space_between =
+                                available_space / (self.state.layers.len() - 1) as f32;
+
+                            let mut sorted_indices: Vec<usize> =
+                                (0..self.state.layers.len()).collect();
+
+                            sorted_indices.sort_by(|a, b| {
+                                self.state.layers[*a]
                                     .transform_state
                                     .rect
                                     .left()
-                                    .partial_cmp(
-                                        &self
-                                            .state
-                                            .layers
-                                            .get(*b)
-                                            .unwrap()
-                                            .transform_state
-                                            .rect
-                                            .left(),
-                                    )
+                                    .partial_cmp(&self.state.layers[*b].transform_state.rect.left())
                                     .unwrap()
                             });
 
-                            let space_between =
-                                (max - min - width_total) / (self.state.layers.len() - 1) as f32;
-
-                            let mut current_x =
-                                min + self.state.layers[0].transform_state.rect.width();
-                            for index in sorted_by_x_indicies.iter_mut().skip(1) {
-                                current_x += space_between
-                                    + self.state.layers[*index].transform_state.rect.width() / 2.0;
-                                let center_y =
-                                    self.state.layers[*index].transform_state.rect.center().y;
-                                self.state.layers[*index]
+                            let mut offset = self.state.layers[sorted_indices[0]]
+                                .transform_state
+                                .rect
+                                .width()
+                                + space_between
+                                + min;
+                            for i in 1..self.state.layers.len() - 1 {
+                                let width = self.state.layers[sorted_indices[i]]
                                     .transform_state
                                     .rect
-                                    .set_center(Pos2::new(current_x, center_y));
-                                current_x +=
-                                    self.state.layers[*index].transform_state.rect.width() / 2.0;
+                                    .width();
+                                self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .set_left(offset);
+                                self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .set_right(offset + width);
+                                offset += self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .width()
+                                    + space_between;
                             }
                         }
                         Distruibution::Vertical => {
@@ -183,45 +184,46 @@ impl<'a> AlignmentInfo<'a> {
                                 },
                             );
 
-                            let mut sorted_by_y_indicies =
-                                (0..self.state.layers.len()).collect::<Vec<_>>();
-                            sorted_by_y_indicies.sort_by(|a, b| {
-                                self.state
-                                    .layers
-                                    .get(*a)
-                                    .unwrap()
+                            let available_space = max - min - height_total;
+                            let space_between =
+                                available_space / (self.state.layers.len() - 1) as f32;
+
+                            let mut sorted_indices: Vec<usize> =
+                                (0..self.state.layers.len()).collect();
+
+                            sorted_indices.sort_by(|a, b| {
+                                self.state.layers[*a]
                                     .transform_state
                                     .rect
                                     .top()
-                                    .partial_cmp(
-                                        &self
-                                            .state
-                                            .layers
-                                            .get(*b)
-                                            .unwrap()
-                                            .transform_state
-                                            .rect
-                                            .top(),
-                                    )
+                                    .partial_cmp(&self.state.layers[*b].transform_state.rect.top())
                                     .unwrap()
                             });
 
-                            let space_between =
-                                (max - min - height_total) / (self.state.layers.len() - 1) as f32;
-
-                            let mut current_y =
-                                min + self.state.layers[0].transform_state.rect.height();
-                            for index in sorted_by_y_indicies.iter_mut().skip(1) {
-                                current_y += space_between
-                                    + self.state.layers[*index].transform_state.rect.height() / 2.0;
-                                let center_x =
-                                    self.state.layers[*index].transform_state.rect.center().x;
-                                self.state.layers[*index]
+                            let mut offset = self.state.layers[sorted_indices[0]]
+                                .transform_state
+                                .rect
+                                .height()
+                                + space_between
+                                + min;
+                            for i in 1..self.state.layers.len() - 1 {
+                                let height = self.state.layers[sorted_indices[i]]
                                     .transform_state
                                     .rect
-                                    .set_center(Pos2::new(center_x, current_y));
-                                current_y +=
-                                    self.state.layers[*index].transform_state.rect.height() / 2.0;
+                                    .height();
+                                self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .set_top(offset);
+                                self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .set_bottom(offset + height);
+                                offset += self.state.layers[sorted_indices[i]]
+                                    .transform_state
+                                    .rect
+                                    .height()
+                                    + space_between;
                             }
                         }
                     }
