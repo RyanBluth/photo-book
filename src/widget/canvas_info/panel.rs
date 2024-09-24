@@ -15,7 +15,6 @@ use crate::{
 use super::{
     history_info::{HistoryInfo, HistoryInfoState},
     layers::{Layer, LayerContent, Layers, LayersResponse},
-    quick_layout::{QuickLayout, QuickLayoutState},
     scale_mode::{ScaleMode, ScaleModeState},
     text_control::{TextControl, TextControlState},
     transform_control::{TransformControl, TransformControlState},

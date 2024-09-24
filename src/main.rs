@@ -9,7 +9,7 @@ use eframe::egui::{self, ViewportBuilder, Widget};
 use font_manager::FontManager;
 
 use dirs::Dirs;
-use modal::{Modal, ModalContent, ModalManager};
+use modal::ModalManager;
 use photo_manager::PhotoManager;
 use scene::SceneManager;
 use tokio::runtime;

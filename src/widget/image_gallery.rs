@@ -12,7 +12,7 @@ use crate::{
     assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::Photo,
-    photo_manager::{PhotoManager, PhotosGrouping},
+    photo_manager::PhotoManager,
     utils::EguiUiExt,
 };
 

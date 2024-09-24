@@ -6,7 +6,7 @@ use egui::Spinner;
 use log::error;
 
 use crate::{
-    photo::{Photo, PhotoRotation},
+    photo::Photo,
     theme::color,
     utils::Truncate,
     widget::placeholder::RectPlaceholder,

@@ -1,17 +1,16 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
-use egui::{menu, Color32, CursorIcon, FontId, Pos2, Rect, RichText, Sense, Ui, Vec2};
+use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
 use sqlx::Either;
 
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
-    cursor_manager::{self, CursorManager},
+    cursor_manager::{CursorManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
-    modal::{ModalAction, ModalContent, ModalManager},
-    photo,
+    modal::ModalManager,
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
 };
@@ -150,7 +149,7 @@ impl Scene for OrganizeEditScene {
                                             let config: Singleton<AutoPersisting<Config>> =
                                                 Dependency::get();
                                             config.with_lock_mut(|config| {
-                                                config.modify(
+                                                let _ = config.modify(
                                                     ConfigModification::AddRecentProject(
                                                         open_path.clone(),
                                                     ),
@@ -196,7 +195,7 @@ impl Scene for OrganizeEditScene {
                                         match Project::load(&recent.into(), photo_manager) {
                                             Ok(scene) => {
                                                 config.with_lock_mut(|config| {
-                                                    config.modify(
+                                                    let _ = config.modify(
                                                         ConfigModification::AddRecentProject(
                                                             recent.into(),
                                                         ),

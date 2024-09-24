@@ -1,8 +1,8 @@
-use std::sync::{Arc, Mutex, RwLockWriteGuard};
+use std::sync::Mutex;
 
 use egui::{
-    Align::{Center, Min},
-    Color32, Layout, ProgressBar, Response, Vec2, Widget,
+    Align::Min,
+    Color32, Layout, ProgressBar, Vec2,
 };
 use indexmap::IndexMap;
 

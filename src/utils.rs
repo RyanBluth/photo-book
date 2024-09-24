@@ -5,21 +5,11 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Align, Id, InnerResponse, Layout, Response, RichText, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Response, Sense, Ui};
 
 use crate::{
     cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, icon::Icon, model::editable_value::EditableValue
 };
-
-macro_rules! guard_let {
-    ($x:ident, $y:expr) => {
-        let $x = $y;
-        if $x.is_none() {
-            return;
-        }
-        let $x = $x.unwrap();
-    };
-}
 
 pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -> Vec<Vec<T>> {
     let mut output: Vec<Vec<T>> = (0..partitions).map(|_| Vec::new()).collect();

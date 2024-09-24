@@ -15,14 +15,12 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
-use rand::seq::index;
-use rayon::prelude::ParallelIterator;
 use tokio::task::spawn_blocking;
 
 use crate::{
-    dependencies::{Dependency, DependencyFor, Singleton},
+    dependencies::{Dependency, Singleton},
     dirs::Dirs,
-    photo::{self, Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
+    photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
 use anyhow::{anyhow, Ok};
@@ -138,7 +136,7 @@ impl PhotoManager {
                         .collect::<Vec<PathBuf>>()
                 });
 
-            Self::gen_thumbnails(photo_paths);
+            let _ = Self::gen_thumbnails(photo_paths);
 
             Ok(())
         });
@@ -406,7 +404,7 @@ impl PhotoManager {
     pub fn next_photo(
         &mut self,
         current_photo: &Photo,
-        ctx: &Context,
+        _ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let current_index = self
             .index_for_photo(current_photo)
@@ -415,7 +413,7 @@ impl PhotoManager {
         match self.photos.get_index(next_index) {
             Some((_, next_photo)) => {
                 if let Some((_, current_photo)) = self.photos.get_index(current_index) {
-                    if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
+                    if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
                         // info!("Freeing texture for photo {}", current_photo.uri());
                         // ctx.forget_image(&current_photo.uri());
                         // ctx.tex_manager().write().free(texture.id);
@@ -431,7 +429,7 @@ impl PhotoManager {
     pub fn previous_photo(
         &mut self,
         current_photo: &Photo,
-        ctx: &Context,
+        _ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
         let current_index = self
             .index_for_photo(current_photo)
@@ -440,7 +438,7 @@ impl PhotoManager {
         match self.photos.get_index(prev_index) {
             Some((_, previous_photo)) => {
                 if let Some((_, current_photo)) = self.photos.get_index(current_index) {
-                    if let Some(texture) = self.texture_cache.remove(&current_photo.uri()) {
+                    if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
                         // info!("Freeing texture for photo {}", current_photo.uri());
                         // ctx.forget_image(&current_photo.uri());
                         // ctx.tex_manager().write().free(texture.id);

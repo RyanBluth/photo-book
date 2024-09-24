@@ -106,7 +106,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                     }
                     image_viewer::Request::Previous => {
                         photo_manager.with_lock_mut(|photo_manager| {
-                            let (prev_photo, new_index) = photo_manager
+                            let (prev_photo, _new_index) = photo_manager
                                 .previous_photo(&self.scene_state.photo, ui.ctx())
                                 .unwrap()
                                 .unwrap();
@@ -117,7 +117,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                     }
                     image_viewer::Request::Next => {
                         photo_manager.with_lock_mut(|photo_manager| {
-                            let (next_photo, new_index) = photo_manager
+                            let (next_photo, _new_index) = photo_manager
                                 .next_photo(&self.scene_state.photo, ui.ctx())
                                 .unwrap()
                                 .unwrap();

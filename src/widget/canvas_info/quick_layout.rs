@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Align, Layout, Pos2, Rect, RichText, Sense, Vec2};
+use egui::{Pos2, Rect, Sense, Vec2};
 
 use egui_extras::Column;
 use strum::IntoEnumIterator;
@@ -96,7 +96,7 @@ impl<'a> QuickLayout<'a> {
                             break;
                         }
 
-                        let index = offest + i;
+                        let _index = offest + i;
                         let layout = available_layouts.get(offest + i).unwrap();
 
                         let mut canvas_state = self.state.canvas_state.clone_with_new_widget_ids();

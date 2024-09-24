@@ -1,13 +1,11 @@
-use std::collections::HashMap;
 
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Id, Layout, Painter, RichText, Stroke};
+use egui::{Align, Id, Layout, RichText, Stroke};
 use indexmap::{indexmap, IndexMap};
-use skia_safe::Color;
 
 use crate::{
     cursor_manager::CursorManager,

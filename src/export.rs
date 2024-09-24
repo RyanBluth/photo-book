@@ -185,7 +185,7 @@ impl Exporter {
         let photo_manager = Singleton::new(PhotoManager::new());
         let mut history_manager = CanvasHistoryManager::new();
 
-        let mut canvas = Canvas::with_photo_manager(
+        let canvas = Canvas::with_photo_manager(
             photo_manager.clone(),
             &mut canvas_state,
             Rect::from_min_max(Pos2::ZERO, size.to_pos2()),
@@ -242,15 +242,6 @@ impl Exporter {
             ..Default::default()
         };
 
-        let mut output_surface: Option<_> = None;
-
-        for _ in 0..frames_before_screenshot {
-            output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
-                egui::CentralPanel::default().show(ctx, |ui| {
-                    canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
-                });
-            }));
-        }
         backend.paint(surface.canvas());
 
         let data = surface

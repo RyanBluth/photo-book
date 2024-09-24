@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{emath::align, FontId, Pos2, RichText, Ui, Vec2};
+use egui::{Pos2, RichText, Ui, Vec2};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;

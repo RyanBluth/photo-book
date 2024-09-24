@@ -1,6 +1,5 @@
-use std::sync::Arc;
 
-use egui::{FontFamily, FontId, Label, RichText};
+use egui::{FontFamily, FontId, RichText};
 
 const ALIGN_HORIZONTAL_LEFT: &'static str = "\u{e00d}";
 const ALIGN_HORIZONTAL_RIGHT: &'static str = "\u{e010}";
