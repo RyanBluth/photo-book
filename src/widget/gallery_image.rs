@@ -2,15 +2,10 @@ use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::{Color32, Vec2},
 };
-use egui::Spinner;
+use egui::{Spinner, Stroke};
 use log::error;
 
-use crate::{
-    photo::Photo,
-    theme::color,
-    utils::Truncate,
-    widget::placeholder::RectPlaceholder,
-};
+use crate::{photo::Photo, theme::{self, color}, utils::Truncate, widget::placeholder::RectPlaceholder};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -37,8 +32,6 @@ impl Widget for GalleryImage {
         let response = ui.push_id(
             format!("GalleryImage_{}", self.photo.path.to_string_lossy()),
             |ui| {
-                //ui.spacing_mut().item_spacing = Vec2 { x: 10.0, y: 10.0 };
-
                 let size = ui.available_size();
 
                 let image_size = match self.photo.max_dimension() {
@@ -59,15 +52,15 @@ impl Widget for GalleryImage {
                 ui.allocate_ui_at_rect(rect, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
+                    ui.painter()
+                        .rect_filled(ui.max_rect(), 6.0, Color32::from_rgb(15, 15, 15));
+
                     if self.selected {
-                        ui.painter().rect_filled(
+                        ui.painter().rect_stroke(
                             ui.max_rect(),
-                            6.0,
-                            Color32::from_rgb(15, 15, 180),
+                            4.0,
+                            Stroke::new(3.0, theme::color::FOCUSED),
                         );
-                    } else {
-                        ui.painter()
-                            .rect_filled(ui.max_rect(), 6.0, Color32::from_rgb(15, 15, 15));
                     }
 
                     ui.vertical_centered(|ui| {
@@ -132,7 +125,6 @@ impl Widget for GalleryImage {
                                     .ui(ui);
 
                                     ui.put(response.rect, Spinner::new());
-
                                 }
                                 Err(err) => {
                                     // Show red square for error for now

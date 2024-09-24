@@ -120,16 +120,12 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
 
                 if let Some(gallery_response) = gallery_response {
                     match gallery_response {
-                        ImageGalleryResponse::ViewPhoto(photo) => {
+                        ImageGalleryResponse::SelectPhotoPrimaryAction(photo) => {
                             self.navigator
                                 .push(SceneTransition::Viewer(ViewerScene::new(photo)));
                         }
-                        ImageGalleryResponse::EditPhoto(photo) => {
-                            self.navigator
-                                .push(SceneTransition::Canvas(CanvasScene::with_photo(
-                                    photo,
-                                    Some(self.scene_state.image_gallery_state.clone()),
-                                )));
+                        ImageGalleryResponse::SelectPhotoSecondaryAction(_) => {
+                            // Do nothing for now
                         }
                     }
                 }

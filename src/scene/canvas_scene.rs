@@ -221,10 +221,10 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state)
                 {
                     match response {
-                        ImageGalleryResponse::ViewPhoto(photo) => {
+                        ImageGalleryResponse::SelectPhotoSecondaryAction(photo) => {
                             self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                         }
-                        ImageGalleryResponse::EditPhoto(photo) => {
+                        ImageGalleryResponse::SelectPhotoPrimaryAction(photo) => {
                             let is_template = self.scene_state.canvas_state.template.is_some();
 
                             if is_template {

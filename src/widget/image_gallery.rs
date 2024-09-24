@@ -5,7 +5,7 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{Color32, Image, Layout, Slider};
+use egui::{text::LayoutJob, Color32, Image, Layout, Slider};
 use egui_extras::Column;
 
 use crate::{
@@ -39,8 +39,8 @@ pub struct ImageGallery<'a> {
 }
 
 pub enum ImageGalleryResponse {
-    ViewPhoto(Photo),
-    EditPhoto(Photo),
+    SelectPhotoPrimaryAction(Photo),
+    SelectPhotoSecondaryAction(Photo),
 }
 
 impl<'a> ImageGallery<'a> {
@@ -72,7 +72,6 @@ impl<'a> ImageGallery<'a> {
                     let num_columns: usize =
                         (table_size.x / (column_width + spacing)).floor().max(1.0) as usize;
 
-                    //let padding_size = num_columns as f32 * 10.0;
                     let spacer_width = (table_size.x
                         - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
                         - 10.0
@@ -173,13 +172,14 @@ impl<'a> ImageGallery<'a> {
                                                 }
 
                                                 if image_response.double_clicked() {
-                                                    response =
-                                                        Some(ImageGalleryResponse::ViewPhoto(
+                                                    response = Some(
+                                                        ImageGalleryResponse::SelectPhotoPrimaryAction(
                                                             photo.clone(),
-                                                        ));
-                                                } else if image_response.middle_clicked() {
+                                                        ),
+                                                    );
+                                                } else if image_response.secondary_clicked() {
                                                     response =
-                                                        Some(ImageGalleryResponse::EditPhoto(
+                                                        Some(ImageGalleryResponse::SelectPhotoSecondaryAction(
                                                             photo.clone(),
                                                         ));
                                                 }
@@ -194,7 +194,7 @@ impl<'a> ImageGallery<'a> {
                             });
                         })
                 });
-
+                
                 ui.painter().rect_filled(
                     ui.available_rect_before_wrap(),
                     0.0,

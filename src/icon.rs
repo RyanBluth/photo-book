@@ -1,5 +1,4 @@
-
-use egui::{FontFamily, FontId, RichText};
+use egui::{text::LayoutJob, FontFamily, FontId, RichText};
 
 const ALIGN_HORIZONTAL_LEFT: &'static str = "\u{e00d}";
 const ALIGN_HORIZONTAL_RIGHT: &'static str = "\u{e010}";
@@ -9,7 +8,8 @@ const ALIGN_VERTICAL_TOP: &'static str = "\u{e00c}";
 const ALIGN_VERTICAL_BOTTOM: &'static str = "\u{e015}";
 const DISTRIBUTE_VERTICAL: &'static str = "\u{e076}";
 const DISTRIBUTE_HORIZONTAL: &'static str = "\u{e014}";
-
+const VIEW_PHOTO: &'static str = "\u{f1c5}";
+const ADD_PAGE: &'static str = "\u{e89c}";
 
 static ICON_FONT_MEDIUM: once_cell::sync::Lazy<FontId> = once_cell::sync::Lazy::new(|| {
     FontId::new(16.0, FontFamily::Name("Material Symbols Outlined".into()))
@@ -25,6 +25,8 @@ pub enum Icon {
     AlignVerticalBottom,
     DistributeVertical,
     DistributeHorizontal,
+    ViewPhoto,
+    AddPage,
 }
 
 impl Icon {
@@ -38,6 +40,8 @@ impl Icon {
             Icon::AlignVerticalBottom => ALIGN_VERTICAL_BOTTOM,
             Icon::DistributeVertical => DISTRIBUTE_VERTICAL,
             Icon::DistributeHorizontal => DISTRIBUTE_HORIZONTAL,
+            Icon::ViewPhoto => VIEW_PHOTO,
+            Icon::AddPage => ADD_PAGE,
         }
     }
 
