@@ -27,7 +27,6 @@ mod error_sink;
 mod export;
 mod font_manager;
 mod history;
-mod icon;
 mod id;
 mod modal;
 mod model;

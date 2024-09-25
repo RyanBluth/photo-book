@@ -1,11 +1,14 @@
 use eframe::egui::{self};
-use egui::{Color32, Image, Layout, Sense, Slider, Stroke, Vec2};
+use egui::{Button, Color32, Image, Layout, Sense, Slider, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
 
 use crate::{
-    assets::Asset, icon::Icon, id::{next_page_id, PageId}, scene::canvas_scene::CanvasHistoryManager, theme
+    assets::Asset,
+    id::{next_page_id, PageId},
+    scene::canvas_scene::CanvasHistoryManager,
+    theme,
 };
 
 use super::{
@@ -134,8 +137,9 @@ impl<'a> Pages<'a> {
 
         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(20.0);
+
             if ui
-                .button("Add Page")
+                .add(Button::image_and_text(Asset::add_page(), "Add Page"))
                 .on_hover_text("Add a new page")
                 .clicked()
             {

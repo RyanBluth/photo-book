@@ -1,12 +1,12 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{Pos2, RichText, Ui, Vec2};
+use egui::{Button, ImageSource, Pos2, RichText, Ui, Vec2};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::{icon::Icon, utils::RectExt};
+use crate::{assets::Asset, utils::RectExt};
 
 use super::layers::Layer;
 
@@ -46,14 +46,14 @@ impl Display for Alignment {
 }
 
 impl Alignment {
-    fn icon(&self) -> Icon {
+    fn icon(&self) -> ImageSource {
         match self {
-            Alignment::Left => Icon::AlignHorizontalLeft,
-            Alignment::CenterHorizontal => Icon::AlignHorizontalCenter,
-            Alignment::CenterVertical => Icon::AlignVerticalCenter,
-            Alignment::Right => Icon::AlignHorizontalRight,
-            Alignment::Top => Icon::AlignVerticalTop,
-            Alignment::Bottom => Icon::AlignVerticalBottom,
+            Alignment::Left => Asset::horizontal_align_left(),
+            Alignment::CenterHorizontal => Asset::horizontal_align_center(),
+            Alignment::CenterVertical => Asset::vertical_align_center(),
+            Alignment::Right => Asset::horizontal_align_right(),
+            Alignment::Top => Asset::vertical_align_top(),
+            Alignment::Bottom => Asset::vertical_align_bottom(),
         }
     }
 }
@@ -74,10 +74,10 @@ impl Display for Distruibution {
 }
 
 impl Distruibution {
-    fn icon(&self) -> Icon {
+    fn icon(&self) -> ImageSource {
         match self {
-            Distruibution::Horizontal => Icon::DistributeHorizontal,
-            Distruibution::Vertical => Icon::DistributeVertical,
+            Distruibution::Horizontal => Asset::distribute_horizontal(),
+            Distruibution::Vertical => Asset::distribute_vertical(),
         }
     }
 }
@@ -109,7 +109,7 @@ impl<'a> AlignmentInfo<'a> {
     fn distribution(&mut self, ui: &mut Ui) {
         ui.horizontal(|ui| {
             let distribution_actions = Distruibution::iter().filter_map(|distribution| {
-                ui.button(distribution.icon().rich_text())
+                ui.add(Button::image(distribution.icon()))
                     .on_hover_text(distribution.to_string())
                     .clicked()
                     .then_some(distribution)
@@ -235,7 +235,7 @@ impl<'a> AlignmentInfo<'a> {
     fn alignment(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             let alignment_actions = Alignment::iter().filter_map(|alignment| {
-                ui.button(alignment.icon().rich_text())
+                ui.add(Button::image(alignment.icon()))
                     .on_hover_text(alignment.to_string())
                     .clicked()
                     .then_some(alignment)
