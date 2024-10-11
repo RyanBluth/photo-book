@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
     id::{next_page_id, LayerId, PageId},
     model::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
@@ -13,6 +14,7 @@ use crate::{
     },
     photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
     photo_manager::{PhotoManager, PhotosGrouping as AppPhotosGrouping},
+    project_settings::{self, ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
         organize_edit_scene::OrganizeEditScene,
@@ -49,6 +51,7 @@ pub struct Project {
     pub photos: Vec<Photo>,
     pub pages: Vec<CanvasPage>,
     pub group_by: PhotosGrouping,
+    pub project_settings: ProjectSettings,
 }
 
 impl Project {
@@ -266,10 +269,15 @@ impl Project {
 
         let group_by = photo_manager.photo_grouping();
 
+        let project_settings_manager: Singleton<ProjectSettingsManager> = Dependency::get();
+        let project_settings =
+            project_settings_manager.with_lock(|settings| settings.project_settings.clone());
+
         let project = Project {
             photos,
             pages,
             group_by: group_by.into(),
+            project_settings: project_settings.into(),
         };
 
         let project_data = serde_json::to_string_pretty(&project)?;
@@ -627,6 +635,27 @@ pub enum PhotoRating {
     Maybe,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectSettings {
+    default_page: Option<Page>,
+}
+
+impl Into<AppProjectSettings> for ProjectSettings {
+    fn into(self) -> AppProjectSettings {
+        AppProjectSettings {
+            default_page: self.default_page.map(Page::into),
+        }
+    }
+}
+
+impl Into<ProjectSettings> for AppProjectSettings {
+    fn into(self) -> ProjectSettings {
+        ProjectSettings {
+            default_page: self.default_page.map(AppPage::into),
+        }
+    }
+}
+
 impl Into<AppPhotoRating> for PhotoRating {
     fn into(self) -> AppPhotoRating {
         match self {
@@ -668,5 +697,33 @@ impl Into<PhotosGrouping> for AppPhotosGrouping {
             AppPhotosGrouping::Rating => PhotosGrouping::Rating,
             AppPhotosGrouping::Date => PhotosGrouping::Date,
         }
+    }
+}
+
+impl Into<Page> for AppPage {
+    fn into(self) -> Page {
+        Page {
+            size: self.size_pixels(),
+            ppi: self.ppi(),
+            unit: match self.unit() {
+                AppUnit::Pixels => Unit::Pixels,
+                AppUnit::Inches => Unit::Inches,
+                AppUnit::Centimeters => Unit::Centimeters,
+            },
+        }
+    }
+}
+
+impl Into<AppPage> for Page {
+    fn into(self) -> AppPage {
+        AppPage::new(
+            self.size,
+            self.ppi,
+            match self.unit {
+                Unit::Pixels => AppUnit::Pixels,
+                Unit::Inches => AppUnit::Inches,
+                Unit::Centimeters => AppUnit::Centimeters,
+            },
+        )
     }
 }

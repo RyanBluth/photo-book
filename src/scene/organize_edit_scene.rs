@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
@@ -7,12 +7,13 @@ use sqlx::Either;
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
-    cursor_manager::{CursorManager},
+    cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
-    modal::ModalManager,
+    modal::{basic::BasicModal, manager::ModalManager, page_settings::PageSettingsModal},
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
+    project_settings::ProjectSettingsManager,
 };
 
 use super::{
@@ -47,6 +48,18 @@ impl OrganizeEditScene {
     }
 
     pub fn show_edit(&mut self) {
+        let project_settings_manager: Singleton<ProjectSettingsManager> = Dependency::get();
+
+        if project_settings_manager.with_lock(|project_settings_manager| {
+            project_settings_manager
+                .project_settings
+                .default_page
+                .is_none()
+        }) {
+            ModalManager::push(PageSettingsModal::new());
+            return;
+        }
+
         self.current = Either::Right(self.edit.clone());
         // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
         // Introduce some sort of shared state between the two scenes
@@ -162,10 +175,11 @@ impl Scene for OrganizeEditScene {
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
 
-                                            ModalManager::push_basic_modal(
+                                            ModalManager::push(BasicModal::new(
                                                 "Error",
                                                 format!("Error loading project: {:?}", err),
-                                            );
+                                                "OK",
+                                            ));
                                         }
                                     }
                                 });
@@ -207,10 +221,12 @@ impl Scene for OrganizeEditScene {
                                             }
                                             Err(err) => {
                                                 error!("Error loading project: {:?}", err);
-                                                ModalManager::push_basic_modal(
+
+                                                ModalManager::push(BasicModal::new(
                                                     "Error",
                                                     format!("Error loading project: {:?}", err),
-                                                );
+                                                    "OK",
+                                                ));
                                             }
                                         }
                                     }

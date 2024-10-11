@@ -5,7 +5,8 @@ use std::{
 
 use crate::{
     auto_persisting::AutoPersisting, config::Config, cursor_manager::CursorManager,
-    export::Exporter, font_manager::FontManager, modal::ModalManager, photo_manager::PhotoManager,
+    export::Exporter, font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager,
 };
 
 macro_rules! singleton {
@@ -77,3 +78,9 @@ singleton!(EXPORTER, Exporter, Exporter::new());
 singleton!(CONFIG, AutoPersisting<Config>, AutoPersisting::new());
 
 singleton!(MODAL_MANAGER, ModalManager, ModalManager::new());
+
+singleton!(
+    PROJECT_SETTINGS_MANAGER,
+    ProjectSettingsManager,
+    ProjectSettingsManager::new()
+);

@@ -2,7 +2,6 @@ use egui::Vec2;
 
 use super::{editable_value::EditableValue, unit::Unit};
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Page {
     size: Vec2,
@@ -11,24 +10,15 @@ pub struct Page {
 }
 
 impl Page {
-
     pub fn new(size: Vec2, ppi: i32, unit: Unit) -> Self {
-        Self {
-            size,
-            ppi,
-            unit,
-        }
+        Self { size, ppi, unit }
     }
 
     pub fn with_size_inches(size: Vec2) -> Self {
         let ppi = 300;
         let unit = Unit::Inches;
 
-        Self {
-            size,
-            ppi,
-            unit,
-        }
+        Self { size, ppi, unit }
     }
 
     fn a4() -> Self {
@@ -95,7 +85,6 @@ impl Page {
     pub fn is_landscape(&self) -> bool {
         self.size.x > self.size.y
     }
-
 }
 
 impl Default for Page {

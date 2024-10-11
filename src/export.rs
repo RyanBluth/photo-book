@@ -21,7 +21,7 @@ use thiserror::Error;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
-use crate::modal::{Modal, ModalContent, ModalManager};
+use crate::modal::manager::ModalManager;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas_info::layers::LayerContent;
@@ -101,15 +101,15 @@ impl Exporter {
         spawn_blocking(move || {
             let modal_manager: Singleton<ModalManager> = Dependency::get();
             let modal_id = modal_manager.with_lock_mut(|modal_manager| {
-                modal_manager.push(Modal::new(
-                    "Exporting",
-                    ModalContent::Progress {
-                        message: "Preparing".into(),
-                        progress: 0.0,
-                    },
-                    "Cancel",
-                    None,
-                ))
+                // modal_manager.push(BasicModal::new(
+                //     "Exporting",
+                //     ModalContent::Progress {
+                //         message: "Preparing".into(),
+                //         progress: 0.0,
+                //     },
+                //     "Cancel",
+                // ))
+                1
             });
 
             let mut page_number = 0;
@@ -126,13 +126,13 @@ impl Exporter {
                 let mut tasks = tasks.lock().unwrap();
                 tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
                 modal_manager.with_lock_mut(|modal_manager| {
-                    modal_manager.update_content(
-                        modal_id,
-                        ModalContent::Progress {
-                            message: format!("Exporting page {}/{}", page_number, num_pages),
-                            progress,
-                        },
-                    );
+                    // modal_manager.update_content(
+                    //     modal_id,
+                    //     ModalContent::Progress {
+                    //         message: format!("Exporting page {}/{}", page_number, num_pages),
+                    //         progress,
+                    //     },
+                    // );
                 });
                 ctx.request_repaint();
             }
@@ -242,9 +242,9 @@ impl Exporter {
             ..Default::default()
         };
 
-        let mut output_surface: Option<_> = None;
+        let mut _output_surface: Option<_> = None;
             for _ in 0..frames_before_screenshot {
-                output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
+                _output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
                     egui::CentralPanel::default().show(ctx, |ui| {
                         canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
                     });

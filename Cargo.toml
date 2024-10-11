@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-egui = { version = "0.28", features = ["persistence"] }
-eframe = { version = "0.28", features = ["glow"] }
-egui_extras = { version = "0.28", features = ["all_loaders"] }
+egui = { version = "0.29", features = ["persistence"] }
+eframe = { version = "0.29", features = ["glow"] }
+egui_extras = { version = "0.29", features = ["all_loaders"] }
 native-dialog = "0.6.4"
 env_logger = "0.10.0"
 image = { version = "0.25.1", features = ["jpeg", "png"] }
@@ -28,9 +28,9 @@ strum_macros = "0.25"
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite"] }
 chrono = { version = "0.4.31", features = ["serde"] }
 indexmap = { version = "2.1.0", features = ["serde"] }
-egui_dnd = "0.9.0"
+egui_dnd = "0.10.0"
 font-kit = "0.12.0"
-egui_tiles = "0.9.0"
+egui_tiles = "0.10.1"
 ab_glyph = "0.2.23"
 rand = "0.8.5"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }

@@ -9,7 +9,7 @@ use eframe::egui::{self, ViewportBuilder, Widget};
 use font_manager::FontManager;
 
 use dirs::Dirs;
-use modal::ModalManager;
+use modal::manager::ModalManager;
 use photo_manager::PhotoManager;
 use scene::SceneManager;
 use tokio::runtime;
@@ -39,6 +39,7 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
+mod project_settings;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
