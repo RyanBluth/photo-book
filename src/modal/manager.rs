@@ -1,13 +1,26 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use egui::{Button, Color32, Layout, Vec2};
 use indexmap::IndexMap;
 
-use crate::{dependencies::{Dependency, Singleton, SingletonFor}, id::{next_modal_id, ModalId}};
+use crate::{
+    dependencies::{Dependency, Singleton, SingletonFor},
+    id::{next_modal_id, ModalId},
+};
 
-use super::{ModalResponse, Modal};
+use super::{Modal, ModalResponse};
+use std::any::Any;
 
+pub struct TypedModalId<T> {
+    id: ModalId,
+    _phantom: std::marker::PhantomData<T>,
+}
 
+impl<T> Into<ModalId> for TypedModalId<T> {
+    fn into(self) -> ModalId {
+        self.id
+    }
+}
 
 pub struct ModalManager {
     modals: IndexMap<ModalId, Mutex<Box<dyn Modal>>>,
@@ -20,18 +33,34 @@ impl ModalManager {
         }
     }
 
-    pub fn push<T: Modal + Send + 'static>(modal: T) -> ModalId {
+    pub fn modify<T: Modal + 'static>(&self, id: &TypedModalId<T>, f: impl FnOnce(&mut T)) -> bool {
+        if let Some(mutex) = self.modals.get(&id.id) {
+            if let Ok(mut guard) = mutex.lock() {
+                if let Some(modal) = guard.as_any_mut().downcast_mut::<T>() {
+                    f(modal);
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    pub fn push<T: Modal + Send + 'static>(modal: T) -> TypedModalId<T> {
         let modal_manager: Singleton<ModalManager> = Dependency::get();
-        modal_manager.with_lock_mut(|modal_manager| {
+        let id = modal_manager.with_lock_mut(|modal_manager| {
             let id = next_modal_id();
             let boxed = Box::new(modal);
             modal_manager.modals.insert(id, Mutex::new(boxed));
             id
-        })
+        });
+        TypedModalId {
+            id,
+            _phantom: std::marker::PhantomData,
+        }
     }
 
-    pub fn dismiss(&mut self, id: ModalId) {
-        self.modals.shift_remove(&id);
+    pub fn dismiss(&mut self, id: impl Into<ModalId>) {
+        self.modals.shift_remove(&id.into());
     }
 
     pub fn show_next(&mut self, ui: &mut egui::Ui) {

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::{any::Any, sync::{Arc, Mutex}};
 
 use egui::{Align::Min, Button, Color32, Layout, ProgressBar, Vec2};
 use indexmap::IndexMap;
@@ -14,6 +14,7 @@ use crate::{
 pub mod manager;
 pub mod basic;
 pub mod page_settings;
+pub mod progress;
 
 pub struct ModalAction {
     pub func: Mutex<Box<dyn Fn() -> () + Send>>,
@@ -26,7 +27,7 @@ pub enum ModalResponse {
     None,
 }
 
-pub trait Modal: Send {
+pub trait Modal: Send + Any {
     fn title(&self) -> String;
 
     fn ui(&mut self, ui: &mut egui::Ui) -> ModalResponse;
@@ -34,4 +35,6 @@ pub trait Modal: Send {
     fn dismiss_label(&self) -> String;
 
     fn actions(&self) -> Option<Vec<ModalAction>>;
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }

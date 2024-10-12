@@ -44,4 +44,8 @@ impl Modal for PageSettingsModal {
             is_enabled: true,
         }])
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
