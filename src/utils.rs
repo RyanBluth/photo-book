@@ -5,7 +5,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Align, Id, InnerResponse, Layout, Response, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
 use crate::{
     cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, model::editable_value::EditableValue

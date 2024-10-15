@@ -23,7 +23,6 @@ use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::font_manager::FontManager;
 use crate::modal::manager::ModalManager;
 use crate::modal::progress::ProgressModal;
-use crate::modal::Modal;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas_info::layers::LayerContent;

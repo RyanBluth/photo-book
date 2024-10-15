@@ -3441,6 +3441,7 @@ dependencies = [
  "flexi_logger",
  "font-kit",
  "fxhash",
+ "glob",
  "image 0.25.2",
  "imagesize",
  "indexmap",

@@ -5,7 +5,7 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{text::LayoutJob, Color32, Image, Layout, Slider};
+use egui::{Color32, Image, Layout, Slider};
 use egui_extras::Column;
 
 use crate::{

@@ -1,4 +1,4 @@
-use super::{ModalAction, ModalResponse, Modal};
+use super::{Modal, ModalActionResponse};
 pub struct BasicModal {
     title: String,
     message: String,
@@ -24,18 +24,15 @@ impl Modal for BasicModal {
         self.title.clone()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) -> ModalResponse {
+    fn body_ui(&mut self, ui: &mut egui::Ui) {
         ui.label(&self.message);
-
-        ModalResponse::None
     }
 
-    fn dismiss_label(&self) -> String {
-        self.dismiss_title.clone()
-    }
-
-    fn actions(&self) -> Option<Vec<ModalAction>> {
-        None
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+        if ui.button(&self.dismiss_title).clicked() {
+            return ModalActionResponse::Cancel;
+        }
+        ModalActionResponse::None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

@@ -24,6 +24,7 @@ use eframe::{
 use chrono::{DateTime, Utc};
 use exif::{In, Reader, Tag, Value};
 use fxhash::hash64;
+use log::error;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 
@@ -224,7 +225,18 @@ impl PhotoMetadata {
         let file = File::open(path).unwrap();
         let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
 
-        let size = imagesize::size(path.clone()).unwrap();
+        let size: imagesize::ImageSize = match imagesize::size(path.clone()) {
+            Ok(size) => size,
+            // TODO: Handle error?
+            Err(err) => {
+                error!("Error getting image size for{}: {:?}", path.display(), err);
+
+                imagesize::ImageSize {
+                    width: 0,
+                    height: 0,
+                }
+            }
+        };
         let width = size.width;
         let height = size.height;
 

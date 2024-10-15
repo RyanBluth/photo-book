@@ -14,7 +14,7 @@ use crate::{
     },
     photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
     photo_manager::{PhotoManager, PhotosGrouping as AppPhotosGrouping},
-    project_settings::{self, ProjectSettings as AppProjectSettings, ProjectSettingsManager},
+    project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
         organize_edit_scene::OrganizeEditScene,

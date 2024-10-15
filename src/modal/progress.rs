@@ -1,4 +1,4 @@
-use super::{Modal, ModalAction, ModalResponse};
+use super::{Modal, ModalActionResponse};
 
 pub struct ProgressModal {
     pub message: String,
@@ -29,21 +29,20 @@ impl Modal for ProgressModal {
         self.title.clone()
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) -> ModalResponse {
+    fn body_ui(&mut self, ui: &mut egui::Ui) {
         ui.label(&self.message);
         ui.add(egui::ProgressBar::new(self.progress).animate(true));
-        ModalResponse::None
-    }
-
-    fn dismiss_label(&self) -> String {
-        self.dismiss_title.clone()
-    }
-
-    fn actions(&self) -> Option<Vec<ModalAction>> {
-        None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+    
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+        if ui.button(&self.dismiss_title).clicked() {
+            return ModalActionResponse::Cancel;
+        }
+
+        ModalActionResponse::None
     }
 }

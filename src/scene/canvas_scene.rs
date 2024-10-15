@@ -10,7 +10,6 @@ use crate::{
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId, PageId},
     model::{edit_state::EditablePage, page::Page},
-    photo::Photo,
     widget::{
         canvas_info::{
             layers::{Layer, LayerContent},

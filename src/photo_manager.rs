@@ -1,9 +1,10 @@
 use std::{
     collections::{HashMap, HashSet},
-    fs::read_dir,
     io::BufWriter,
     path::PathBuf,
 };
+
+use glob::MatchOptions;
 
 use chrono::{DateTime, Datelike, Utc};
 use eframe::egui::{load::SizedTexture, Context};
@@ -87,13 +88,22 @@ impl PhotoManager {
 
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
         tokio::task::spawn_blocking(move || {
-            let entries: Vec<Result<std::fs::DirEntry, std::io::Error>> =
-                read_dir(&path).unwrap().collect();
+            let glob_patterns = vec![
+                format!("{}/**/*.jpg", path.to_string_lossy()),
+                format!("{}/**/*.jpeg", path.to_string_lossy()),
+            ];
+
+            let glob_iter = glob_patterns
+                .iter()
+                .flat_map(|pattern: &String| glob::glob_with(pattern, MatchOptions {
+                    case_sensitive: false,
+                    require_literal_separator: false,
+                    require_literal_leading_dot: false,
+                }).unwrap());
 
             let mut pending_photos = Vec::new();
-            for entry in &entries {
-                let entry = entry.as_ref().unwrap();
-                let path = entry.path();
+            for entry in glob_iter {
+                let path = entry.as_ref().unwrap();
 
                 let lowercase_extension = path.extension().unwrap_or_default().to_ascii_lowercase();
 
@@ -541,8 +551,9 @@ impl PhotoManager {
                 partition.into_iter().for_each(|photo| {
                     let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
                     if res.is_err() {
+                        // TODO: Handle this better
                         error!("{:?}", res);
-                        panic!("{:?}", res);
+                       // panic!("{:?}", res);
                     }
                 });
                 //});

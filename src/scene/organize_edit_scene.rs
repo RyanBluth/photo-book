@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
@@ -10,7 +10,12 @@ use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
-    modal::{basic::BasicModal, manager::ModalManager, page_settings::PageSettingsModal},
+    modal::{
+        basic::BasicModal,
+        manager::{ModalManager, TypedModalId},
+        page_settings::PageSettingsModal,
+        ModalActionResponse,
+    },
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
     project_settings::ProjectSettingsManager,
@@ -27,6 +32,7 @@ pub struct OrganizeEditScene {
     pub organize: Arc<RwLock<GalleryScene>>,
     pub edit: Arc<RwLock<CanvasScene>>,
     current: Either<Arc<RwLock<GalleryScene>>, Arc<RwLock<CanvasScene>>>,
+    page_settings_modal_id: Option<TypedModalId<PageSettingsModal>>,
 }
 
 impl OrganizeEditScene {
@@ -36,6 +42,7 @@ impl OrganizeEditScene {
             organize: organize_scene.clone(),
             edit: Arc::new(RwLock::new(edit)),
             current: Either::Left(organize_scene.clone()),
+            page_settings_modal_id: None,
         }
     }
 
@@ -56,7 +63,7 @@ impl OrganizeEditScene {
                 .default_page
                 .is_none()
         }) {
-            ModalManager::push(PageSettingsModal::new());
+            self.page_settings_modal_id = Some(ModalManager::push(PageSettingsModal::new()));
             return;
         }
 
@@ -104,6 +111,27 @@ impl OrganizeEditScene {
 
         if edit_heading.clicked() {
             self.show_edit();
+        }
+        if let Some(id) = &self.page_settings_modal_id {
+            let modal_manager: Singleton<ModalManager> = Dependency::get();
+
+            let exists = modal_manager.with_lock(|modal_manager| modal_manager.exists(id));
+
+            let modal_response =
+                modal_manager.with_lock(|modal_manager| modal_manager.response_for(id));
+            match modal_response {
+                Some(response) => match response {
+                    ModalActionResponse::Confirm => {
+                        self.show_edit();
+                    }
+                    _ => {}
+                },
+                None => {}
+            }
+
+            if !exists {
+                self.page_settings_modal_id = None;
+            }
         }
     }
 }

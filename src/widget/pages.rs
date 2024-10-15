@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Button, Color32, Image, Layout, Sense, Slider, Stroke, Vec2};
+use egui::{Button, Color32, Layout, Sense, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;

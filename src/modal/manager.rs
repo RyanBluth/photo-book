@@ -1,6 +1,6 @@
-use std::sync::{Arc, Mutex};
+use std::{collections::HashMap, sync::Mutex};
 
-use egui::{Button, Color32, Layout, Vec2};
+use egui::{Color32, Layout, Vec2};
 use indexmap::IndexMap;
 
 use crate::{
@@ -8,8 +8,7 @@ use crate::{
     id::{next_modal_id, ModalId},
 };
 
-use super::{Modal, ModalResponse};
-use std::any::Any;
+use super::{Modal, ModalActionResponse};
 
 pub struct TypedModalId<T> {
     id: ModalId,
@@ -22,14 +21,22 @@ impl<T> Into<ModalId> for TypedModalId<T> {
     }
 }
 
+impl<T> Into<ModalId> for &TypedModalId<T> {
+    fn into(self) -> ModalId {
+        self.id
+    }
+}
+
 pub struct ModalManager {
     modals: IndexMap<ModalId, Mutex<Box<dyn Modal>>>,
+    responses: HashMap<ModalId, ModalActionResponse>
 }
 
 impl ModalManager {
     pub fn new() -> Self {
         Self {
             modals: IndexMap::new(),
+            responses: HashMap::new()
         }
     }
 
@@ -59,17 +66,27 @@ impl ModalManager {
         }
     }
 
+    pub fn response_for(&self, id: impl Into<ModalId>) -> Option<ModalActionResponse> {
+        self.responses.get(&id.into()).copied()
+    }
+
     pub fn dismiss(&mut self, id: impl Into<ModalId>) {
         self.modals.shift_remove(&id.into());
     }
 
+    pub fn exists(&self, id: impl Into<ModalId>) -> bool {
+        self.modals.contains_key(&id.into())
+    }
+
     pub fn show_next(&mut self, ui: &mut egui::Ui) {
+        self.responses.clear();
+
         match self.modals.keys().last() {
             Some(id) => {
                 let response = self.show_modal(ui, *id);
 
                 match response {
-                    ModalResponse::Dismiss => {
+                    ModalActionResponse::Cancel | ModalActionResponse::Confirm => {
                         self.modals.pop();
                     }
                     _ => {}
@@ -79,7 +96,7 @@ impl ModalManager {
         }
     }
 
-    fn show_modal(&self, ui: &mut egui::Ui, modal_id: ModalId) -> ModalResponse {
+    fn show_modal(&mut self, ui: &mut egui::Ui, modal_id: ModalId) -> ModalActionResponse {
         let mut_modal = self.modals.get(&modal_id);
         match mut_modal {
             Some(modal) => {
@@ -91,7 +108,7 @@ impl ModalManager {
                 ui.painter()
                     .rect_filled(viewport_rect, 0.0, Color32::from_black_alpha(128));
 
-                let mut response = ModalResponse::None;
+                let mut response = ModalActionResponse::None;
 
                 egui::Window::new(&modal.title())
                     .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
@@ -99,31 +116,18 @@ impl ModalManager {
                     .collapsible(false)
                     .min_size(Vec2::new(400.0, 300.0))
                     .show(ui.ctx(), |ui: &mut egui::Ui| {
-                        modal.ui(ui);
-
+                        modal.body_ui(ui);
                         ui.add_space(20.0);
-                        ui.with_layout(Layout::right_to_left(egui::Align::Min), |ui| {
-                            if ui.button(&modal.dismiss_label()).clicked() {
-                                response = ModalResponse::Dismiss;
-                            }
-
-                            if let Some(actions) = modal.actions().as_ref() {
-                                actions.iter().for_each(|action| {
-                                    if ui
-                                        .add_enabled(action.is_enabled, Button::new(&action.label))
-                                        .clicked()
-                                    {
-                                        (*action.func.lock().unwrap())();
-                                        response = ModalResponse::Dismiss;
-                                    }
-                                });
-                            }
+                        ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
+                            response = modal.actions_ui(ui);
                         });
                     });
 
+                self.responses.insert(modal_id, response);
+
                 response
             }
-            None => ModalResponse::None,
+            None => ModalActionResponse::None,
         }
     }
 }
