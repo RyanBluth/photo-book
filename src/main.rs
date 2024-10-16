@@ -40,6 +40,7 @@ mod theme;
 mod utils;
 mod widget;
 mod project_settings;
+mod autosave_manager;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
