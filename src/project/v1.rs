@@ -287,20 +287,19 @@ impl Project {
         Ok(())
     }
 
-    pub fn load(
-        path: &PathBuf,
-        photo_manager: &mut PhotoManager,
-    ) -> Result<OrganizeEditScene, ProjectError> {
+    pub fn load(path: &PathBuf) -> Result<OrganizeEditScene, ProjectError> {
         let file = std::fs::File::open(path)?;
         let project: Project = serde_json::from_reader(file)?;
 
-        photo_manager.load_photos(
-            project
-                .photos
-                .into_iter()
-                .map(|photo| (photo.path, Some(photo.rating.into())))
-                .collect(),
-        );
+        Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+            photo_manager.load_photos(
+                project
+                    .photos
+                    .into_iter()
+                    .map(|photo| (photo.path, Some(photo.rating.into())))
+                    .collect(),
+            );
+        });
 
         let pages: IndexMap<PageId, CanvasState> = project
             .pages
@@ -512,7 +511,7 @@ impl Project {
 
         let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
 
-        photo_manager.group_photos_by(project.group_by.into());
+        //photo_manager.group_photos_by(project.group_by.into());
 
         Ok(organize_edit_scene)
     }

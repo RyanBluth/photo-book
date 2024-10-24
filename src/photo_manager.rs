@@ -21,7 +21,7 @@ use tokio::task::spawn_blocking;
 use crate::{
     dependencies::{Dependency, Singleton},
     dirs::Dirs,
-    photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
+    photo::{self, Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
 use anyhow::{anyhow, Ok};
@@ -93,13 +93,17 @@ impl PhotoManager {
                 format!("{}/**/*.jpeg", path.to_string_lossy()),
             ];
 
-            let glob_iter = glob_patterns
-                .iter()
-                .flat_map(|pattern: &String| glob::glob_with(pattern, MatchOptions {
-                    case_sensitive: false,
-                    require_literal_separator: false,
-                    require_literal_leading_dot: false,
-                }).unwrap());
+            let glob_iter = glob_patterns.iter().flat_map(|pattern: &String| {
+                glob::glob_with(
+                    pattern,
+                    MatchOptions {
+                        case_sensitive: false,
+                        require_literal_separator: false,
+                        require_literal_leading_dot: false,
+                    },
+                )
+                .unwrap()
+            });
 
             let mut pending_photos = Vec::new();
             for entry in glob_iter {
@@ -154,38 +158,67 @@ impl PhotoManager {
         Ok(())
     }
 
-    pub fn load_photos(&mut self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
-        for (path, rating) in photos {
-            self.photos.insert(
-                path.clone(),
-                Photo::with_rating(path, rating.unwrap_or_default()),
-            );
-        }
-
-        self.photos.sort_by(|_, a, _, b| {
-            match (
-                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-            ) {
-                (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
-                    b.cmp(a)
-                }
-                _ => b.path.cmp(&a.path),
-            }
-        });
-
-        let photo_paths: Vec<PathBuf> = self.photos.keys().cloned().collect();
-        let thumbnail_dir = Dirs::Thumbnails.path();
-
+    pub fn load_photos(&self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
         tokio::task::spawn_blocking(move || {
-            // TODO: Parallelize this
-            for photo_path in photo_paths {
-                Self::gen_thumbnail(&photo_path, &thumbnail_dir.clone()).unwrap();
+            let mut photos_since_regroup: usize = 0;
+            let num_photos = photos.len();
+
+            for (path, rating) in photos {
+                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    photo_manager.photos.insert(
+                        path.clone(),
+                        Photo::with_rating(path, rating.unwrap_or_default()),
+                    );
+
+                    photos_since_regroup += 1;
+
+                    if photos_since_regroup > 500 || num_photos == photos_since_regroup {
+                        photos_since_regroup = 0;
+
+                        photo_manager.photos.sort_by(|_, a, _, b| {
+                            match (
+                                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                            ) {
+                                (
+                                    Some(PhotoMetadataField::DateTime(a)),
+                                    Some(PhotoMetadataField::DateTime(b)),
+                                ) => b.cmp(a),
+                                _ => b.path.cmp(&a.path),
+                            }
+                        });
+
+                        photo_manager.regroup_photos();
+                    }
+                })
             }
 
-            let photo_manager: Singleton<PhotoManager> = Dependency::get();
-            photo_manager.with_lock_mut(|photo_manager| {
-                photo_manager.regroup_photos();
+            let (photo_paths, thumbnail_dir) =
+                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    photo_manager.regroup_photos();
+
+                    let photo_paths: Vec<PathBuf> = photo_manager.photos.keys().cloned().collect();
+                    let thumbnail_dir = Dirs::Thumbnails.path();
+
+                    (photo_paths, thumbnail_dir)
+                });
+
+            // TODO: Parallelize this
+            tokio::task::spawn_blocking(move || {
+                for photo_path in photo_paths {
+                    if let Err(err) = Self::gen_thumbnail(&photo_path, &thumbnail_dir.clone()) {
+                        error!(
+                            "Failed to generate thumbnail for {}: {:?}",
+                            photo_path.display(),
+                            err
+                        );
+                    }
+                }
+
+                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                photo_manager.with_lock_mut(|photo_manager| {
+                    photo_manager.regroup_photos();
+                });
             });
         });
     }
@@ -553,7 +586,7 @@ impl PhotoManager {
                     if res.is_err() {
                         // TODO: Handle this better
                         error!("{:?}", res);
-                       // panic!("{:?}", res);
+                        // panic!("{:?}", res);
                     }
                 });
                 //});

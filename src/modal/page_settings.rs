@@ -8,6 +8,7 @@ use crate::{
 
 use super::{Modal, ModalActionResponse};
 
+#[derive(Debug, Clone)]
 pub struct PageSettingsModal {
     editable_page: EditablePage,
 }

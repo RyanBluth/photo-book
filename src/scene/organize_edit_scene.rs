@@ -28,6 +28,7 @@ use super::{
     SceneTransition::{self},
 };
 
+#[derive(Debug, Clone)]
 pub struct OrganizeEditScene {
     pub organize: Arc<RwLock<GalleryScene>>,
     pub edit: Arc<RwLock<CanvasScene>>,
@@ -181,37 +182,29 @@ impl Scene for OrganizeEditScene {
                             .show_open_single_file();
 
                         match open_path {
-                            Ok(Some(open_path)) => {
-                                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                            Ok(Some(open_path)) => match Project::load(&open_path) {
+                                Ok(scene) => {
+                                    let config: Singleton<AutoPersisting<Config>> =
+                                        Dependency::get();
+                                    config.with_lock_mut(|config| {
+                                        let _ = config.modify(
+                                            ConfigModification::AddRecentProject(open_path.clone()),
+                                        );
+                                    });
 
-                                photo_manager.with_lock_mut(|photo_manager| {
-                                    match Project::load(&open_path, photo_manager) {
-                                        Ok(scene) => {
-                                            let config: Singleton<AutoPersisting<Config>> =
-                                                Dependency::get();
-                                            config.with_lock_mut(|config| {
-                                                let _ = config.modify(
-                                                    ConfigModification::AddRecentProject(
-                                                        open_path.clone(),
-                                                    ),
-                                                );
-                                            });
+                                    *self = scene;
+                                    self.show_organize();
+                                }
+                                Err(err) => {
+                                    error!("Error loading project: {:?}", err);
 
-                                            *self = scene;
-                                            self.show_organize();
-                                        }
-                                        Err(err) => {
-                                            error!("Error loading project: {:?}", err);
-
-                                            ModalManager::push(BasicModal::new(
-                                                "Error",
-                                                format!("Error loading project: {:?}", err),
-                                                "OK",
-                                            ));
-                                        }
-                                    }
-                                });
-                            }
+                                    ModalManager::push(BasicModal::new(
+                                        "Error",
+                                        format!("Error loading project: {:?}", err),
+                                        "OK",
+                                    ));
+                                }
+                            },
                             Err(e) => {
                                 error!("Error opening open file dialog: {:?}", e);
                             }
@@ -230,36 +223,33 @@ impl Scene for OrganizeEditScene {
                         if recents.is_empty() {
                             ui.label("No recent projects");
                         } else {
-                            let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                for recent in &recents {
-                                    if ui.button(recent.display().to_string()).clicked() {
-                                        match Project::load(&recent.into(), photo_manager) {
-                                            Ok(scene) => {
-                                                config.with_lock_mut(|config| {
-                                                    let _ = config.modify(
-                                                        ConfigModification::AddRecentProject(
-                                                            recent.into(),
-                                                        ),
-                                                    );
-                                                });
+                            for recent in &recents {
+                                if ui.button(recent.display().to_string()).clicked() {
+                                    match Project::load(&recent.into()) {
+                                        Ok(scene) => {
+                                            config.with_lock_mut(|config| {
+                                                let _ = config.modify(
+                                                    ConfigModification::AddRecentProject(
+                                                        recent.into(),
+                                                    ),
+                                                );
+                                            });
 
-                                                *self = scene;
-                                                self.show_organize();
-                                            }
-                                            Err(err) => {
-                                                error!("Error loading project: {:?}", err);
+                                            *self = scene;
+                                            self.show_organize();
+                                        }
+                                        Err(err) => {
+                                            error!("Error loading project: {:?}", err);
 
-                                                ModalManager::push(BasicModal::new(
-                                                    "Error",
-                                                    format!("Error loading project: {:?}", err),
-                                                    "OK",
-                                                ));
-                                            }
+                                            ModalManager::push(BasicModal::new(
+                                                "Error",
+                                                format!("Error loading project: {:?}", err),
+                                                "OK",
+                                            ));
                                         }
                                     }
                                 }
-                            });
+                            }
                         }
                     });
 

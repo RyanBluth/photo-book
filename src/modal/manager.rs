@@ -10,6 +10,7 @@ use crate::{
 
 use super::{Modal, ModalActionResponse};
 
+#[derive(Debug, Clone)]
 pub struct TypedModalId<T> {
     id: ModalId,
     _phantom: std::marker::PhantomData<T>,

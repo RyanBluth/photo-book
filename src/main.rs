@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use autosave_manager::AutoSaveManager;
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, ViewportBuilder, Widget};
@@ -9,6 +10,7 @@ use eframe::egui::{self, ViewportBuilder, Widget};
 use font_manager::FontManager;
 
 use dirs::Dirs;
+use log::info;
 use modal::manager::ModalManager;
 use photo_manager::PhotoManager;
 use scene::SceneManager;
@@ -19,6 +21,7 @@ use string_log::{ArcStringLog, StringLog};
 
 mod assets;
 mod auto_persisting;
+mod autosave_manager;
 mod config;
 mod cursor_manager;
 mod dependencies;
@@ -33,14 +36,13 @@ mod model;
 mod photo;
 mod photo_manager;
 mod project;
+mod project_settings;
 mod scene;
 mod string_log;
 mod template;
 mod theme;
 mod utils;
 mod widget;
-mod project_settings;
-mod autosave_manager;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -145,6 +147,10 @@ impl eframe::App for PhotoBookApp {
 
         Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
             cursor_manager.end_frame(ctx);
+        });
+
+        Dependency::<AutoSaveManager>::get().with_lock_mut(|auto_save_manager| {
+            let _ = auto_save_manager.auto_save_if_needed(&self.scene_manager.root_scene);
         });
     }
 }

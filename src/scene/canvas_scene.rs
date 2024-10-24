@@ -64,6 +64,7 @@ impl CanvasSceneState {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum CanvasScenePane {
     Gallery,
     Canvas,
@@ -73,6 +74,7 @@ pub enum CanvasScenePane {
     QuickLayout,
 }
 
+#[derive(Debug, Clone)]
 pub struct CanvasScene {
     pub state: CanvasSceneState,
     tree: egui_tiles::Tree<CanvasScenePane>,

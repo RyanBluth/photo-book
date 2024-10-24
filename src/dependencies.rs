@@ -1,10 +1,11 @@
-use std::{
-    marker::PhantomData,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
-};
+use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config, cursor_manager::CursorManager, export::Exporter, font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager, project_settings::ProjectSettingsManager
+    auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config,
+    cursor_manager::CursorManager, export::Exporter, font_manager::FontManager,
+    modal::manager::ModalManager, photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager,
 };
 
 macro_rules! singleton {
@@ -47,11 +48,11 @@ impl<T> Clone for Singleton<T> {
 
 impl<T> Singleton<T> {
     pub fn with_lock<R>(&self, op: impl FnOnce(&RwLockReadGuard<'_, T>) -> R) -> R {
-        op(&self.0.read().expect("Failed to lock singleton"))
+        op(&self.0.read())
     }
 
     pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut RwLockWriteGuard<'_, T>) -> R) -> R {
-        op(&mut self.0.write().expect("Failed to lock singleton"))
+        op(&mut self.0.write())
     }
 }
 

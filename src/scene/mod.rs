@@ -58,7 +58,7 @@ pub trait Scene: Send + Sync {
 }
 
 pub struct SceneManager {
-    root_scene: OrganizeEditScene,
+    pub root_scene: OrganizeEditScene,
     scenes: Vec<Box<dyn Scene>>,
 }
 
