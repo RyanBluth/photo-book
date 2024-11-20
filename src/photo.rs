@@ -8,6 +8,8 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
 };
+use tokio::fs::File as TokioFile;
+use tokio::io::BufReader as TokioBufReader;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -49,6 +51,13 @@ macro_rules! metadata_fields {
         }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+pub enum PhotoError {
+    #[error("Failed to load photo: {0}")]
+    LoadError(#[from] std::io::Error),
+}
+
 pub enum MaxPhotoDimension {
     Width,
     Height,
@@ -218,25 +227,14 @@ pub struct PhotoMetadata {
 }
 
 impl PhotoMetadata {
-    pub fn from_path(path: &PathBuf) -> Self {
+    fn process_metadata(
+        path: &PathBuf,
+        exif: Result<exif::Exif, exif::Error>,
+        size: imagesize::ImageSize,
+    ) -> MetadataCollection {
         let mut fields = MetadataCollection::new();
         fields.insert(PhotoMetadataField::Path(path.clone()));
 
-        let file = File::open(path).unwrap();
-        let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
-
-        let size: imagesize::ImageSize = match imagesize::size(path.clone()) {
-            Ok(size) => size,
-            // TODO: Handle error?
-            Err(err) => {
-                error!("Error getting image size for{}: {:?}", path.display(), err);
-
-                imagesize::ImageSize {
-                    width: 0,
-                    height: 0,
-                }
-            }
-        };
         let width = size.width;
         let height = size.height;
 
@@ -377,7 +375,33 @@ impl PhotoMetadata {
             fields.insert(PhotoMetadataField::RotatedHeight(height));
         }
 
-        Self { fields }
+        fields
+    }
+
+    pub fn from_path(path: &PathBuf) -> Result<Self, PhotoError> {
+        let file = File::open(path)?;
+        let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
+        let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
+            width: 0,
+            height: 0,
+        });
+
+        Ok(Self {
+            fields: Self::process_metadata(path, exif, size),
+        })
+    }
+
+    pub async fn from_path_async(path: &PathBuf) -> Result<Self, PhotoError> {
+        let file = TokioFile::open(path).await?;
+        let exif = Reader::new().read_from_container(&mut BufReader::new(file.into_std().await));
+        let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
+            width: 0,
+            height: 0,
+        });
+
+        Ok(Self {
+            fields: Self::process_metadata(path, exif, size),
+        })
     }
 
     pub fn width(&self) -> usize {
@@ -487,22 +511,40 @@ pub struct Photo {
 }
 
 impl Photo {
-    pub fn new(path: PathBuf) -> Self {
-        let metadata = PhotoMetadata::from_path(&path);
+    pub fn new(path: PathBuf) -> Result<Self, PhotoError> {
+        let metadata = PhotoMetadata::from_path(&path)?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
         let rating = PhotoRating::Maybe;
-        Self {
+        Ok(Self {
             path,
             metadata,
             thumbnail_hash,
             rating,
-        }
+        })
     }
 
-    pub fn with_rating(path: PathBuf, rating: PhotoRating) -> Self {
-        let mut res = Self::new(path);
+    pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
+        let metadata = PhotoMetadata::from_path_async(&path).await?;
+        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let rating = PhotoRating::Maybe;
+        Ok(Self {
+            path,
+            metadata,
+            thumbnail_hash,
+            rating,
+        })
+    }
+
+    pub async fn with_rating_async(path: PathBuf, rating: PhotoRating) -> Result<Self, PhotoError> {
+        let mut res: Photo = Self::new_async(path).await?;
         res.rating = rating;
-        res
+        Ok(res)
+    }
+
+    pub fn with_rating(path: PathBuf, rating: PhotoRating) -> Result<Self, PhotoError> {
+        let mut res = Self::new(path)?;
+        res.rating = rating;
+        Ok(res)
     }
 
     pub fn file_name(&self) -> &str {

@@ -17,6 +17,7 @@ use image::{
 use indexmap::IndexMap;
 use log::{error, info};
 use tokio::task::spawn_blocking;
+use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
 use crate::{
     dependencies::{Dependency, Singleton},
@@ -87,7 +88,7 @@ impl PhotoManager {
     }
 
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let glob_patterns = vec![
                 format!("{}/**/*.jpg", path.to_string_lossy()),
                 format!("{}/**/*.jpeg", path.to_string_lossy()),
@@ -105,26 +106,32 @@ impl PhotoManager {
                 .unwrap()
             });
 
-            let mut pending_photos = Vec::new();
-            for entry in glob_iter {
-                let path = entry.as_ref().unwrap();
+            let pending_photos: Vec<PathBuf> = glob_iter
+                .filter_map(|entry| {
+                    let path = entry.as_ref().ok()?;
+                    let lowercase_extension = path.extension()?.to_ascii_lowercase();
+                    if lowercase_extension == "jpg" || lowercase_extension == "jpeg" {
+                        Some(path.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect();
 
-                let lowercase_extension = path.extension().unwrap_or_default().to_ascii_lowercase();
-
-                if lowercase_extension != "jpg" && lowercase_extension != "jpeg" {
-                    continue;
+            for photo_path in pending_photos {
+                match Photo::new_async(photo_path.clone()).await {
+                    Result::Ok(photo) => {
+                        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                            photo_manager.photos.insert(photo_path.clone(), photo);
+                        });
+                    }
+                    Err(err) => {
+                        error!("Failed to load photo: {:?} - {:?}", photo_path, err);
+                    }
                 }
-
-                pending_photos.push(path.clone());
             }
 
             Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                for photo_path in pending_photos {
-                    photo_manager
-                        .photos
-                        .insert(photo_path.clone(), Photo::new(photo_path));
-                }
-
                 photo_manager.photos.sort_by(|_, a, _, b| {
                     match (
                         a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
@@ -159,41 +166,35 @@ impl PhotoManager {
     }
 
     pub fn load_photos(&self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let mut photos_since_regroup: usize = 0;
             let num_photos = photos.len();
 
             for (path, rating) in photos {
-                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                    photo_manager.photos.insert(
-                        path.clone(),
-                        Photo::with_rating(path, rating.unwrap_or_default()),
-                    );
+                let photo =
+                    Photo::with_rating_async(path.clone(), rating.unwrap_or_default()).await;
 
-                    photos_since_regroup += 1;
+                match photo {
+                    Result::Err(err) => {
+                        error!("Failed to load photo: {:?} - {:?}", path, err);
+                        continue;
+                    }
+                    Result::Ok(photo) => {
+                        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                            photo_manager.photos.insert(path.clone(), photo);
 
-                    if photos_since_regroup > 500 || num_photos == photos_since_regroup {
-                        photos_since_regroup = 0;
+                            photos_since_regroup += 1;
 
-                        photo_manager.photos.sort_by(|_, a, _, b| {
-                            match (
-                                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-                                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-                            ) {
-                                (
-                                    Some(PhotoMetadataField::DateTime(a)),
-                                    Some(PhotoMetadataField::DateTime(b)),
-                                ) => b.cmp(a),
-                                _ => b.path.cmp(&a.path),
+                            if photos_since_regroup > 500 || num_photos == photos_since_regroup {
+                                photos_since_regroup = 0;
+                                photo_manager.sort_and_regroup();
                             }
                         });
-
-                        photo_manager.regroup_photos();
                     }
-                })
+                };
             }
 
-            let (photo_paths, thumbnail_dir) =
+            let (photo_paths, _) =
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                     photo_manager.regroup_photos();
 
@@ -202,25 +203,25 @@ impl PhotoManager {
 
                     (photo_paths, thumbnail_dir)
                 });
-
-            // TODO: Parallelize this
-            tokio::task::spawn_blocking(move || {
-                for photo_path in photo_paths {
-                    if let Err(err) = Self::gen_thumbnail(&photo_path, &thumbnail_dir.clone()) {
-                        error!(
-                            "Failed to generate thumbnail for {}: {:?}",
-                            photo_path.display(),
-                            err
-                        );
-                    }
-                }
-
-                let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                photo_manager.with_lock_mut(|photo_manager| {
-                    photo_manager.regroup_photos();
-                });
-            });
+            let _ = Self::gen_thumbnails(photo_paths);
         });
+    }
+
+    // Add helper method for sorting and regrouping
+    fn sort_and_regroup(&mut self) {
+        self.photos.sort_by(|_, a, _, b| {
+            match (
+                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+            ) {
+                (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
+                    b.cmp(a)
+                }
+                _ => b.path.cmp(&a.path),
+            }
+        });
+
+        self.regroup_photos();
     }
 
     pub fn grouped_photos(&self) -> &IndexMap<String, IndexMap<PathBuf, Photo>> {
@@ -534,6 +535,7 @@ impl PhotoManager {
                         _ => {}
                     }
                 });
+
                 Ok(None)
             }
         }
@@ -575,29 +577,26 @@ impl PhotoManager {
     fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
         let thumbnail_dir = Dirs::Thumbnails.path();
 
-        let partitions = utils::partition_iterator(photo_paths.into_iter(), 8);
+        let partitions = utils::partition_iterator(photo_paths.into_iter(), 16);
 
         for partition in partitions {
-            let thumbnail_dir = thumbnail_dir.clone();
-            tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-                //thread::spawn(move || {
-                partition.into_iter().for_each(|photo| {
-                    let res = Self::gen_thumbnail(&photo, &thumbnail_dir);
+            let thumbnail_dir: PathBuf = thumbnail_dir.clone();
+            tokio::task::spawn(async move {
+                for photo in partition {
+                    let res: Result<(), anyhow::Error> =
+                        Self::gen_thumbnail(&photo, &thumbnail_dir).await;
                     if res.is_err() {
                         // TODO: Handle this better
                         error!("{:?}", res);
                         // panic!("{:?}", res);
                     }
-                });
-                //});
-
-                Ok(())
+                }
             });
         }
         Ok(())
     }
 
-    fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
+    async fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
         let extension = photo_path.extension();
 
@@ -623,7 +622,13 @@ impl PhotoManager {
                     info!("Generating thumbnail: {:?}", &thumbnail_path);
                 }
 
-                let img = ImageReader::open(photo_path)?.decode()?;
+                let file_bytes = tokio::fs::read(photo_path).await?;
+                let img = spawn_blocking(move || {
+                    image::ImageReader::new(std::io::Cursor::new(file_bytes))
+                        .with_guessed_format()?
+                        .decode()
+                })
+                .await??;
 
                 let color_type = img.color();
 
@@ -658,52 +663,58 @@ impl PhotoManager {
                 let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
                 let dst_width: u32 = THUMBNAIL_SIZE as u32;
 
-                let mut dst_image =
-                    fr::images::Image::new(dst_width, dst_height, src_image.pixel_type());
+                let (dst_width, dst_height) = (dst_width, dst_height);
+                let pixel_type = src_image.pixel_type();
+                let src_image = src_image;
+                let color_type = color_type;
 
-                // Create Resizer instance and resize source image
-                // into buffer of destination image
-                let mut resizer = fr::Resizer::new();
+                let dst_image = spawn_blocking(move || {
+                    let mut dst_image = fr::images::Image::new(dst_width, dst_height, pixel_type);
+                    let mut resizer = fr::Resizer::new();
 
-                let mut cpu_extensions_vec = vec![CpuExtensions::None];
+                    // CPU extensions setup
+                    let mut cpu_extensions_vec = vec![CpuExtensions::None];
+                    #[cfg(target_arch = "x86_64")]
+                    {
+                        cpu_extensions_vec.push(CpuExtensions::Sse4_1);
+                        cpu_extensions_vec.push(CpuExtensions::Avx2);
+                    }
+                    #[cfg(target_arch = "aarch64")]
+                    {
+                        cpu_extensions_vec.push(CpuExtensions::Neon);
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        cpu_extensions_vec.push(CpuExtensions::Simd128);
+                    }
 
-                #[cfg(target_arch = "x86_64")]
-                {
-                    cpu_extensions_vec.push(CpuExtensions::Sse4_1);
-                    cpu_extensions_vec.push(CpuExtensions::Avx2);
-                }
-                #[cfg(target_arch = "aarch64")]
-                {
-                    cpu_extensions_vec.push(CpuExtensions::Neon);
-                }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    cpu_extensions_vec.push(CpuExtensions::Simd128);
-                }
-
-                for cpu_extension in cpu_extensions_vec {
-                    if cpu_extension.is_supported() {
-                        unsafe {
-                            resizer.set_cpu_extensions(cpu_extension);
-                            break;
+                    for cpu_extension in cpu_extensions_vec {
+                        if cpu_extension.is_supported() {
+                            unsafe {
+                                resizer.set_cpu_extensions(cpu_extension);
+                                break;
+                            }
                         }
                     }
-                }
 
-                resizer.resize(
-                    &src_image,
-                    &mut dst_image,
-                    &ResizeOptions {
-                        algorithm: fast_image_resize::ResizeAlg::Nearest,
-                        cropping: fast_image_resize::SrcCropping::None,
-                        mul_div_alpha: false,
-                    },
-                )?;
+                    resizer.resize(
+                        &src_image,
+                        &mut dst_image,
+                        &ResizeOptions {
+                            algorithm: fast_image_resize::ResizeAlg::Nearest,
+                            cropping: fast_image_resize::SrcCropping::None,
+                            mul_div_alpha: false,
+                        },
+                    )?;
 
-                if color_type.has_alpha() {
-                    // Divide RGB channels of destination image by alpha
-                    alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
-                }
+                    if color_type.has_alpha() {
+                        let alpha_mul_div = fr::MulDiv::default();
+                        alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
+                    }
+
+                    Ok(dst_image)
+                })
+                .await??;
 
                 // Write destination image as PNG-file
                 let mut result_buf = BufWriter::new(Vec::new());
@@ -735,18 +746,12 @@ impl PhotoManager {
                 }
 
                 let buf = result_buf.into_inner()?;
-                std::fs::write(&thumbnail_path, buf)?;
+
+                let mut file = TokioFile::create(&thumbnail_path).await?;
+                file.write_all(&buf).await?;
+                file.sync_all().await?;
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
-
-                // let _tex_result = ctx.try_load_texture(
-                //     &format!("file://{}", thumbnail_path.to_str().unwrap()),
-                //     TextureOptions {
-                //         magnification: egui::TextureFilter::Linear,
-                //         minification: egui::TextureFilter::Linear,
-                //     },
-                //     Size(u32::from(dst_width), u32::from(dst_height as NonZeroU32)),
-                // )?;
 
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                     photo_manager.thumbnail_existence_cache.insert(hash);

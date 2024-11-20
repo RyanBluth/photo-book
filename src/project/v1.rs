@@ -323,11 +323,12 @@ impl Project {
                         let layer = AppLayer {
                             content: match layer.content {
                                 LayerContent::Photo(photo) => {
+                                    /// TODO: Don't unwrap
                                     AppLayerContent::Photo(AppCanvasPhoto {
                                         photo: AppPhoto::with_rating(
                                             photo.photo.path,
                                             photo.photo.rating.into(),
-                                        ),
+                                        ).unwrap(),
                                     })
                                 }
                                 LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
@@ -382,7 +383,7 @@ impl Project {
                                         photo: AppPhoto::with_rating(
                                             photo.photo.path,
                                             photo.photo.rating.into(),
-                                        ),
+                                        ).unwrap(), // TODO: Don't unwrap
                                     }),
                                     scale_mode: match scale_mode {
                                         ScaleMode::Fit => AppScaleMode::Fit,
