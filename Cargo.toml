@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 egui = { version = "0.29", features = ["persistence"] }
-eframe = { version = "0.29", features = ["glow"] }
+eframe = { version = "0.29", features = ["wgpu"] }
 egui_extras = { version = "0.29", features = ["all_loaders"] }
 native-dialog = "0.6.4"
 env_logger = "0.10.0"
@@ -43,7 +43,7 @@ dirs = "5.0.1"
 fxhash = "0.2.1"
 toml = "0.8.15"
 glob = "0.3.1"
-parking_lot = {version = "0.12", features = ["deadlock_detection"]}
+parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 
 [profile.dev.package."*"]
 opt-level = 2
