@@ -9,7 +9,7 @@ use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     history::HistoricallyEqual,
-    id::{next_layer_id, LayerId},
+    id::{next_layer_id, next_quick_layout_index, LayerId},
     model::{self, editable_value::EditableValue},
     photo::Photo,
     photo_manager::PhotoManager,

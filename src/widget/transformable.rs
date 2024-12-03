@@ -1,5 +1,3 @@
-
-
 use eframe::{
     egui::{self, Button, CursorIcon, Image, Response, Sense, Ui},
     epaint::{Color32, Pos2, Rect, Stroke, Vec2},
@@ -68,7 +66,7 @@ pub struct TransformableState {
     pub rotation: f32,
     pub last_frame_rotation: f32,
     pub change_in_rotation: Option<f32>,
-    pub id: Id
+    pub id: Id,
 }
 
 impl TransformableState {
@@ -84,7 +82,7 @@ impl TransformableState {
             rotation: 0.0,
             last_frame_rotation: 0.0,
             change_in_rotation: None,
-            id: self.id
+            id: self.id,
         }
     }
 }
@@ -99,7 +97,7 @@ pub enum TransformableWidgetResponseAction {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransformableWidgetResponse<Inner> {
+pub struct TransformableWidgetResponse<Inner, Accessory> {
     pub inner: Inner,
     pub began_moving: bool,
     pub began_resizing: bool,
@@ -109,6 +107,7 @@ pub struct TransformableWidgetResponse<Inner> {
     pub ended_rotating: bool,
     pub mouse_down: bool,
     pub clicked: bool,
+    pub accessory_response: Accessory,
 }
 
 impl<'a> TransformableWidget<'a> {
@@ -118,14 +117,15 @@ impl<'a> TransformableWidget<'a> {
         Self { state }
     }
 
-    pub fn show<R>(
+    pub fn show<R, A>(
         &mut self,
         ui: &mut Ui,
         pre_scaled_container_rect: Rect,
         global_scale: f32,
         active: bool,
         add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
-    ) -> TransformableWidgetResponse<R> {
+        add_accessory: impl FnOnce(&mut Ui, Rect) -> A,
+    ) -> TransformableWidgetResponse<R, A> {
         let initial_is_moving = self.state.is_moving;
         let initial_active_handle = self.state.active_handle;
         let initial_mode = self.state.handle_mode;
@@ -158,7 +158,7 @@ impl<'a> TransformableWidget<'a> {
         };
 
         response.id = self.state.id;
-        
+
         let rect = response.rect;
 
         let middle_point = |p1: Pos2, p2: Pos2| p1 + (p2 - p1) / 2.0;
@@ -482,6 +482,18 @@ impl<'a> TransformableWidget<'a> {
 
         let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
 
+        let accessory_height = 60.0;
+        let margin_top = 20.0;
+        let accessory_rect = Rect::from_min_max(
+            rotated_inner_content_rect.left_bottom() + Vec2::new(0.0, margin_top),
+            rotated_inner_content_rect.left_bottom()
+                + Vec2::new(
+                    rotated_inner_content_rect.width(),
+                    margin_top + accessory_height,
+                ),
+        );
+        let accessory_response = add_accessory(ui, accessory_rect);
+
         if active {
             self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
             self.update_cursor(ui, &rotated_inner_content_rect, &handles);
@@ -505,6 +517,7 @@ impl<'a> TransformableWidget<'a> {
                 && matches!(initial_mode, TransformHandleMode::Rotate),
             mouse_down: interact_response.is_pointer_button_down_on(),
             clicked: interact_response.clicked(),
+            accessory_response,
         }
     }
 

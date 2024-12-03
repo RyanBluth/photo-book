@@ -1,16 +1,18 @@
+use std::sync::Arc;
+
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Button, Id, Layout, RichText, Stroke};
+use egui::{Align, Button, Id, Layout, RichText, Stroke, UiBuilder};
 use indexmap::{indexmap, IndexMap};
 use printpdf::image_crate::flat::SampleLayout;
 
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_layer_id, LayerId},
+    id::{next_layer_id, next_quick_layout_index, LayerId},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     photo_manager::PhotoManager,
@@ -20,9 +22,12 @@ use crate::{
 };
 
 use super::{
-    canvas_info::layers::{
-        CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
-        TextVerticalAlignment,
+    canvas_info::{
+        layers::{
+            CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
+            TextVerticalAlignment,
+        },
+        quick_layout::{self, QuickLayout},
     },
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
@@ -53,6 +58,7 @@ pub struct CanvasState {
     pub multi_select: Option<MultiSelect>,
     pub page: EditablePage,
     pub template: Option<Template>,
+    pub quick_layout_order: Vec<LayerId>,
     computed_initial_zoom: bool,
 }
 
@@ -65,6 +71,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
+            quick_layout_order: Vec::new(),
             computed_initial_zoom: false,
         }
     }
@@ -73,6 +80,7 @@ impl CanvasState {
         layers: IndexMap<LayerId, Layer>,
         page: EditablePage,
         template: Option<Template>,
+        quick_layout_order: Vec<LayerId>,
     ) -> Self {
         Self {
             layers,
@@ -81,6 +89,7 @@ impl CanvasState {
             multi_select: None,
             page,
             template,
+            quick_layout_order: quick_layout_order,
             computed_initial_zoom: false,
         }
     }
@@ -93,7 +102,7 @@ impl CanvasState {
         clone
     }
 
-    pub fn with_photo(photo: Photo) -> Self {
+    pub fn with_photo(photo: Photo, next_quick_layout_layer_id: Option<usize>) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
@@ -135,6 +144,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(Page::default()),
             template: None,
+            quick_layout_order: vec![layer.id],
             computed_initial_zoom: false,
         }
     }
@@ -215,6 +225,8 @@ impl CanvasState {
             }
         }
 
+        let ids = layers.keys().copied().collect::<Vec<_>>();
+
         Self {
             layers,
             zoom: 1.0,
@@ -222,6 +234,7 @@ impl CanvasState {
             multi_select: None,
             page: EditablePage::new(template.page.clone()),
             template: Some(template),
+            quick_layout_order: ids,
             computed_initial_zoom: false,
         }
     }
@@ -232,6 +245,12 @@ impl CanvasState {
 
     fn selected_layers_iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
         self.layers.values_mut().filter(|layer| layer.selected)
+    }
+
+    pub fn add_photo(&mut self, photo: Photo) {
+        let layer = Layer::with_photo(photo);
+        self.quick_layout_order.push(layer.id);
+        self.layers.insert(layer.id, layer);
     }
 }
 
@@ -561,6 +580,13 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
+        enum AccessoryResponse {
+            None,
+            SwapCenters(LayerId, LayerId),
+            SwapCentersAndBounds(LayerId, LayerId),
+            SwapQuickLayoutPosition(LayerId, LayerId),
+        }
+
         let selected_layer_ids = self
             .state
             .layers
@@ -587,6 +613,14 @@ impl<'a> Canvas<'a> {
 
                 let pre_transform_rect = transform_state.rect;
 
+                let child_ids_content = multi_select
+                    .selected_layers
+                    .iter()
+                    .map(|child| child.id)
+                    .collect::<Vec<_>>();
+
+                let child_ids_accessory = child_ids_content.clone();
+
                 let transform_response = TransformableWidget::new(&mut transform_state).show(
                     ui,
                     rect,
@@ -594,8 +628,8 @@ impl<'a> Canvas<'a> {
                     true,
                     |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
-                        for child in &multi_select.selected_layers {
-                            let layer: &mut Layer = self.state.layers.get_mut(&child.id).unwrap();
+                        for child_id in child_ids_content {
+                            let layer: &mut Layer = self.state.layers.get_mut(&child_id).unwrap();
 
                             // Compute the relative position of the layer in the group so we can apply transformations
                             // to each side as they are adjusted at the group level
@@ -711,7 +745,130 @@ impl<'a> Canvas<'a> {
                             }
                         }
                     },
+                    |ui, rect| {
+                        ui.painter().rect_filled(rect, 2.0, Color32::from_gray(30));
+                        if child_ids_accessory.len() == 2 {
+                            return ui
+                                .allocate_new_ui(UiBuilder::new().max_rect(rect), |ui| {
+                                    if ui.button("Swap Centers").clicked() {
+                                        return AccessoryResponse::SwapCenters(
+                                            child_ids_accessory[0],
+                                            child_ids_accessory[1],
+                                        );
+                                    }
+                                    if ui.button("Swap Centers and Bounds").clicked() {
+                                        return AccessoryResponse::SwapCentersAndBounds(
+                                            child_ids_accessory[0],
+                                            child_ids_accessory[1],
+                                        );
+                                    }
+                                    if ui.button("Swap Quick Layout Position").clicked() {
+                                        return AccessoryResponse::SwapQuickLayoutPosition(
+                                            child_ids_accessory[0],
+                                            child_ids_accessory[1],
+                                        );
+                                    }
+                                    AccessoryResponse::None
+                                })
+                                .inner;
+                        }
+                        AccessoryResponse::None
+                    },
                 );
+
+                match transform_response.accessory_response {
+                    AccessoryResponse::SwapCenters(id1, id2) => {
+                        let original_child_a_rect = self
+                            .state
+                            .layers
+                            .get(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        let original_child_b_rect = self
+                            .state
+                            .layers
+                            .get(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        self.state
+                            .layers
+                            .get_mut(&child_ids_accessory[0])
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_b_rect.center());
+
+                        self.state
+                            .layers
+                            .get_mut(&child_ids_accessory[1])
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_a_rect.center());
+                    }
+                    AccessoryResponse::SwapCentersAndBounds(id1, id2) => {
+                        let original_child_a_rect = self
+                            .state
+                            .layers
+                            .get(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        let original_child_b_rect = self
+                            .state
+                            .layers
+                            .get(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        self.state
+                            .layers
+                            .get_mut(&child_ids_accessory[0])
+                            .unwrap()
+                            .transform_state
+                            .rect =
+                            original_child_a_rect.fit_and_center_within(original_child_b_rect);
+
+                        self.state
+                            .layers
+                            .get_mut(&child_ids_accessory[1])
+                            .unwrap()
+                            .transform_state
+                            .rect =
+                            original_child_b_rect.fit_and_center_within(original_child_a_rect);
+                    }
+                    AccessoryResponse::SwapQuickLayoutPosition(id1, id2) => {
+                        let first_id_index = self
+                            .state
+                            .quick_layout_order
+                            .iter()
+                            .position(|id| *id == id1)
+                            .unwrap();
+
+                        let second_id_index = self
+                            .state
+                            .quick_layout_order
+                            .iter()
+                            .position(|id| *id == id2)
+                            .unwrap();
+
+                        self.state
+                            .quick_layout_order
+                            .swap(first_id_index, second_id_index);
+                    }
+
+                    AccessoryResponse::None => {}
+                }
 
                 multi_select.transformable_state = transform_state;
 
@@ -721,6 +878,17 @@ impl<'a> Canvas<'a> {
                 {
                     self.history_manager
                         .save_history(CanvasHistoryKind::Transform, self.state);
+                }
+
+                match transform_response.accessory_response {
+                    AccessoryResponse::SwapCenters(_, _)
+                    | AccessoryResponse::SwapCentersAndBounds(_, _)
+                    | AccessoryResponse::SwapQuickLayoutPosition(_, _) => {
+                        // TODO: Maybe use a different history kind for these operationsap
+                        self.history_manager
+                            .save_history(CanvasHistoryKind::Transform, self.state);
+                    }
+                    AccessoryResponse::None => {}
                 }
             }
         }
@@ -732,7 +900,7 @@ impl<'a> Canvas<'a> {
         is_preview: bool,
         available_rect: Rect,
         ui: &mut Ui,
-    ) -> Option<TransformableWidgetResponse<()>> {
+    ) -> Option<TransformableWidgetResponse<(), ()>> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap();
         let active = layer.selected && self.state.multi_select.is_none();
 
@@ -792,6 +960,7 @@ impl<'a> Canvas<'a> {
 
                                         painter.add(Shape::mesh(mesh));
                                     },
+                                    |ui, rect| {},
                                 );
 
                             layer.transform_state = transform_state;
@@ -807,7 +976,7 @@ impl<'a> Canvas<'a> {
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
 
-                let transform_response: TransformableWidgetResponse<()> =
+                let transform_response: TransformableWidgetResponse<(), _> =
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
                         available_rect,
@@ -825,6 +994,7 @@ impl<'a> Canvas<'a> {
                                 text.vertical_alignment,
                             );
                         },
+                        |ui, rect| {},
                     );
 
                 layer.transform_state = transform_state;
@@ -962,6 +1132,7 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
+                    accessory_response: (),
                 })
             }
             LayerContent::TemplateText { region, text } => {
@@ -1008,6 +1179,7 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
+                    accessory_response: (),
                 })
             }
         }
@@ -1091,6 +1263,11 @@ impl<'a> Canvas<'a> {
             // Delete the selected photo
             if input.key_pressed(egui::Key::Delete) {
                 self.state.layers.retain(|_, layer| !layer.selected);
+
+                // Remove any layers that are in the quick layout order but are no longer in the layers map
+                self.state
+                    .quick_layout_order
+                    .retain(|id| self.state.layers.contains_key(id));
                 self.history_manager
                     .save_history(CanvasHistoryKind::DeletePhoto, self.state);
             }
@@ -1173,13 +1350,6 @@ impl<'a> Canvas<'a> {
             ui.input(|input| input.pointer.hover_pos())
                 .unwrap_or_default(),
         )
-    }
-
-    pub fn add_photo(&mut self, photo: Photo) {
-        let layer = Layer::with_photo(photo);
-        self.state.layers.insert(layer.id, layer);
-        self.history_manager
-            .save_history(CanvasHistoryKind::AddPhoto, self.state);
     }
 
     fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {

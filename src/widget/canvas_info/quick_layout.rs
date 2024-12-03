@@ -102,14 +102,12 @@ impl<'a> QuickLayout<'a> {
 
                         let mut canvas_state = self.state.canvas_state.clone_with_new_widget_ids();
 
-                        canvas_state
-                            .layers
-                            .iter_mut()
-                            .filter(|layer| layer.1.content.is_photo())
-                            .enumerate()
-                            .for_each(|(index, (_, layer))| {
-                                layer.transform_state.rect = layout[index].absolute_rect;
-                            });
+                        canvas_state.quick_layout_order.iter().enumerate().for_each(
+                            |(index, layer_id)| {
+                                canvas_state.layers[layer_id].transform_state.rect =
+                                    layout[index].absolute_rect;
+                            },
+                        );
 
                         row.col(|ui| {
                             let page_rect = ui.max_rect();
@@ -143,15 +141,8 @@ impl<'a> QuickLayout<'a> {
     }
 
     fn available_layouts(&self) -> Vec<Vec<QuickLayoutRegion>> {
-        let filtered_layers: Vec<(&usize, &Layer)> = self
-            .state
-            .canvas_state
-            .layers
-            .iter()
-            .filter(|layer| layer.1.content.is_photo())
-            .collect();
+        let n = self.state.canvas_state.quick_layout_order.len();
 
-        let n = filtered_layers.len();
         if n == 0 {
             return vec![];
         }
@@ -162,7 +153,11 @@ impl<'a> QuickLayout<'a> {
         if n == 1 {
             layouts.push(vec![QuickLayoutRegion {
                 absolute_rect: Self::fractional_rect_for_layer_in_page(
-                    filtered_layers[0].1,
+                    self.state
+                        .canvas_state
+                        .layers
+                        .get(&self.state.canvas_state.quick_layout_order[0])
+                        .unwrap(),
                     &self.state.canvas_state.page.value,
                     Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
                     QuickLayoutFillMode::Fill,
@@ -170,7 +165,11 @@ impl<'a> QuickLayout<'a> {
             }]);
             layouts.push(vec![QuickLayoutRegion {
                 absolute_rect: Self::fractional_rect_for_layer_in_page(
-                    filtered_layers[0].1,
+                    self.state
+                        .canvas_state
+                        .layers
+                        .get(&self.state.canvas_state.quick_layout_order[0])
+                        .unwrap(),
                     &self.state.canvas_state.page.value,
                     Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
                     QuickLayoutFillMode::Margin(0.1),
@@ -178,7 +177,11 @@ impl<'a> QuickLayout<'a> {
             }]);
             layouts.push(vec![QuickLayoutRegion {
                 absolute_rect: Self::fractional_rect_for_layer_in_page(
-                    filtered_layers[0].1,
+                    self.state
+                        .canvas_state
+                        .layers
+                        .get(&self.state.canvas_state.quick_layout_order[0])
+                        .unwrap(),
                     &self.state.canvas_state.page.value,
                     Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
                     QuickLayoutFillMode::Margin(0.3),
@@ -187,7 +190,11 @@ impl<'a> QuickLayout<'a> {
             // Full-page photo with padding
             layouts.push(vec![QuickLayoutRegion {
                 absolute_rect: Self::fractional_rect_for_layer_in_page(
-                    filtered_layers[0].1,
+                    self.state
+                        .canvas_state
+                        .layers
+                        .get(&self.state.canvas_state.quick_layout_order[0])
+                        .unwrap(),
                     &self.state.canvas_state.page.value,
                     Rect::from_min_size(Pos2::new(0.05, 0.05), Vec2::new(0.9, 0.9)),
                     QuickLayoutFillMode::Fill,
@@ -197,7 +204,11 @@ impl<'a> QuickLayout<'a> {
             layouts.push(vec![
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[0].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[0])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Fill,
@@ -205,7 +216,11 @@ impl<'a> QuickLayout<'a> {
                 },
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[1].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[1])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Fill,
@@ -215,7 +230,11 @@ impl<'a> QuickLayout<'a> {
             layouts.push(vec![
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[0].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[0])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Margin(0.2),
@@ -223,7 +242,11 @@ impl<'a> QuickLayout<'a> {
                 },
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[1].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[1])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Margin(0.2),
@@ -233,7 +256,11 @@ impl<'a> QuickLayout<'a> {
             layouts.push(vec![
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[0].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[0])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::ZERO, Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Margin(0.1),
@@ -241,7 +268,11 @@ impl<'a> QuickLayout<'a> {
                 },
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[1].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[1])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::new(0.0, 0.5), Vec2::new(1.0, 0.5)),
                         QuickLayoutFillMode::Margin(0.1),
@@ -252,7 +283,11 @@ impl<'a> QuickLayout<'a> {
             layouts.push(vec![
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[0].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[0])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::new(0.05, 0.05), Vec2::new(0.425, 0.9)),
                         QuickLayoutFillMode::Fill,
@@ -260,7 +295,11 @@ impl<'a> QuickLayout<'a> {
                 },
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
-                        filtered_layers[1].1,
+                        self.state
+                            .canvas_state
+                            .layers
+                            .get(&self.state.canvas_state.quick_layout_order[1])
+                            .unwrap(),
                         &self.state.canvas_state.page.value,
                         Rect::from_min_size(Pos2::new(0.525, 0.05), Vec2::new(0.425, 0.9)),
                         QuickLayoutFillMode::Fill,
@@ -269,39 +308,38 @@ impl<'a> QuickLayout<'a> {
             ]);
         } else if n >= 3 {
             // Grid layout
-            layouts.push(self.generate_grid_layout(&filtered_layers, n));
+            layouts.push(self.generate_grid_layout(n));
 
             // Highlight layout
-            layouts.push(self.generate_highlight_layout(0.0, &filtered_layers));
+            layouts.push(self.generate_highlight_layout(0.0));
 
-            layouts.push(self.generate_highlight_layout(0.1, &filtered_layers));
+            layouts.push(self.generate_highlight_layout(0.1));
 
             // Grid layout with padding
-            layouts.push(self.generate_grid_layout_with_padding(&filtered_layers, n));
+            layouts.push(self.generate_grid_layout_with_padding(n));
 
             // Vertical stack layout with margins
-            layouts.push(self.generate_vertical_stack_layout(&filtered_layers));
+            layouts.push(self.generate_vertical_stack_layout());
 
             // Horizontal stack layout with margins
-            layouts.push(self.generate_horizontal_stack_layout(&filtered_layers));
+            layouts.push(self.generate_horizontal_stack_layout());
 
             // Zigzag layout
-            layouts.push(self.generate_zigzag_layout(&filtered_layers));
+            layouts.push(self.generate_zigzag_layout());
         }
 
         layouts
     }
 
-    fn generate_grid_layout(
-        &self,
-        filtered_layers: &[(&usize, &Layer)],
-        n: usize,
-    ) -> Vec<QuickLayoutRegion> {
+    fn generate_grid_layout(&self, n: usize) -> Vec<QuickLayoutRegion> {
         let grid_size = (n as f32).sqrt().ceil() as usize;
-        filtered_layers
+        self.state
+            .canvas_state
+            .quick_layout_order
             .iter()
             .enumerate()
-            .map(|(index, (_, layer))| {
+            .map(|(index, layer_id)| {
+                let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
                 let row = index / grid_size;
                 let col = index % grid_size;
                 let rect = Rect::from_min_size(
@@ -320,25 +358,31 @@ impl<'a> QuickLayout<'a> {
             .collect()
     }
 
-    fn generate_highlight_layout(
-        &self,
-        padding: f32,
-        filtered_layers: &[(&usize, &Layer)],
-    ) -> Vec<QuickLayoutRegion> {
-        let n = filtered_layers.len();
+    fn generate_highlight_layout(&self, padding: f32) -> Vec<QuickLayoutRegion> {
+        let n = self.state.canvas_state.quick_layout_order.len();
         let mut regions = vec![];
-        // Try to find a portrait photo otherwise use the first photo
-        let highlight_layer_index = filtered_layers
-            .iter()
-            .position(|(_, layer)| {
-                layer.transform_state.rect.width() < layer.transform_state.rect.height()
-            })
-            .unwrap_or_default();
+        // // Try to find a portrait photo otherwise use the first photo
+        // let highlight_layer_index = self
+        //     .state
+        //     .canvas_state
+        //     .quick_layout_order
+        //     .iter()
+        //     .position(|layer_id| {
+        //         let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
+        //         layer.transform_state.rect.width() < layer.transform_state.rect.height()
+        //     })
+        //     .unwrap_or_default();
+
+        let highlight_layer_index = 0;
 
         // Highlighted photo
         let highlight_region = QuickLayoutRegion {
             absolute_rect: Self::fractional_rect_for_layer_in_page(
-                filtered_layers[highlight_layer_index].1,
+                self.state
+                    .canvas_state
+                    .layers
+                    .get(&self.state.canvas_state.quick_layout_order[highlight_layer_index])
+                    .unwrap(),
                 &self.state.canvas_state.page.value,
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(0.6, 1.0)),
                 QuickLayoutFillMode::Margin(padding),
@@ -350,19 +394,24 @@ impl<'a> QuickLayout<'a> {
         let min_y = highlight_rect.min.y / &self.state.canvas_state.page.value.size_pixels().y;
         let max_y = highlight_rect.max.y / &self.state.canvas_state.page.value.size_pixels().y;
 
-      
         // Remaining photos
         let photo_height = (max_y - min_y) / (n - 1) as f32;
         let mut non_highlight_count = 0;
 
-        for (i, (_, layer)) in filtered_layers.iter().enumerate() {
+        for (i, layer_id) in self
+            .state
+            .canvas_state
+            .quick_layout_order
+            .iter()
+            .enumerate()
+        {
             if i == highlight_layer_index {
                 regions.push(highlight_region.clone());
                 continue;
             }
             regions.push(QuickLayoutRegion {
                 absolute_rect: Self::fractional_rect_for_layer_in_page(
-                    layer,
+                    self.state.canvas_state.layers.get(layer_id).unwrap(),
                     &self.state.canvas_state.page.value,
                     Rect::from_min_size(
                         Pos2::new(0.6, min_y + non_highlight_count as f32 * photo_height),
@@ -378,18 +427,17 @@ impl<'a> QuickLayout<'a> {
         regions
     }
 
-    fn generate_grid_layout_with_padding(
-        &self,
-        filtered_layers: &[(&usize, &Layer)],
-        n: usize,
-    ) -> Vec<QuickLayoutRegion> {
+    fn generate_grid_layout_with_padding(&self, n: usize) -> Vec<QuickLayoutRegion> {
         let grid_size = (n as f32).sqrt().ceil() as usize;
         let padding = 0.02;
         let cell_size = 1.0 / grid_size as f32;
-        filtered_layers
+        self.state
+            .canvas_state
+            .quick_layout_order
             .iter()
             .enumerate()
-            .map(|(index, (_, layer))| {
+            .map(|(index, layer_id)| {
+                let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
                 let row = index / grid_size;
                 let col = index % grid_size;
                 let rect = Rect::from_min_size(
@@ -411,18 +459,18 @@ impl<'a> QuickLayout<'a> {
             .collect()
     }
 
-    fn generate_vertical_stack_layout(
-        &self,
-        filtered_layers: &[(&usize, &Layer)],
-    ) -> Vec<QuickLayoutRegion> {
-        let n = filtered_layers.len();
+    fn generate_vertical_stack_layout(&self) -> Vec<QuickLayoutRegion> {
+        let n = self.state.canvas_state.quick_layout_order.len();
         let margin = 0.02;
         let available_height = 1.0 - margin * (n as f32 + 1.0);
         let cell_height = available_height / n as f32;
-        filtered_layers
+        self.state
+            .canvas_state
+            .quick_layout_order
             .iter()
             .enumerate()
-            .map(|(i, (_, layer))| {
+            .map(|(i, layer_id)| {
+                let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
                 let y = margin * (i as f32 + 1.0) + cell_height * i as f32;
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
@@ -439,18 +487,18 @@ impl<'a> QuickLayout<'a> {
             .collect()
     }
 
-    fn generate_horizontal_stack_layout(
-        &self,
-        filtered_layers: &[(&usize, &Layer)],
-    ) -> Vec<QuickLayoutRegion> {
-        let n = filtered_layers.len();
+    fn generate_horizontal_stack_layout(&self) -> Vec<QuickLayoutRegion> {
+        let n = self.state.canvas_state.quick_layout_order.len();
         let margin = 0.02;
         let available_width = 1.0 - margin * (n as f32 + 1.0);
         let cell_width = available_width / n as f32;
-        filtered_layers
+        self.state
+            .canvas_state
+            .quick_layout_order
             .iter()
             .enumerate()
-            .map(|(i, (_, layer))| {
+            .map(|(i, layer_id)| {
+                let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
                 let x = margin * (i as f32 + 1.0) + cell_width * i as f32;
                 QuickLayoutRegion {
                     absolute_rect: Self::fractional_rect_for_layer_in_page(
@@ -467,16 +515,16 @@ impl<'a> QuickLayout<'a> {
             .collect()
     }
 
-    fn generate_zigzag_layout(
-        &self,
-        filtered_layers: &[(&usize, &Layer)],
-    ) -> Vec<QuickLayoutRegion> {
+    fn generate_zigzag_layout(&self) -> Vec<QuickLayoutRegion> {
         let size = 0.3;
         let x_positions = [0.1, 0.6];
-        filtered_layers
+        self.state
+            .canvas_state
+            .quick_layout_order
             .iter()
             .enumerate()
-            .map(|(i, (_, layer))| {
+            .map(|(i, layer_id)| {
+                let layer = self.state.canvas_state.layers.get(layer_id).unwrap();
                 let x = x_positions[i % 2];
                 let y = 0.1 + 0.2 * i as f32;
                 QuickLayoutRegion {

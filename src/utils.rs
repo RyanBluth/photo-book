@@ -8,7 +8,9 @@ use eframe::{
 use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
 use crate::{
-    cursor_manager::CursorManager, dependencies::{Dependency, Singleton, SingletonFor}, model::editable_value::EditableValue
+    cursor_manager::CursorManager,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    model::editable_value::EditableValue,
 };
 
 pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -> Vec<Vec<T>> {
@@ -50,6 +52,7 @@ pub trait RectExt {
     fn translate_bottom_to(&self, new_bottom: f32) -> Rect;
     fn corners(&self) -> [Pos2; 4];
     fn center_within(&self, rect: Rect) -> Rect;
+    fn fit_and_center_within(&self, rect: Rect) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -175,6 +178,26 @@ impl RectExt for Rect {
         let half_size = self.size() / 2.0;
         Rect::from_min_max(center - half_size, center + half_size)
     }
+
+    fn fit_and_center_within(&self, rect: Rect) -> Rect {
+        let aspect_ratio = self.width() / self.height();
+        let rect_aspect_ratio = rect.width() / rect.height();
+        if aspect_ratio > rect_aspect_ratio {
+            // Scale to fit the width
+            let new_width = rect.width();
+            let new_height = new_width / aspect_ratio;
+            let new_size = Vec2::new(new_width, new_height);
+            let new_min = rect.center() - new_size / 2.0;
+            Rect::from_min_size(new_min, new_size)
+        } else {
+            // Scale to fit the height
+            let new_height = rect.height();
+            let new_width = new_height * aspect_ratio;
+            let new_size = Vec2::new(new_width, new_height);
+            let new_min = rect.center() - new_size / 2.0;
+            Rect::from_min_size(new_min, new_size)
+        }
+    }
 }
 
 pub trait Toggle {
@@ -260,8 +283,6 @@ impl EguiUiExt for Ui {
 
         self.with_layout(centered_layout, add_contents)
     }
-
-
 }
 
 pub trait ExifDateTimeExt {

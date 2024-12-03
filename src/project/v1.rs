@@ -263,6 +263,7 @@ impl Project {
                             })
                             .collect(),
                     }),
+                    quick_layout_order: canvas_state.quick_layout_order.clone(),
                 }
             })
             .collect();
@@ -328,7 +329,8 @@ impl Project {
                                         photo: AppPhoto::with_rating(
                                             photo.photo.path,
                                             photo.photo.rating.into(),
-                                        ).unwrap(),
+                                        )
+                                        .unwrap(),
                                     })
                                 }
                                 LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
@@ -383,7 +385,8 @@ impl Project {
                                         photo: AppPhoto::with_rating(
                                             photo.photo.path,
                                             photo.photo.rating.into(),
-                                        ).unwrap(), // TODO: Don't unwrap
+                                        )
+                                        .unwrap(), // TODO: Don't unwrap
                                     }),
                                     scale_mode: match scale_mode {
                                         ScaleMode::Fit => AppScaleMode::Fit,
@@ -497,6 +500,7 @@ impl Project {
                             })
                             .collect(),
                     }),
+                    page.quick_layout_order,
                 );
 
                 (next_page_id(), canvas_state)
@@ -523,6 +527,7 @@ struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
     pub template: Option<Template>,
+    pub quick_layout_order: Vec<LayerId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

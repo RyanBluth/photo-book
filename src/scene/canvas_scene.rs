@@ -240,11 +240,10 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                     // TODO: Show error message saying that only one template photo can be selected
                                 }
                             } else {
-                                let layer = Layer::with_photo(photo.clone());
-                                self.scene_state.canvas_state.layers.insert(layer.id, layer);
+                                self.scene_state.canvas_state.add_photo(photo.clone());
                                 self.scene_state.history_manager.save_history(
                                     CanvasHistoryKind::AddPhoto,
-                                    &mut self.scene_state.canvas_state,
+                                    &self.scene_state.canvas_state,
                                 );
                             }
                         }

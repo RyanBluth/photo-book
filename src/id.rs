@@ -30,3 +30,7 @@ pub fn next_page_id() -> PageId {
 pub fn next_modal_id() -> ModalId {
     next_id()
 }
+
+pub fn next_quick_layout_index() -> usize {
+    next_id()
+}
