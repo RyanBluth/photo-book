@@ -239,6 +239,36 @@ impl CanvasState {
         }
     }
 
+    pub fn swap_layer_centers_and_bounds(&mut self, layer_id1: LayerId, layer_id2: LayerId) {
+        let original_child_a_rect = self
+            .layers
+            .get(&layer_id1)
+            .unwrap()
+            .transform_state
+            .rect
+            .clone();
+
+        let original_child_b_rect = self
+            .layers
+            .get(&layer_id2)
+            .unwrap()
+            .transform_state
+            .rect
+            .clone();
+
+        self.layers
+            .get_mut(&layer_id1)
+            .unwrap()
+            .transform_state
+            .rect = original_child_a_rect.fit_and_center_within(original_child_b_rect);
+
+        self.layers
+            .get_mut(&layer_id2)
+            .unwrap()
+            .transform_state
+            .rect = original_child_b_rect.fit_and_center_within(original_child_a_rect);
+    }
+
     fn is_layer_selected(&self, layer_id: &LayerId) -> bool {
         self.layers.get(layer_id).unwrap().selected
     }
@@ -605,9 +635,10 @@ impl<'a> Canvas<'a> {
             self.state.multi_select = None;
         }
 
-        if let Some(multi_select) = &mut self.state.multi_select {
+        let transform_response = if let Some(multi_select) = &mut self.state.multi_select {
             if multi_select.selected_layers.is_empty() {
                 self.state.multi_select = None;
+                None
             } else {
                 let mut transform_state = multi_select.transformable_state.clone();
 
@@ -776,120 +807,96 @@ impl<'a> Canvas<'a> {
                     },
                 );
 
-                match transform_response.accessory_response {
-                    AccessoryResponse::SwapCenters(id1, id2) => {
-                        let original_child_a_rect = self
-                            .state
-                            .layers
-                            .get(&id1)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        let original_child_b_rect = self
-                            .state
-                            .layers
-                            .get(&id2)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        self.state
-                            .layers
-                            .get_mut(&child_ids_accessory[0])
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_b_rect.center());
-
-                        self.state
-                            .layers
-                            .get_mut(&child_ids_accessory[1])
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_a_rect.center());
-                    }
-                    AccessoryResponse::SwapCentersAndBounds(id1, id2) => {
-                        let original_child_a_rect = self
-                            .state
-                            .layers
-                            .get(&id1)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        let original_child_b_rect = self
-                            .state
-                            .layers
-                            .get(&id2)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        self.state
-                            .layers
-                            .get_mut(&child_ids_accessory[0])
-                            .unwrap()
-                            .transform_state
-                            .rect =
-                            original_child_a_rect.fit_and_center_within(original_child_b_rect);
-
-                        self.state
-                            .layers
-                            .get_mut(&child_ids_accessory[1])
-                            .unwrap()
-                            .transform_state
-                            .rect =
-                            original_child_b_rect.fit_and_center_within(original_child_a_rect);
-                    }
-                    AccessoryResponse::SwapQuickLayoutPosition(id1, id2) => {
-                        let first_id_index = self
-                            .state
-                            .quick_layout_order
-                            .iter()
-                            .position(|id| *id == id1)
-                            .unwrap();
-
-                        let second_id_index = self
-                            .state
-                            .quick_layout_order
-                            .iter()
-                            .position(|id| *id == id2)
-                            .unwrap();
-
-                        self.state
-                            .quick_layout_order
-                            .swap(first_id_index, second_id_index);
-                    }
-
-                    AccessoryResponse::None => {}
-                }
-
                 multi_select.transformable_state = transform_state;
 
-                if transform_response.ended_moving
-                    || transform_response.ended_resizing
-                    || transform_response.ended_rotating
-                {
+                Some(transform_response)
+            }
+        } else {
+            None
+        };
+
+        if let Some(transform_response) = transform_response {
+            match transform_response.accessory_response {
+                AccessoryResponse::SwapCenters(id1, id2) => {
+                    let original_child_a_rect = self
+                        .state
+                        .layers
+                        .get(&id1)
+                        .unwrap()
+                        .transform_state
+                        .rect
+                        .clone();
+
+                    let original_child_b_rect = self
+                        .state
+                        .layers
+                        .get(&id2)
+                        .unwrap()
+                        .transform_state
+                        .rect
+                        .clone();
+
+                    self.state
+                        .layers
+                        .get_mut(&id1)
+                        .unwrap()
+                        .transform_state
+                        .rect
+                        .set_center(original_child_b_rect.center());
+
+                    self.state
+                        .layers
+                        .get_mut(&id2)
+                        .unwrap()
+                        .transform_state
+                        .rect
+                        .set_center(original_child_a_rect.center());
+                }
+                AccessoryResponse::SwapCentersAndBounds(id1, id2) => {
+                    self.state.swap_layer_centers_and_bounds(id1, id2);
+                }
+                AccessoryResponse::SwapQuickLayoutPosition(id1, id2) => {
+                    let first_id_index = self
+                        .state
+                        .quick_layout_order
+                        .iter()
+                        .position(|id| *id == id1)
+                        .unwrap();
+
+                    let second_id_index = self
+                        .state
+                        .quick_layout_order
+                        .iter()
+                        .position(|id| *id == id2)
+                        .unwrap();
+
+                    self.state
+                        .quick_layout_order
+                        .swap(first_id_index, second_id_index);
+
+                    self.state.swap_layer_centers_and_bounds(id1, id2);
+                }
+
+                AccessoryResponse::None => {}
+            }
+
+            if transform_response.ended_moving
+                || transform_response.ended_resizing
+                || transform_response.ended_rotating
+            {
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, self.state);
+            }
+
+            match transform_response.accessory_response {
+                AccessoryResponse::SwapCenters(_, _)
+                | AccessoryResponse::SwapCentersAndBounds(_, _)
+                | AccessoryResponse::SwapQuickLayoutPosition(_, _) => {
+                    // TODO: Maybe use a different history kind for these operationsap
                     self.history_manager
                         .save_history(CanvasHistoryKind::Transform, self.state);
                 }
-
-                match transform_response.accessory_response {
-                    AccessoryResponse::SwapCenters(_, _)
-                    | AccessoryResponse::SwapCentersAndBounds(_, _)
-                    | AccessoryResponse::SwapQuickLayoutPosition(_, _) => {
-                        // TODO: Maybe use a different history kind for these operationsap
-                        self.history_manager
-                            .save_history(CanvasHistoryKind::Transform, self.state);
-                    }
-                    AccessoryResponse::None => {}
-                }
+                AccessoryResponse::None => {}
             }
         }
     }
