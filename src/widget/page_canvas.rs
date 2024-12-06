@@ -279,8 +279,19 @@ impl CanvasState {
 
     pub fn add_photo(&mut self, photo: Photo) {
         let layer = Layer::with_photo(photo);
-        self.quick_layout_order.push(layer.id);
         self.layers.insert(layer.id, layer);
+        self.update_quick_layout_order();
+    }
+
+    pub fn update_quick_layout_order(&mut self) {
+        self.quick_layout_order
+            .retain(|id| self.layers.contains_key(id));
+
+        for layer in &self.layers {
+            if !self.quick_layout_order.contains(&layer.0) {
+                self.quick_layout_order.push(*layer.0);
+            }
+        }
     }
 }
 
@@ -908,19 +919,22 @@ impl<'a> Canvas<'a> {
         available_rect: Rect,
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<(), ()>> {
-        let layer = &mut self.state.layers.get_mut(layer_id).unwrap();
+        let layer = &mut self.state.layers.get_mut(layer_id).unwrap().clone();
         let active = layer.selected && self.state.multi_select.is_none();
 
-        match &mut layer.content {
+        let layer_response = match &mut layer.content {
             LayerContent::Photo(ref mut photo) => {
-                ui.push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
-                    self.photo_manager.with_lock_mut(|photo_manager| {
-                        if let Ok(Some(texture)) = photo_manager
-                            .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                        {
-                            let mut transform_state = layer.transform_state.clone();
+                let transform_response = ui
+                    .push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
+                        self.photo_manager.with_lock_mut(|photo_manager| {
+                            if let Ok(Some(texture)) = photo_manager
+                                .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
+                            {
+                                let mut transform_state = layer.transform_state.clone();
 
-                            let transform_response = TransformableWidget::new(&mut transform_state)
+                                let transform_response = TransformableWidget::new(
+                                    &mut transform_state,
+                                )
                                 .show(
                                     ui,
                                     available_rect,
@@ -967,18 +981,27 @@ impl<'a> Canvas<'a> {
 
                                         painter.add(Shape::mesh(mesh));
                                     },
-                                    |ui, rect| {},
+                                    |_ui, _rect| {},
                                 );
 
-                            layer.transform_state = transform_state;
+                                layer.transform_state = transform_state;
 
-                            Some(transform_response)
-                        } else {
-                            None
-                        }
+                                Some(transform_response)
+                            } else {
+                                None
+                            }
+                        })
                     })
-                })
-                .inner
+                    .inner;
+
+                self.draw_quick_layout_number(
+                    ui,
+                    available_rect,
+                    layer.transform_state.rect,
+                    *layer_id,
+                );
+                self.state.layers.insert(*layer_id, layer.clone());
+                return transform_response;
             }
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
@@ -1001,10 +1024,11 @@ impl<'a> Canvas<'a> {
                                 text.vertical_alignment,
                             );
                         },
-                        |ui, rect| {},
+                        |_ui, _rect| {},
                     );
 
                 layer.transform_state = transform_state;
+                self.state.layers.insert(*layer_id, layer.clone());
 
                 Some(transform_response)
             }
@@ -1189,6 +1213,44 @@ impl<'a> Canvas<'a> {
                     accessory_response: (),
                 })
             }
+        };
+
+        return layer_response;
+    }
+
+    fn draw_quick_layout_number(
+        &self,
+        ui: &mut Ui,
+        available_rect: Rect,
+        rect: Rect,
+        layer_id: LayerId,
+    ) {
+        // Find index of layer_id in quick_layout_order
+        if let Some(index) = self
+            .state
+            .quick_layout_order
+            .iter()
+            .position(|id| *id == layer_id)
+        {
+            let circle_pos =
+                available_rect.left_top() + (rect.left_top() * self.state.zoom).to_vec2();
+
+            let circle_size = 240.0 * self.state.zoom;
+            let mut circle_rect = Rect::from_min_size(circle_pos, Vec2::splat(circle_size));
+            //circle_rect = circle_rect.translate(self.state.offset);
+
+            // Draw circle background
+            ui.painter()
+                .circle_filled(circle_rect.center(), circle_size / 2.0, Color32::RED);
+
+            // Draw number
+            ui.painter().text(
+                circle_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                (index + 1).to_string(),
+                FontId::proportional(14.0),
+                Color32::WHITE,
+            );
         }
     }
 
@@ -1272,9 +1334,8 @@ impl<'a> Canvas<'a> {
                 self.state.layers.retain(|_, layer| !layer.selected);
 
                 // Remove any layers that are in the quick layout order but are no longer in the layers map
-                self.state
-                    .quick_layout_order
-                    .retain(|id| self.state.layers.contains_key(id));
+                self.state.update_quick_layout_order();
+
                 self.history_manager
                     .save_history(CanvasHistoryKind::DeletePhoto, self.state);
             }
