@@ -16,6 +16,7 @@ use crate::{
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::{Template, TemplateRegionKind},
     utils::{IdExt, RectExt, Toggle},
@@ -69,7 +70,15 @@ impl CanvasState {
             zoom: 1.0,
             offset: Vec2::ZERO,
             multi_select: None,
-            page: EditablePage::new(Page::default()),
+            page: EditablePage::new(Dependency::<ProjectSettingsManager>::get().with_lock(
+                |manager| {
+                    manager
+                        .project_settings
+                        .default_page
+                        .clone()
+                        .unwrap_or_default()
+                },
+            )),
             template: None,
             quick_layout_order: Vec::new(),
             computed_initial_zoom: false,

@@ -270,9 +270,8 @@ impl Project {
 
         let group_by = photo_manager.photo_grouping();
 
-        let project_settings_manager: Singleton<ProjectSettingsManager> = Dependency::get();
-        let project_settings =
-            project_settings_manager.with_lock(|settings| settings.project_settings.clone());
+        let project_settings: AppProjectSettings = Dependency::<ProjectSettingsManager>::get()
+            .with_lock(|settings| settings.project_settings.clone());
 
         let project = Project {
             photos,
@@ -291,6 +290,12 @@ impl Project {
     pub fn load(path: &PathBuf) -> Result<OrganizeEditScene, ProjectError> {
         let file = std::fs::File::open(path)?;
         let project: Project = serde_json::from_reader(file)?;
+
+        println!("Loaded project: {:?}", project);
+
+        Dependency::<ProjectSettingsManager>::get().with_lock_mut(|settings| {
+            settings.project_settings = project.project_settings.into();
+        });
 
         Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
             photo_manager.load_photos(
