@@ -297,3 +297,9 @@ impl ExifDateTimeExt for exif::DateTime {
         Ok(datetime)
     }
 }
+
+
+enum Either<Left, Right> {
+    Left(Left),
+    Right(Right)
+}

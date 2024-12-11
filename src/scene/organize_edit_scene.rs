@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
-use sqlx::Either;
+use rayon::iter::Either;
 
 use crate::{
     auto_persisting::AutoPersisting,

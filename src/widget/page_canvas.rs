@@ -60,6 +60,7 @@ pub struct CanvasState {
     pub page: EditablePage,
     pub template: Option<Template>,
     pub quick_layout_order: Vec<LayerId>,
+    pub last_quick_layout: Option<quick_layout::Layout>,
     computed_initial_zoom: bool,
 }
 
@@ -81,6 +82,7 @@ impl CanvasState {
             )),
             template: None,
             quick_layout_order: Vec::new(),
+            last_quick_layout: None,
             computed_initial_zoom: false,
         }
     }
@@ -99,6 +101,7 @@ impl CanvasState {
             page,
             template,
             quick_layout_order: quick_layout_order,
+            last_quick_layout: None,
             computed_initial_zoom: false,
         }
     }
@@ -154,6 +157,7 @@ impl CanvasState {
             page: EditablePage::new(Page::default()),
             template: None,
             quick_layout_order: vec![layer.id],
+            last_quick_layout: None,
             computed_initial_zoom: false,
         }
     }
@@ -244,6 +248,7 @@ impl CanvasState {
             page: EditablePage::new(template.page.clone()),
             template: Some(template),
             quick_layout_order: ids,
+            last_quick_layout: None,
             computed_initial_zoom: false,
         }
     }
@@ -813,6 +818,7 @@ impl<'a> Canvas<'a> {
                                             child_ids_accessory[1],
                                         );
                                     }
+
                                     if ui.button("Swap Quick Layout Position").clicked() {
                                         return AccessoryResponse::SwapQuickLayoutPosition(
                                             child_ids_accessory[0],
@@ -876,25 +882,27 @@ impl<'a> Canvas<'a> {
                     self.state.swap_layer_centers_and_bounds(id1, id2);
                 }
                 AccessoryResponse::SwapQuickLayoutPosition(id1, id2) => {
-                    let first_id_index = self
-                        .state
-                        .quick_layout_order
-                        .iter()
-                        .position(|id| *id == id1)
-                        .unwrap();
+                    if let Some(layout) = self.state.last_quick_layout {
+                        let first_id_index = self
+                            .state
+                            .quick_layout_order
+                            .iter()
+                            .position(|id| *id == id1)
+                            .unwrap();
 
-                    let second_id_index = self
-                        .state
-                        .quick_layout_order
-                        .iter()
-                        .position(|id| *id == id2)
-                        .unwrap();
+                        let second_id_index = self
+                            .state
+                            .quick_layout_order
+                            .iter()
+                            .position(|id| *id == id2)
+                            .unwrap();
 
-                    self.state
-                        .quick_layout_order
-                        .swap(first_id_index, second_id_index);
+                        self.state
+                            .quick_layout_order
+                            .swap(first_id_index, second_id_index);
 
-                    self.state.swap_layer_centers_and_bounds(id1, id2);
+                        layout.apply(&mut self.state);
+                    }
                 }
 
                 AccessoryResponse::None => {}
