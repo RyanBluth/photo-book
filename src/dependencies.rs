@@ -5,7 +5,7 @@ use crate::{
     auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config,
     cursor_manager::CursorManager, export::Exporter, font_manager::FontManager,
     modal::manager::ModalManager, photo_manager::PhotoManager,
-    project_settings::ProjectSettingsManager,
+    project_settings::ProjectSettingsManager, session::Session,
 };
 
 macro_rules! singleton {
@@ -85,3 +85,5 @@ singleton!(
 );
 
 singleton!(AUTOSAVE_MANAGER, AutoSaveManager, AutoSaveManager::new());
+
+singleton!(SESSION, Session, Session::new());

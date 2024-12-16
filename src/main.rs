@@ -16,7 +16,7 @@ use log::info;
 use modal::manager::ModalManager;
 use photo_manager::PhotoManager;
 use project::v1::Project;
-use scene::SceneManager;
+use scene::{organize_edit_scene::OrganizeEditScene, SceneManager};
 use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
@@ -47,6 +47,7 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
+mod session;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -109,32 +110,63 @@ struct PhotoBookApp {
 
 impl PhotoBookApp {
     fn new(log: Arc<StringLog>) -> Self {
-        let last_project = Dependency::<AutoPersisting<Config>>::get().with_lock_mut(|config| {
-            config
-                .read()
-                .ok()
-                .map(|config| config.last_project().cloned())
-        });
-
-        let scene_manager = if let Some(Some(last_project)) = last_project {
-            match Project::load(&last_project) {
-                Ok(root_scene) => SceneManager::new(root_scene),
-                Err(e) => {
-                    info!("Failed to load project: {:?}", e);
-                    SceneManager::default()
-                }
-            }
-        } else {
-            SceneManager::default()
-        };
-
         Self {
             photo_manager: Dependency::<PhotoManager>::get(),
             log,
-
             loaded_fonts: false,
-            scene_manager: scene_manager,
+            scene_manager: Self::initialize_scene_manager(),
         }
+    }
+
+    fn initialize_scene_manager() -> SceneManager {
+        let config = Dependency::<AutoPersisting<Config>>::get();
+        let last_project_path = config.with_lock_mut(|config| {
+            config.read().ok().and_then(|config| config.last_project().cloned())
+        });
+
+        if let Some(scene) = Self::try_load_auto_save() {
+            return SceneManager::new(scene);
+        }
+
+        if let Some(scene) = Self::try_load_last_project(&last_project_path) {
+            return SceneManager::new(scene);
+        }
+
+        SceneManager::default()
+    }
+
+    fn try_load_auto_save() -> Option<OrganizeEditScene> {
+        let auto_save_time = AutoSaveManager::get_auto_save_modification_time()?;
+        let last_project_time = Self::get_last_project_time()?;
+
+        if auto_save_time > last_project_time {
+            AutoSaveManager::load_auto_save()
+        } else {
+            None
+        }
+    }
+
+    fn try_load_last_project(project_path: &Option<std::path::PathBuf>) -> Option<OrganizeEditScene> {
+        let path = project_path.as_ref()?;
+        match Project::load(path) {
+            Ok(scene) => Some(scene),
+            Err(e) => {
+                info!("Failed to load project: {:?}", e);
+                None
+            }
+        }
+    }
+
+    fn get_last_project_time() -> Option<std::time::SystemTime> {
+        let config = Dependency::<AutoPersisting<Config>>::get();
+        let last_project_path = config.with_lock_mut(|config| {
+            config.read().ok().and_then(|config| config.last_project().cloned())
+        })?;
+        
+        std::fs::metadata(last_project_path)
+            .ok()?
+            .modified()
+            .ok()
     }
 }
 

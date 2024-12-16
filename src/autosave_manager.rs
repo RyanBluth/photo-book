@@ -8,6 +8,7 @@ use crate::{
     photo_manager::PhotoManager,
     project::v1::{Project, ProjectError},
     scene::organize_edit_scene::OrganizeEditScene,
+    session::Session,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +21,13 @@ pub enum AutoSaveManagerError {
 
     #[error("Save task already in progress")]
     SaveTaskInProgress,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct AutoSave {
+    // The active project when the auto save was created
+    active_project: Option<PathBuf>,
+    project: Project,
 }
 
 pub struct AutoSaveManager {
@@ -35,16 +43,31 @@ impl AutoSaveManager {
         }
     }
 
-    pub fn load_auto_save() -> Result<Option<OrganizeEditScene>, AutoSaveManagerError> {
-        match auto_save_path() {
-            Some(path) => {
-                let project = Project::load(&path)?;
-                return Ok(Some(project));
+    pub fn load_auto_save() -> Option<OrganizeEditScene> {
+        let path = auto_save_path()?;
+        let data = match std::fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(err) => {
+                error!("Error loading auto save: {:?}", err);
+                return None;
             }
-            None => {
-                return Err(AutoSaveManagerError::AutoSavePathError);
+        };
+
+        let auto_save: AutoSave = match serde_json::from_str(&data) {
+            Ok(save) => save,
+            Err(err) => {
+                error!("Error loading auto save: {:?}", err);
+                return None;
             }
+        };
+
+        if let Some(active_project) = auto_save.active_project {
+            Dependency::<Session>::get().with_lock_mut(|session| {
+                session.active_project = Some(active_project);
+            });
         }
+
+        Some(auto_save.project.into())
     }
 
     pub fn auto_save_if_needed(
@@ -52,11 +75,12 @@ impl AutoSaveManager {
         root_scene: &OrganizeEditScene,
     ) -> Result<(), AutoSaveManagerError> {
         let now = std::time::Instant::now();
-        let time_since_last_save = self
-            .last_save_time
-            .map(|last_save_time| now - last_save_time);
+        let should_save = match self.last_save_time {
+            None => true,
+            Some(last_save_time) => (now - last_save_time).as_secs() > 5,
+        };
 
-        if time_since_last_save.is_none() || time_since_last_save.unwrap().as_secs() > 5 {
+        if should_save {
             self.auto_save(root_scene)?;
         }
 
@@ -67,33 +91,51 @@ impl AutoSaveManager {
         &mut self,
         root_scene: &OrganizeEditScene,
     ) -> Result<(), AutoSaveManagerError> {
-        if let Some(current_save_task) = self.current_save_task.take() {
-            if !current_save_task.is_finished() {
-                error!("Auto save already in progress, skipping this save");
+        if let Some(task) = &self.current_save_task {
+            if !task.is_finished() {
+                return Err(AutoSaveManagerError::SaveTaskInProgress);
             }
-            return Err(AutoSaveManagerError::SaveTaskInProgress);
         }
 
-        let path = auto_save_path().ok_or_else(|| AutoSaveManagerError::AutoSavePathError)?;
-        let cloned_root_scene = root_scene.clone();
-
-        self.current_save_task = Some(tokio::spawn(async move {
-            info!("Auto saving project to {}", path.display());
-
-            let save_result = Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
-                Project::save(&path, &cloned_root_scene, &photo_manager)
-            });
-
-            if let Err(err) = save_result {
-                error!("Error saving auto save: {:?}", err);
-            }
-        }));
-
-        let now = std::time::Instant::now();
-        self.last_save_time = Some(now);
+        let path = auto_save_path().ok_or(AutoSaveManagerError::AutoSavePathError)?;
+        self.current_save_task = Some(create_save_task(root_scene.clone(), path));
+        self.last_save_time = Some(std::time::Instant::now());
 
         Ok(())
     }
+
+    pub fn get_auto_save_modification_time() -> Option<std::time::SystemTime> {
+        let path = auto_save_path()?;
+        std::fs::metadata(path).ok()?.modified().ok()
+    }
+}
+
+fn create_save_task(
+    root_scene: OrganizeEditScene,
+    path: PathBuf,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        info!("Auto saving project to {}", path.display());
+
+        let auto_save: AutoSave = 
+            Dependency::<PhotoManager>::get().with_lock(|photo_manager| AutoSave {
+                active_project: Dependency::<Session>::get()
+                    .with_lock(|session| session.active_project.clone()),
+                project: Project::new(&root_scene, &photo_manager),
+            });
+
+        let data = match serde_json::to_string_pretty(&auto_save) {
+            Ok(data) => data,
+            Err(err) => {
+                error!("Error saving auto save: {:?}", err);
+                return;
+            }
+        };
+
+        if let Err(e) = std::fs::write(path, data) {
+            error!("Error saving auto save: {:?}", e);
+        }
+    })
 }
 
 fn auto_save_path() -> Option<PathBuf> {

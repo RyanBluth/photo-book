@@ -19,6 +19,7 @@ use crate::{
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
     project_settings::ProjectSettingsManager,
+    session::Session,
 };
 
 use super::{
@@ -176,7 +177,6 @@ impl Scene for OrganizeEditScene {
 
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-
                     if ui.button("Open").clicked() {
                         let open_path = native_dialog::FileDialog::new()
                             .add_filter("Images", &["rpb"])
@@ -194,6 +194,10 @@ impl Scene for OrganizeEditScene {
                                         let _ = config.modify(ConfigModification::SetLastProject(
                                             open_path.clone(),
                                         ));
+                                    });
+
+                                    Dependency::<Session>::get().with_lock_mut(|session| {
+                                        session.active_project = Some(open_path);
                                     });
 
                                     *self = scene;
@@ -280,10 +284,16 @@ impl Scene for OrganizeEditScene {
                                                     ),
                                                 );
                                                 let _ = config.modify(
-                                                    ConfigModification::SetLastProject(save_path),
+                                                    ConfigModification::SetLastProject(
+                                                        save_path.clone(),
+                                                    ),
                                                 );
                                             },
                                         );
+
+                                        Dependency::<Session>::get().with_lock_mut(|session| {
+                                            session.active_project = Some(save_path);
+                                        });
                                     }
                                 });
                             }

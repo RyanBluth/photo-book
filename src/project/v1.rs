@@ -55,11 +55,7 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn save(
-        path: &PathBuf,
-        root_scene: &OrganizeEditScene,
-        photo_manager: &PhotoManager,
-    ) -> Result<(), ProjectError> {
+    pub fn new(root_scene: &OrganizeEditScene, photo_manager: &PhotoManager) -> Project {
         let photos = photo_manager
             .photos
             .iter()
@@ -280,6 +276,16 @@ impl Project {
             project_settings: project_settings.into(),
         };
 
+        project
+    }
+
+    pub fn save(
+        path: &PathBuf,
+        root_scene: &OrganizeEditScene,
+        photo_manager: &PhotoManager,
+    ) -> Result<(), ProjectError> {
+        let project = Project::new(root_scene, photo_manager);
+
         let project_data = serde_json::to_string_pretty(&project)?;
 
         std::fs::write(path, project_data)?;
@@ -293,13 +299,19 @@ impl Project {
 
         println!("Loaded project: {:?}", project);
 
+        Ok(project.into())
+    }
+}
+
+impl Into<OrganizeEditScene> for Project {
+    fn into(self) -> OrganizeEditScene {
         Dependency::<ProjectSettingsManager>::get().with_lock_mut(|settings| {
-            settings.project_settings = project.project_settings.into();
+            settings.project_settings = self.project_settings.into();
         });
 
         Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
             photo_manager.load_photos(
-                project
+                self
                     .photos
                     .into_iter()
                     .map(|photo| (photo.path, Some(photo.rating.into())))
@@ -307,7 +319,7 @@ impl Project {
             );
         });
 
-        let pages: IndexMap<PageId, CanvasState> = project
+        let pages: IndexMap<PageId, CanvasState> = self
             .pages
             .into_iter()
             .map(|page| {
@@ -523,7 +535,7 @@ impl Project {
 
         //photo_manager.group_photos_by(project.group_by.into());
 
-        Ok(organize_edit_scene)
+        organize_edit_scene
     }
 }
 
