@@ -21,6 +21,7 @@ pub enum ConfigError {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Config {
     recent_projects: Option<Vec<PathBuf>>,
+    last_project: Option<PathBuf>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,11 +32,16 @@ struct RecentProject {
 
 pub enum ConfigModification {
     AddRecentProject(PathBuf),
+    SetLastProject(PathBuf),
 }
 
 impl Config {
     pub fn recent_projects(&self) -> &[PathBuf] {
         self.recent_projects.as_deref().unwrap_or(&[])
+    }
+
+    pub fn last_project(&self) -> Option<&PathBuf> {
+        self.last_project.as_ref()
     }
 }
 
@@ -74,6 +80,9 @@ impl PersistentModifiable<Config> for Config {
                 } else {
                     self.recent_projects = Some(vec![project]);
                 }
+            }
+            ConfigModification::SetLastProject(path_buf) => {
+                self.last_project = Some(path_buf);
             }
         }
 

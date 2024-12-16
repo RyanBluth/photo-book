@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
+use auto_persisting::AutoPersisting;
 use autosave_manager::AutoSaveManager;
+use config::Config;
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::egui::{self, ViewportBuilder, Widget};
@@ -13,6 +15,7 @@ use dirs::Dirs;
 use log::info;
 use modal::manager::ModalManager;
 use photo_manager::PhotoManager;
+use project::v1::Project;
 use scene::SceneManager;
 use tokio::runtime;
 
@@ -24,6 +27,7 @@ mod auto_persisting;
 mod autosave_manager;
 mod config;
 mod cursor_manager;
+mod debug;
 mod dependencies;
 mod dirs;
 mod error_sink;
@@ -105,12 +109,31 @@ struct PhotoBookApp {
 
 impl PhotoBookApp {
     fn new(log: Arc<StringLog>) -> Self {
+        let last_project = Dependency::<AutoPersisting<Config>>::get().with_lock_mut(|config| {
+            config
+                .read()
+                .ok()
+                .map(|config| config.last_project().cloned())
+        });
+
+        let scene_manager = if let Some(Some(last_project)) = last_project {
+            match Project::load(&last_project) {
+                Ok(root_scene) => SceneManager::new(root_scene),
+                Err(e) => {
+                    info!("Failed to load project: {:?}", e);
+                    SceneManager::default()
+                }
+            }
+        } else {
+            SceneManager::default()
+        };
+
         Self {
             photo_manager: Dependency::<PhotoManager>::get(),
             log,
 
             loaded_fonts: false,
-            scene_manager: SceneManager::default(),
+            scene_manager: scene_manager,
         }
     }
 }

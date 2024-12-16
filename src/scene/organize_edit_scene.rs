@@ -176,6 +176,7 @@ impl Scene for OrganizeEditScene {
 
             menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
+
                     if ui.button("Open").clicked() {
                         let open_path = native_dialog::FileDialog::new()
                             .add_filter("Images", &["rpb"])
@@ -190,6 +191,9 @@ impl Scene for OrganizeEditScene {
                                         let _ = config.modify(
                                             ConfigModification::AddRecentProject(open_path.clone()),
                                         );
+                                        let _ = config.modify(ConfigModification::SetLastProject(
+                                            open_path.clone(),
+                                        ));
                                     });
 
                                     *self = scene;
@@ -254,9 +258,10 @@ impl Scene for OrganizeEditScene {
                     });
 
                     if ui.button("Save").clicked() {
-                        let save_path = native_dialog::FileDialog::new()
-                            .add_filter("Images", &["rpb"])
-                            .show_save_single_file();
+                        let save_path: Result<Option<std::path::PathBuf>, native_dialog::Error> =
+                            native_dialog::FileDialog::new()
+                                .add_filter("Images", &["rpb"])
+                                .show_save_single_file();
 
                         match save_path {
                             Ok(Some(save_path)) => {
@@ -266,6 +271,19 @@ impl Scene for OrganizeEditScene {
                                     if let Err(err) = Project::save(&save_path, self, photo_manager)
                                     {
                                         error!("Error saving project: {:?}", err);
+                                    } else {
+                                        Dependency::<AutoPersisting<Config>>::get().with_lock_mut(
+                                            |config| {
+                                                let _ = config.modify(
+                                                    ConfigModification::AddRecentProject(
+                                                        save_path.clone(),
+                                                    ),
+                                                );
+                                                let _ = config.modify(
+                                                    ConfigModification::SetLastProject(save_path),
+                                                );
+                                            },
+                                        );
                                     }
                                 });
                             }
@@ -348,6 +366,8 @@ impl Scene for OrganizeEditScene {
                         }
                     });
                 });
+
+                ui.menu_button("Debug", |ui| {})
             });
 
             ui.add_space(10.0);

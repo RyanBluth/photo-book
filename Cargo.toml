@@ -48,6 +48,6 @@ parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 opt-level = 2
 
 [profile.release]
-lto = "fat"
+# lto = "fat"
 codegen-units = 1
 panic = "abort"
