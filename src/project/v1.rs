@@ -725,7 +725,7 @@ impl Into<PhotosGrouping> for AppPhotosGrouping {
 impl Into<Page> for AppPage {
     fn into(self) -> Page {
         Page {
-            size: self.size_pixels(),
+            size: self.size(),
             ppi: self.ppi(),
             unit: match self.unit() {
                 AppUnit::Pixels => Unit::Pixels,
