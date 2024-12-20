@@ -10,16 +10,7 @@ use indexmap::{indexmap, IndexMap};
 use printpdf::image_crate::flat::SampleLayout;
 
 use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_layer_id, next_quick_layout_index, LayerId},
-    model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
-    photo::Photo,
-    photo_manager::PhotoManager,
-    project_settings::ProjectSettingsManager,
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    template::{Template, TemplateRegionKind},
-    utils::{IdExt, RectExt, Toggle},
+    cursor_manager::CursorManager, debug::DebugSettings, dependencies::{Dependency, Singleton, SingletonFor}, id::{next_layer_id, next_quick_layout_index, LayerId}, model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode}, photo::Photo, photo_manager::PhotoManager, project_settings::ProjectSettingsManager, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, template::{Template, TemplateRegionKind}, utils::{IdExt, RectExt, Toggle}
 };
 
 use super::{
@@ -1011,12 +1002,18 @@ impl<'a> Canvas<'a> {
                     })
                     .inner;
 
-                self.draw_quick_layout_number(
-                    ui,
-                    available_rect,
-                    layer.transform_state.rect,
-                    *layer_id,
-                );
+                Dependency::<DebugSettings>::get().with_lock(|debug_settings| {
+                    if debug_settings.show_quick_layout_order {
+                        self.draw_quick_layout_number(
+                            ui,
+                            available_rect,
+                            layer.transform_state.rect,
+                            *layer_id,
+                        );
+                    }
+                });
+
+                
                 self.state.layers.insert(*layer_id, layer.clone());
                 return transform_response;
             }

@@ -7,7 +7,11 @@ use autosave_manager::AutoSaveManager;
 use config::Config;
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
-use eframe::egui::{self, ViewportBuilder, Widget};
+use eframe::{
+    egui::{self, ViewportBuilder, Widget},
+    egui_wgpu::{WgpuConfiguration, WgpuSetup},
+    wgpu,
+};
 
 use font_manager::FontManager;
 
@@ -42,12 +46,12 @@ mod photo_manager;
 mod project;
 mod project_settings;
 mod scene;
+mod session;
 mod string_log;
 mod template;
 mod theme;
 mod utils;
 mod widget;
-mod session;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -79,6 +83,32 @@ async fn main() -> anyhow::Result<()> {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
             .with_inner_size((3000.0, 2000.0)),
+        wgpu_options: WgpuConfiguration {
+            wgpu_setup: WgpuSetup::CreateNew {
+                supported_backends: wgpu::util::backend_bits_from_env()
+                    .unwrap_or(wgpu::Backends::PRIMARY | wgpu::Backends::GL),
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                device_descriptor: Arc::new(|adapter| {
+                    let base_limits: wgpu::Limits =
+                        if adapter.get_info().backend == wgpu::Backend::Gl {
+                            wgpu::Limits::downlevel_webgl2_defaults()
+                        } else {
+                            wgpu::Limits::default()
+                        };
+
+                    wgpu::DeviceDescriptor {
+                        label: Some("egui wgpu device"),
+                        required_features: wgpu::Features::default(),
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: 32768 as u32, // TODO: Can we look up the max size?
+                            ..base_limits
+                        },
+                        memory_hints: wgpu::MemoryHints::default(),
+                    }
+                }),
+            },
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -106,6 +136,7 @@ struct PhotoBookApp {
     photo_manager: Singleton<PhotoManager>,
     loaded_fonts: bool,
     scene_manager: SceneManager,
+    loaded_initial_scene: bool,
 }
 
 impl PhotoBookApp {
@@ -114,14 +145,18 @@ impl PhotoBookApp {
             photo_manager: Dependency::<PhotoManager>::get(),
             log,
             loaded_fonts: false,
-            scene_manager: Self::initialize_scene_manager(),
+            scene_manager: SceneManager::default(),
+            loaded_initial_scene: false,
         }
     }
 
     fn initialize_scene_manager() -> SceneManager {
         let config = Dependency::<AutoPersisting<Config>>::get();
         let last_project_path = config.with_lock_mut(|config| {
-            config.read().ok().and_then(|config| config.last_project().cloned())
+            config
+                .read()
+                .ok()
+                .and_then(|config| config.last_project().cloned())
         });
 
         if let Some(scene) = Self::try_load_auto_save() {
@@ -146,7 +181,9 @@ impl PhotoBookApp {
         }
     }
 
-    fn try_load_last_project(project_path: &Option<std::path::PathBuf>) -> Option<OrganizeEditScene> {
+    fn try_load_last_project(
+        project_path: &Option<std::path::PathBuf>,
+    ) -> Option<OrganizeEditScene> {
         let path = project_path.as_ref()?;
         match Project::load(path) {
             Ok(scene) => Some(scene),
@@ -160,23 +197,28 @@ impl PhotoBookApp {
     fn get_last_project_time() -> Option<std::time::SystemTime> {
         let config = Dependency::<AutoPersisting<Config>>::get();
         let last_project_path = config.with_lock_mut(|config| {
-            config.read().ok().and_then(|config| config.last_project().cloned())
+            config
+                .read()
+                .ok()
+                .and_then(|config| config.last_project().cloned())
         })?;
-        
-        std::fs::metadata(last_project_path)
-            .ok()?
-            .modified()
-            .ok()
+
+        std::fs::metadata(last_project_path).ok()?.modified().ok()
     }
 }
 
 impl eframe::App for PhotoBookApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui_extras::install_image_loaders(ctx);
+        if !self.loaded_initial_scene {
+            egui_extras::install_image_loaders(ctx);
 
-        ctx.input_mut(|input| {
-            input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
-        });
+            ctx.input_mut(|input| {
+                input.max_texture_side = usize::MAX; // Allow maximum possible texture size
+            });
+
+            self.loaded_initial_scene = true;
+            self.scene_manager = Self::initialize_scene_manager();
+        }
 
         if !self.loaded_fonts {
             self.loaded_fonts = true;

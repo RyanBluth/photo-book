@@ -273,6 +273,10 @@ impl<'a> Widget for ImageViewer<'a> {
                     Image::from_texture(texture)
                         .rotate(self.photo.metadata.rotation().radians(), Vec2::splat(0.5))
                         .paint_at(ui, image_rect);
+
+                    // TODO: This is a workaround to redraw until the full image is loaded in case the user isn't moving the mouse to trigger a repaint
+                    // Is there a better way to do this?
+                    ui.ctx().request_repaint();
                 }
                 Ok(None) | Err(_) => {
                     ui.painter().rect_filled(

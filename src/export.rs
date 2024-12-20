@@ -152,7 +152,7 @@ impl Exporter {
         directory: &PathBuf,
         page_number: u32,
     ) -> Result<(), ExportError> {
-        let directory = PathBuf::from(directory);
+       /* */ let directory = PathBuf::from(directory);
 
         let size = canvas_state.page.size_pixels();
         canvas_state.zoom = 1.0;
@@ -215,7 +215,7 @@ impl Exporter {
         if let Some(font_definitions) =
             font_manager.with_lock(|font_manager| font_manager.font_definitions.clone())
         {
-            backend.egui_ctx.set_fonts(font_definitions);
+            backend.egui_ctx.set_fonts((*font_definitions).clone());
         };
 
         let image_info = surface.canvas().image_info();

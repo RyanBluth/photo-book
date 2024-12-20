@@ -1,4 +1,7 @@
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use egui::{Color32, Layout, Vec2};
 use indexmap::IndexMap;
@@ -28,39 +31,72 @@ impl<T> Into<ModalId> for &TypedModalId<T> {
     }
 }
 
+/// Manages modal dialogs in the application
+///
+/// The modal manager keeps track of active modals and their responses.
+/// It supports typed modal IDs for type-safe modal management and
+/// provides methods for showing, dismissing and modifying modals.
+///
+/// # Example
+/// ```
+/// let modal_id = ModalManager::push(MyModal::new());
+///
+/// // Later modify the modal
+/// modal_manager.modify(&modal_id, |modal| {
+///     modal.update_value(42);
+/// });
+/// ```
+
 pub struct ModalManager {
-    modals: IndexMap<ModalId, Mutex<Box<dyn Modal>>>,
-    responses: HashMap<ModalId, ModalActionResponse>
+    modals: IndexMap<ModalId, Arc<Mutex<Box<dyn Modal>>>>,
+    responses: HashMap<ModalId, ModalActionResponse>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ModalError {
+    #[error("Modal not found with ID {0}")]
+    NotFound(ModalId),
+    #[error("Failed to lock modal mutex")]
+    LockError,
+    #[error("Modal type mismatch")]
+    TypeMismatch,
 }
 
 impl ModalManager {
     pub fn new() -> Self {
         Self {
             modals: IndexMap::new(),
-            responses: HashMap::new()
+            responses: HashMap::new(),
         }
     }
 
-    pub fn modify<T: Modal + 'static>(&self, id: &TypedModalId<T>, f: impl FnOnce(&mut T)) -> bool {
-        if let Some(mutex) = self.modals.get(&id.id) {
-            if let Ok(mut guard) = mutex.lock() {
-                if let Some(modal) = guard.as_any_mut().downcast_mut::<T>() {
-                    f(modal);
-                    return true;
-                }
-            }
-        }
-        false
+    pub fn modify<T: Modal + 'static>(
+        &self,
+        id: &TypedModalId<T>,
+        f: impl FnOnce(&mut T),
+    ) -> Result<(), ModalError> {
+        let mutex = self.modals.get(&id.id).ok_or(ModalError::NotFound(id.id))?;
+
+        let mut guard = mutex.lock().map_err(|_| ModalError::LockError)?;
+
+        let modal = guard
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .ok_or(ModalError::TypeMismatch)?;
+
+        f(modal);
+        Ok(())
     }
 
     pub fn push<T: Modal + Send + 'static>(modal: T) -> TypedModalId<T> {
         let modal_manager: Singleton<ModalManager> = Dependency::get();
         let id = modal_manager.with_lock_mut(|modal_manager| {
             let id = next_modal_id();
-            let boxed = Box::new(modal);
-            modal_manager.modals.insert(id, Mutex::new(boxed));
+            let boxed: Box<dyn Modal> = Box::new(modal);
+            modal_manager.modals.insert(id, Arc::new(Mutex::new(boxed)));
             id
         });
+
         TypedModalId {
             id,
             _phantom: std::marker::PhantomData,

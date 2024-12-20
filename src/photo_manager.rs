@@ -514,10 +514,10 @@ impl PhotoManager {
                 let uri = uri.to_string();
                 let ctx = ctx.clone();
                 spawn_blocking(move || {
-                    let texture = ctx.try_load_texture(
+                    let texture: Result<egui::load::TexturePoll, egui::load::LoadError> = ctx.try_load_texture(
                         &uri,
                         eframe::egui::TextureOptions::default(),
-                        eframe::egui::SizeHint::Scale(OrderedFloat::from(1.0)),
+                        eframe::egui::SizeHint::Scale(OrderedFloat(1.0)),
                     );
 
                     let photo_manager = Dependency::<PhotoManager>::get();
@@ -532,7 +532,9 @@ impl PhotoManager {
                                 photo_manager.texture_cache.insert(uri, texture);
                             });
                         }
-                        _ => {}
+                        Result::Err(err) => {
+                            error!("Failed to load texture {:?}", err);
+                        }
                     }
                 });
 

@@ -14,7 +14,7 @@ pub enum LoadingState {
 pub struct FontManager {
     pub fonts: IndexMap<String, Vec<FontInfo>>,
     pub loading_state: LoadingState,
-    pub font_definitions: Option<FontDefinitions>,
+    pub font_definitions: Option<Arc<FontDefinitions>>,
 }
 
 impl FontManager {
@@ -76,9 +76,10 @@ impl FontManager {
                 for font in fonts {
                     match std::fs::read(&font.file_path) {
                         Ok(font_data) => {
-                            font_definitions
-                                .font_data
-                                .insert(font.family.clone(), egui::FontData::from_owned(font_data));
+                            font_definitions.font_data.insert(
+                                font.family.clone(),
+                                Arc::new(egui::FontData::from_owned(font_data)),
+                            );
 
                             font_definitions.families.insert(
                                 FontFamily::Name(Arc::from(font.family.clone())),
@@ -121,7 +122,7 @@ impl FontManager {
 
             ctx.set_fonts(valid_font_definitions.clone());
 
-            self.font_definitions = Some(valid_font_definitions);
+            self.font_definitions = Some(Arc::new(valid_font_definitions));
             self.loading_state = LoadingState::Loaded;
         }
     }

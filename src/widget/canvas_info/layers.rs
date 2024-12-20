@@ -1,4 +1,4 @@
-use std::hash::Hasher;
+use std::{hash::Hasher, sync::Arc};
 
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
@@ -21,7 +21,6 @@ use crate::{
         transformable::{TransformHandleMode, TransformableState},
     },
 };
-use egui_dnd::{dnd, utils::shift_vec};
 
 use core::hash::Hash;
 
@@ -287,14 +286,16 @@ impl<'a> Layers<'a> {
 
     pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> LayersResponse {
         let mut selected_layer_id = None;
+        let mut from = None;
+        let mut to = None;
 
         ui.vertical(|ui| {
-            let dnd_response = dnd(ui, "layers_dnd").show(
-                self.layers.iter().rev(),
-                |ui, (_layer_id, layer), handle, _state| {
-                    // for layer in self.layers.iter_mut() {
-                    let _layer_response = ui.horizontal(|ui| {
-                        handle.ui(ui, |ui| {
+            let (_response, dropped_payload) =
+                ui.dnd_drop_zone::<usize, ()>(egui::Frame::none(), |ui| {
+                    for (idx, (layer_id, layer)) in self.layers.iter().rev().enumerate() {
+                        let item_id = Id::new(("layer_list", idx));
+
+                        let row = ui.horizontal(|ui| {
                             ui.set_height(60.0);
 
                             if layer.selected {
@@ -306,55 +307,86 @@ impl<'a> Layers<'a> {
                                 );
                             }
 
-                            match &layer.content {
-                                LayerContent::Photo(canvas_photo) => {
-                                    let texture_id =
-                                        self.photo_manager.with_lock_mut(|photo_manager| {
-                                            photo_manager.thumbnail_texture_for(
-                                                &canvas_photo.photo,
-                                                ui.ctx(),
-                                            )
-                                        });
-
-                                    let image_size =
-                                        Vec2::from(canvas_photo.photo.size_with_max_size(50.0));
-
-                                    match texture_id {
-                                        Ok(Some(texture_id)) => {
-                                            let image = Image::from_texture(texture_id)
-                                                .rotate(
-                                                    canvas_photo
-                                                        .photo
-                                                        .metadata
-                                                        .rotation()
-                                                        .radians(),
-                                                    Vec2::splat(0.5),
+                            let response = ui.dnd_drag_source(item_id, idx, |ui| {
+                                match &layer.content {
+                                    LayerContent::Photo(canvas_photo) => {
+                                        let texture_id =
+                                            self.photo_manager.with_lock_mut(|photo_manager| {
+                                                photo_manager.thumbnail_texture_for(
+                                                    &canvas_photo.photo,
+                                                    ui.ctx(),
                                                 )
-                                                .fit_to_exact_size(image_size);
-                                            ui.add_sized(Vec2::new(70.0, 50.0), image);
-                                        }
-                                        _ => {
-                                            ui.add_sized(
-                                                Vec2::new(70.0, 50.0),
-                                                RectPlaceholder::new(image_size, Color32::GRAY),
-                                            );
-                                        }
-                                    };
+                                            });
+
+                                        let image_size =
+                                            Vec2::from(canvas_photo.photo.size_with_max_size(50.0));
+
+                                        match texture_id {
+                                            Ok(Some(texture_id)) => {
+                                                let image = Image::from_texture(texture_id)
+                                                    .rotate(
+                                                        canvas_photo
+                                                            .photo
+                                                            .metadata
+                                                            .rotation()
+                                                            .radians(),
+                                                        Vec2::splat(0.5),
+                                                    )
+                                                    .fit_to_exact_size(image_size);
+                                                ui.add_sized(Vec2::new(70.0, 50.0), image);
+                                            }
+                                            _ => {
+                                                ui.add_sized(
+                                                    Vec2::new(70.0, 50.0),
+                                                    RectPlaceholder::new(image_size, Color32::GRAY),
+                                                );
+                                            }
+                                        };
+                                    }
+                                    LayerContent::Text(_) => {
+                                        ui.label("Text");
+                                    }
+                                    LayerContent::TemplatePhoto { .. } => {
+                                        ui.label("Template Photo");
+                                    }
+                                    LayerContent::TemplateText { .. } => {
+                                        ui.label("Template Text");
+                                    }
                                 }
-                                LayerContent::Text(_) => {
-                                    ui.label("Text");
+
+                                ui.label(&layer.name);
+                            });
+
+                            if let (Some(pointer), Some(hovered_idx)) = (
+                                ui.input(|i| i.pointer.interact_pos()),
+                                response.response.dnd_hover_payload::<usize>(),
+                            ) {
+                                let rect = ui.max_rect();
+                                let stroke = egui::Stroke::new(1.0, Color32::WHITE);
+
+                                // Calculate line position once
+                                let line_y = if *hovered_idx == idx {
+                                    None
+                                } else if pointer.y < rect.center().y {
+                                    Some(rect.top())
+                                } else {
+                                    Some(rect.bottom())
+                                };
+
+                                if let Some(line_y) = line_y {
+                                    // Draw single line and update target index
+                                    ui.painter().hline(rect.x_range(), line_y, stroke);
+                                    to = Some(if line_y == rect.bottom() {
+                                        idx + 1
+                                    } else {
+                                        idx
+                                    });
                                 }
-                                LayerContent::TemplatePhoto { .. } => {
-                                    ui.label("Template Photo");
-                                }
-                                LayerContent::TemplateText { region: _, text: _ } => {
-                                    ui.label("Template Text");
+
+                                if let Some(dragged_idx) = response.response.dnd_release_payload() {
+                                    from = Some(*dragged_idx);
                                 }
                             }
-
-                            ui.label(&layer.name);
-
-                            ui.add_space(10.0);
 
                             if ui.rect_contains_pointer(ui.max_rect()) {
                                 Dependency::<CursorManager>::get().with_lock_mut(
@@ -367,23 +399,33 @@ impl<'a> Layers<'a> {
                             if ui.input(|i| i.pointer.primary_clicked())
                                 && ui.rect_contains_pointer(ui.max_rect())
                             {
-                                selected_layer_id = Some(layer.id);
+                                selected_layer_id = Some(*layer_id);
                             }
                         });
-                    });
-                    ui.separator();
-                },
-            );
 
-            if let Some(drag_update) = dnd_response.final_update() {
-                let mut shifted_values = self.layers.values().collect::<Vec<_>>();
-                shift_vec(drag_update.from, drag_update.to, &mut shifted_values);
-                *self.layers = shifted_values
-                    .into_iter()
-                    .map(|layer| (layer.id, layer.clone()))
-                    .collect();
-            }
+                        ui.separator();
+                    }
+                });
         });
+
+        if let (Some(from_idx), Some(to_idx)) = (from, to) {
+            // We draw the layers in reverse, but the from and to indices are not reversed, so we reverse to do the 
+            // the swap and then reverse again before assigning back to self.layers.
+
+            let mut layers = self.layers.clone().into_iter().rev().collect::<IndexMap<_, _>>();
+
+            let (from_key, from_layer) = layers.get_index(from_idx).unwrap();
+            let (from_key, from_layer) = (from_key.clone(), from_layer.clone());
+
+            if to_idx < self.layers.len() {
+                layers.shift_insert(to_idx, from_key, from_layer.clone());
+            } else {
+                layers.shift_remove(&from_key);
+                layers.insert(from_key, from_layer.clone());
+            }
+
+            *self.layers = layers.into_iter().rev().collect::<IndexMap<_, _>>();
+        }
 
         if let Some(selected_layer_id) = selected_layer_id {
             if ui.ctx().input(|input| input.modifiers.ctrl) {

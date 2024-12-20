@@ -8,6 +8,7 @@ use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
     cursor_manager::CursorManager,
+    debug::DebugSettings,
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
     modal::{
@@ -20,6 +21,7 @@ use crate::{
     project::v1::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
+    utils::Toggle,
 };
 
 use super::{
@@ -377,7 +379,27 @@ impl Scene for OrganizeEditScene {
                     });
                 });
 
-                ui.menu_button("Debug", |ui| {})
+                ui.menu_button("Debug", |ui| {
+                    Dependency::<DebugSettings>::get().with_lock_mut(|debug_settings| {
+                        fn enabled_disabled_suffix(enabled: bool) -> &'static str {
+                            if enabled {
+                                "(Enabled)"
+                            } else {
+                                "(Disabled)"
+                            }
+                        }
+                        
+                        if ui
+                            .button(format!(
+                                "Quick Layout Numbers:{}",
+                                enabled_disabled_suffix(debug_settings.show_quick_layout_order)
+                            ))
+                            .clicked()
+                        {
+                            debug_settings.show_quick_layout_order.toggle();
+                        }
+                    });
+                })
             });
 
             ui.add_space(10.0);
