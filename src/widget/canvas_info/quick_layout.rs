@@ -239,7 +239,12 @@ impl Layout {
         };
 
         for (index, layer_id) in canvas_state.quick_layout_order.iter().enumerate() {
-            canvas_state.layers.get_mut(layer_id).unwrap().transform_state.rect = regions[index].absolute_rect;
+            canvas_state
+                .layers
+                .get_mut(layer_id)
+                .unwrap()
+                .transform_state
+                .rect = regions[index].absolute_rect;
         }
     }
 }
@@ -311,7 +316,7 @@ impl<'a> QuickLayout<'a> {
                             Canvas::new(
                                 &mut canvas_state,
                                 page_rect,
-                                &mut CanvasHistoryManager::new(),
+                                &mut CanvasHistoryManager::preview(),
                             )
                             .show_preview(ui, page_rect);
 

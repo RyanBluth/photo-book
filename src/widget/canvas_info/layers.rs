@@ -233,7 +233,7 @@ impl Layer {
 }
 
 impl HistoricallyEqual for Layer {
-    fn historically_eqaul_to(&self, other: &Self) -> bool {
+    fn historically_equal_to(&self, other: &Self) -> bool {
         let layer_content_equal = match (&self.content, &other.content) {
             (LayerContent::Photo(photo), LayerContent::Photo(other_photo)) => {
                 photo.photo == other_photo.photo

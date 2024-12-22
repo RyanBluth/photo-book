@@ -45,7 +45,7 @@ impl CanvasSceneState {
         Self {
             canvas_state: CanvasState::new(),
             gallery_state: ImageGalleryState::default(),
-            history_manager: CanvasHistoryManager::new(),
+            history_manager: CanvasHistoryManager::with_initial_state(CanvasState::new()),
             pages_state: PagesState::new(indexmap! { page_id => CanvasState::new() }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
@@ -56,7 +56,9 @@ impl CanvasSceneState {
         Self {
             canvas_state: pages[&selected_page].clone(),
             gallery_state: ImageGalleryState::default(),
-            history_manager: CanvasHistoryManager::new(),
+            history_manager: CanvasHistoryManager::with_initial_state(
+                pages[&selected_page].clone(),
+            ),
             pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
@@ -355,7 +357,6 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum CanvasHistoryKind {
-    Initial,
     Transform,
     AddPhoto,
     DeletePhoto,
@@ -370,7 +371,6 @@ pub enum CanvasHistoryKind {
 impl Display for CanvasHistoryKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CanvasHistoryKind::Initial => write!(f, "Initial"),
             CanvasHistoryKind::Transform => write!(f, "Move"),
             CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
             CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
@@ -385,13 +385,13 @@ impl Display for CanvasHistoryKind {
 }
 
 impl HistoricallyEqual for CanvasHistory {
-    fn historically_eqaul_to(&self, other: &Self) -> bool {
+    fn historically_equal_to(&self, other: &Self) -> bool {
         self.layers.len() == other.layers.len()
             && self
                 .layers
                 .values()
                 .zip(other.layers.values())
-                .all(|(a, b)| a.historically_eqaul_to(b))
+                .all(|(a, b)| a.historically_equal_to(b))
             && self.page == other.page
             && self.multi_select == other.multi_select
     }
@@ -410,35 +410,17 @@ pub struct CanvasHistoryManager {
 }
 
 impl CanvasHistoryManager {
-    pub fn new() -> Self {
-        Self {
-            stack: UndoRedoStack {
-                history: vec![(
-                    CanvasHistoryKind::Initial,
-                    CanvasHistory {
-                        layers: IndexMap::new(),
-                        multi_select: None,
-                        page: EditablePage::new(Page::default()),
-                    },
-                )],
-                index: 0,
-            },
-        }
+    pub fn preview() -> Self {
+        Self::with_initial_state(CanvasState::new())
     }
 
     pub fn with_initial_state(state: CanvasState) -> Self {
-        Self {
-            stack: UndoRedoStack {
-                history: vec![(
-                    CanvasHistoryKind::Initial,
-                    CanvasHistory {
-                        layers: state.layers.clone(),
-                        multi_select: state.multi_select.clone(),
-                        page: state.page.clone(),
-                    },
-                )],
-                index: 0,
-            },
+        CanvasHistoryManager {
+            stack: UndoRedoStack::new(CanvasHistory {
+                layers: state.layers.clone(),
+                multi_select: state.multi_select.clone(),
+                page: state.page.clone(),
+            }),
         }
     }
 

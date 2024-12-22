@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use crate::{
     assets::Asset,
     id::{next_page_id, PageId},
-    scene::canvas_scene::CanvasHistoryManager,
+    scene::canvas_scene::{CanvasHistory, CanvasHistoryManager},
     theme,
 };
 
@@ -101,8 +101,12 @@ impl<'a> Pages<'a> {
                                     let mut page_rect = ui.max_rect();
                                     page_rect.min.y += 30.0;
 
-                                    Canvas::new(page, page_rect, &mut CanvasHistoryManager::new())
-                                        .show_preview(ui, page_rect);
+                                    Canvas::new(
+                                        page,
+                                        page_rect,
+                                        &mut CanvasHistoryManager::preview(),
+                                    )
+                                    .show_preview(ui, page_rect);
 
                                     let click_response =
                                         ui.allocate_rect(page_rect, Sense::click());
