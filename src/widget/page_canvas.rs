@@ -949,7 +949,12 @@ impl<'a> Canvas<'a> {
             LayerContent::Photo(ref mut photo) => {
                 let transform_response = ui
                     .push_id(
-                        format!("{}_CanvasPhoto_{}", self.state.canvas_id.value(), layer.id),
+                        format!(
+                            "{}_{}_CanvasPhoto_{}",
+                            is_preview,
+                            self.state.canvas_id.value(),
+                            layer.id
+                        ),
                         |ui| {
                             self.photo_manager.with_lock_mut(|photo_manager| {
                                 if let Ok(Some(texture)) = photo_manager
