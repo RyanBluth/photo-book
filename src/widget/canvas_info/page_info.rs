@@ -1,10 +1,12 @@
 use eframe::egui::{self};
 use egui::{ComboBox, RichText, Vec2};
-
 use strum::IntoEnumIterator;
 
 use crate::{
-    model::{edit_state::EditablePage, unit::Unit},
+    model::{
+        edit_state::EditablePage,
+        unit::{PageSizePreset, Unit},
+    },
     utils::EditableValueTextEdit,
 };
 
@@ -36,6 +38,32 @@ impl<'a> PageInfo<'a> {
             ui.style_mut().spacing.text_edit_width = 80.0;
 
             ui.label(RichText::new("Document Info").heading());
+
+            ui.horizontal(|ui| {
+                let page = &mut self.state.page;
+
+                ComboBox::from_label("Preset Size")
+                    .selected_text("Select size preset...")
+                    .show_ui(ui, |ui| {
+                        for preset in PageSizePreset::iter() {
+                            if ui.selectable_label(false, preset.to_string()).clicked() {
+                                if let Some((width, height)) = preset.dimensions() {
+                                    page.set_size(Vec2::new(width, height));
+                                    page.edit_state.width.begin_editing();
+                                    page.edit_state.height.begin_editing();
+
+                                    *page.edit_state.width.editable_value() = width.to_string();
+                                    *page.edit_state.height.editable_value() = height.to_string();
+
+                                    page.edit_state.width.end_editing();
+                                    page.edit_state.height.end_editing();
+                                }
+                            }
+                        }
+                    });
+            });
+
+            ui.separator();
 
             ui.horizontal(|ui| {
                 let page = &mut self.state.page;
