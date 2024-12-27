@@ -149,6 +149,24 @@ impl<'a> Pages<'a> {
             {
                 self.state.pages.insert(next_page_id(), CanvasState::new());
             }
+
+            // Only show delete button if we have more than one page
+            if self.state.pages.len() > 1 {
+                if ui
+                    .add(Button::image_and_text(Asset::add_page(), "Delete Page"))
+                    .on_hover_text("Delete current page")
+                    .clicked()
+                {
+                    if let Some(index) = self.state.pages.get_index_of(&self.state.selected_page) {
+                        self.state.pages.shift_remove_index(index);
+                        // Select the previous page, or the first page if we deleted the first one
+                        self.state.selected_page = *self.state.pages
+                            .get_index(index.saturating_sub(1))
+                            .unwrap()
+                            .0;
+                    }
+                }
+            }
         });
 
         if let Some(page) = clicked_page {

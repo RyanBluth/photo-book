@@ -30,7 +30,6 @@ use super::{
 
 #[derive(Debug, Clone)]
 pub struct CanvasSceneState {
-    pub canvas_state: CanvasState,
     pub gallery_state: ImageGalleryState,
     pub pages_state: PagesState,
     history_manager: CanvasHistoryManager,
@@ -41,12 +40,12 @@ pub struct CanvasSceneState {
 impl CanvasSceneState {
     pub fn new() -> Self {
         let page_id = next_page_id();
+        let initial_state = CanvasState::new();
 
         Self {
-            canvas_state: CanvasState::new(),
             gallery_state: ImageGalleryState::default(),
-            history_manager: CanvasHistoryManager::with_initial_state(CanvasState::new()),
-            pages_state: PagesState::new(indexmap! { page_id => CanvasState::new() }, page_id),
+            history_manager: CanvasHistoryManager::with_initial_state(initial_state.clone()),
+            pages_state: PagesState::new(indexmap! { page_id => initial_state }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
         }
@@ -54,7 +53,6 @@ impl CanvasSceneState {
 
     pub fn with_pages(pages: IndexMap<PageId, CanvasState>, selected_page: PageId) -> Self {
         Self {
-            canvas_state: pages[&selected_page].clone(),
             gallery_state: ImageGalleryState::default(),
             history_manager: CanvasHistoryManager::with_initial_state(
                 pages[&selected_page].clone(),
@@ -63,6 +61,28 @@ impl CanvasSceneState {
             templates_state: TemplatesState::new(),
             export_task_id: None,
         }
+    }
+
+    pub fn selected_page_mut(&mut self) -> &mut CanvasState {
+        self.pages_state
+            .pages
+            .get_mut(&self.pages_state.selected_page)
+            .unwrap()
+    }
+
+    pub fn selected_page(&self) -> &CanvasState {
+        self.pages_state
+            .pages
+            .get(&self.pages_state.selected_page)
+            .unwrap()
+    }
+
+    pub fn selected_page_and_history_mut(&mut self) -> (&mut CanvasState, &mut CanvasHistoryManager) {
+        let page = self.pages_state
+            .pages
+            .get_mut(&self.pages_state.selected_page)
+            .unwrap();
+        (&mut *page, &mut self.history_manager)
     }
 }
 
@@ -127,12 +147,8 @@ impl CanvasScene {
 
 impl Scene for CanvasScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
-        // Apply the current canvas state to the pages state so they are in sync
-        self.state.pages_state.pages.insert(
-            self.state.pages_state.selected_page,
-            self.state.canvas_state.clone_with_new_widget_ids(),
-        );
-
+        // Remove the sync code since we're working directly with the selected page
+        
         match self.state.export_task_id {
             Some(task_id) => {
                 let exporter: Singleton<Exporter> = Dependency::get();
@@ -201,19 +217,17 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state)
-                {
+                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state) {
                     match response {
                         ImageGalleryResponse::SelectPhotoSecondaryAction(photo) => {
                             self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                         }
                         ImageGalleryResponse::SelectPhotoPrimaryAction(photo) => {
-                            let is_template = self.scene_state.canvas_state.template.is_some();
+                            let is_template = self.scene_state.selected_page().template.is_some();
 
                             if is_template {
-                                let mut selected_template_photos: Vec<_> = self
-                                    .scene_state
-                                    .canvas_state
+                                let page = self.scene_state.selected_page_mut();
+                                let mut selected_template_photos: Vec<_> = page
                                     .layers
                                     .iter_mut()
                                     .filter(|(_, layer)| {
@@ -231,21 +245,20 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                     {
                                         *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
                                     }
-
+                                    // Create a snapshot of the state after modification
+                                    let page_snapshot = self.scene_state.selected_page().clone();
                                     self.scene_state.history_manager.save_history(
                                         CanvasHistoryKind::AddPhoto,
-                                        &mut self.scene_state.canvas_state,
+                                        &page_snapshot,
                                     );
-                                } else if selected_template_photos.len() > 1
-                                    || selected_template_photos.is_empty()
-                                {
-                                    // TODO: Show error message saying that only one template photo can be selected
                                 }
                             } else {
-                                self.scene_state.canvas_state.add_photo(photo.clone());
+                                self.scene_state.selected_page_mut().add_photo(photo.clone());
+                                // Create a snapshot of the state after modification
+                                let page_snapshot = self.scene_state.selected_page().clone();
                                 self.scene_state.history_manager.save_history(
                                     CanvasHistoryKind::AddPhoto,
-                                    &self.scene_state.canvas_state,
+                                    &page_snapshot,
                                 );
                             }
                         }
@@ -253,36 +266,26 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             CanvasScenePane::Canvas => {
-                Canvas::new(
-                    &mut self.scene_state.canvas_state,
-                    ui.available_rect_before_wrap(),
-                    &mut self.scene_state.history_manager,
-                )
-                .show(ui);
+                let rect = ui.available_rect_before_wrap();
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                Canvas::new(page, rect, history).show(ui);
             }
             CanvasScenePane::Info => {
-                // self.scene_state.history_manager.capturing_history(
-                //     CanvasHistoryKind::AddPhoto,
-                //     &mut self.scene_state.canvas_state,
-                //     |canvas_state| {
-
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
 
-                // Clone the state so that we can use it to save history if needed.
-                // History needs to be saved before the state is modified
-                let _pre_info_canvas_state = self.scene_state.canvas_state.clone();
-
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
                 let response = CanvasInfo {
-                    canvas_state: &mut self.scene_state.canvas_state,
-                    history_manager: &mut self.scene_state.history_manager,
+                    canvas_state: page,
+                    history_manager: history,
                 }
                 .show(ui);
 
-                if let Some(history) = response.inner.history {
+                if let Some(history_kind) = response.inner.history {
+                    let page_snapshot = self.scene_state.selected_page().clone();
                     self.scene_state
                         .history_manager
-                        .save_history(history, &self.scene_state.canvas_state);
+                        .save_history(history_kind, &page_snapshot);
                 }
             }
             CanvasScenePane::Pages => {
@@ -291,14 +294,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
 
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
                     PagesResponse::SelectPage => {
-                        self.scene_state.canvas_state = self
-                            .scene_state
-                            .pages_state
-                            .pages
-                            .get_key_value(&self.scene_state.pages_state.selected_page)
-                            .unwrap()
-                            .1
-                            .clone_with_new_widget_ids();
+                        // No need to sync canvas_state anymore
                     }
                     PagesResponse::None => {}
                 }
@@ -315,28 +311,16 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                         self.scene_state
                             .pages_state
                             .pages
-                            .insert(new_page_id, new_canvas_state.clone());
+                            .insert(new_page_id, new_canvas_state);
 
                         self.scene_state.pages_state.selected_page = new_page_id;
-
-                        self.scene_state.canvas_state = self
-                            .scene_state
-                            .pages_state
-                            .pages
-                            .get_key_value(&self.scene_state.pages_state.selected_page)
-                            .unwrap()
-                            .1
-                            .clone_with_new_widget_ids();
                     }
                     TemplatesResponse::None => {}
                 }
             }
             CanvasScenePane::QuickLayout => {
-                QuickLayout::new(&mut QuickLayoutState::new(
-                    &mut self.scene_state.canvas_state,
-                    &mut self.scene_state.history_manager,
-                ))
-                .show(ui);
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                QuickLayout::new(&mut QuickLayoutState::new(page, history)).show(ui);
             }
         }
 

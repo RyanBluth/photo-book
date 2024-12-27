@@ -65,14 +65,14 @@ impl Project {
             })
             .collect();
 
-        let mut app_pages = root_scene
-            .edit
-            .read()
-            .unwrap()
-            .state
-            .pages_state
-            .pages
-            .clone();
+        let mut app_pages = match &root_scene.edit {
+            Some(edit) => {
+                edit.read().unwrap().state.pages_state.pages.clone()
+            }
+            None => {
+                IndexMap::new()
+            }
+        };
 
         let pages: Vec<CanvasPage> = app_pages
             .values_mut()
@@ -311,8 +311,7 @@ impl Into<OrganizeEditScene> for Project {
 
         Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
             photo_manager.load_photos(
-                self
-                    .photos
+                self.photos
                     .into_iter()
                     .map(|photo| (photo.path, Some(photo.rating.into())))
                     .collect(),

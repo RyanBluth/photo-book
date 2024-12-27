@@ -9,8 +9,8 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
     egui::{self, ViewportBuilder, Widget},
-    egui_wgpu::{WgpuConfiguration, WgpuSetup},
-    wgpu,
+   // egui_wgpu::{WgpuConfiguration, WgpuSetup},
+    //wgpu,
 };
 
 use font_manager::FontManager;
@@ -64,7 +64,7 @@ async fn main() -> anyhow::Result<()> {
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
-        .max_blocking_threads(16)
+        .max_blocking_threads(8)
         .build()
         .unwrap();
 
@@ -83,32 +83,33 @@ async fn main() -> anyhow::Result<()> {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
             .with_inner_size((3000.0, 2000.0)),
-        wgpu_options: WgpuConfiguration {
-            wgpu_setup: WgpuSetup::CreateNew {
-                supported_backends: wgpu::util::backend_bits_from_env()
-                    .unwrap_or(wgpu::Backends::PRIMARY | wgpu::Backends::GL),
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                device_descriptor: Arc::new(|adapter| {
-                    let base_limits: wgpu::Limits =
-                        if adapter.get_info().backend == wgpu::Backend::Gl {
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                        } else {
-                            wgpu::Limits::default()
-                        };
+        hardware_acceleration: eframe::HardwareAcceleration::Required,
+        // wgpu_options: WgpuConfiguration {
+        //     wgpu_setup: WgpuSetup::CreateNew {
+        //         supported_backends: wgpu::util::backend_bits_from_env()
+        //             .unwrap_or(wgpu::Backends::PRIMARY | wgpu::Backends::GL),
+        //         power_preference: wgpu::PowerPreference::HighPerformance,
+        //         device_descriptor: Arc::new(|adapter| {
+        //             let base_limits: wgpu::Limits =
+        //                 if adapter.get_info().backend == wgpu::Backend::Gl {
+        //                     wgpu::Limits::downlevel_webgl2_defaults()
+        //                 } else {
+        //                     wgpu::Limits::default()
+        //                 };
 
-                    wgpu::DeviceDescriptor {
-                        label: Some("egui wgpu device"),
-                        required_features: wgpu::Features::default(),
-                        required_limits: wgpu::Limits {
-                            max_texture_dimension_2d: 32768 as u32, // TODO: Can we look up the max size?
-                            ..base_limits
-                        },
-                        memory_hints: wgpu::MemoryHints::default(),
-                    }
-                }),
-            },
-            ..Default::default()
-        },
+        //             wgpu::DeviceDescriptor {
+        //                 label: Some("egui wgpu device"),
+        //                 required_features: wgpu::Features::default(),
+        //                 required_limits: wgpu::Limits {
+        //                     max_texture_dimension_2d: base_limits.max_texture_dimension_2d, // TODO: Can we look up the max size?
+        //                     ..base_limits
+        //                 },
+        //                 memory_hints: wgpu::MemoryHints::default(),
+        //             }
+        //         }),
+        //     },
+        //     ..Default::default()
+        // },
         ..Default::default()
     };
 

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 egui = { version = "0.30", features = ["persistence"] }
-eframe = { version = "0.30", features = ["wgpu"] }
+eframe = { version = "0.30", features = ["glow"] }
 egui_extras = { version = "0.30", features = ["default", "all_loaders"] }
 native-dialog = "0.7.0"
 env_logger = "0.11.5"
@@ -43,6 +43,7 @@ toml = "0.8.15"
 glob = "0.3.1"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 profiling = { version = "1.0.16", default-features = false }
+notify = "7.0.0"
 
 [profile.dev.package."*"]
 opt-level = 2
@@ -55,5 +56,5 @@ panic = "abort"
 
 [patch.crates-io]
 egui = { git = "https://github.com/RyanBluth/egui.git", branch = "support-uppercase-image-ext", features = ["persistence"] }
-eframe = { git = "https://github.com/RyanBluth/egui.git", branch = "support-uppercase-image-ext", features = ["wgpu"] }
+eframe = { git = "https://github.com/RyanBluth/egui.git", branch = "support-uppercase-image-ext", features = ["glow"] }
 egui_extras = { git = "https://github.com/RyanBluth/egui.git", branch = "support-uppercase-image-ext", features = ["default", "all_loaders"] }

@@ -22,19 +22,20 @@ use crate::{
     project_settings::ProjectSettingsManager,
     session::Session,
     utils::Toggle,
+    widget::page_canvas::CanvasState,
 };
 
 use super::{
-    canvas_scene::CanvasScene,
+    canvas_scene::{self, CanvasScene},
     organize_scene::GalleryScene,
-    Scene, SceneResponse,
+    CanvasSceneState, Scene, SceneResponse,
     SceneTransition::{self},
 };
 
 #[derive(Debug, Clone)]
 pub struct OrganizeEditScene {
     pub organize: Arc<RwLock<GalleryScene>>,
-    pub edit: Arc<RwLock<CanvasScene>>,
+    pub edit: Option<Arc<RwLock<CanvasScene>>>,
     current: Either<Arc<RwLock<GalleryScene>>, Arc<RwLock<CanvasScene>>>,
     page_settings_modal_id: Option<TypedModalId<PageSettingsModal>>,
 }
@@ -44,7 +45,7 @@ impl OrganizeEditScene {
         let organize_scene = Arc::new(RwLock::new(organize));
         Self {
             organize: organize_scene.clone(),
-            edit: Arc::new(RwLock::new(edit)),
+            edit: None,
             current: Either::Left(organize_scene.clone()),
             page_settings_modal_id: None,
         }
@@ -54,8 +55,10 @@ impl OrganizeEditScene {
         self.current = Either::Left(self.organize.clone());
         // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
         // Introduce some sort of shared state between the two scenes
-        self.organize.write().unwrap().state.image_gallery_state =
-            self.edit.read().unwrap().state.gallery_state.clone();
+        if let Some(edit) = &self.edit {
+            self.organize.write().unwrap().state.image_gallery_state =
+                edit.read().unwrap().state.gallery_state.clone();
+        }
     }
 
     pub fn show_edit(&mut self) {
@@ -71,16 +74,18 @@ impl OrganizeEditScene {
             return;
         }
 
-        self.current = Either::Right(self.edit.clone());
-        // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
-        // Introduce some sort of shared state between the two scenes
-        self.edit.write().unwrap().state.gallery_state = self
-            .organize
-            .read()
-            .unwrap()
-            .state
-            .image_gallery_state
-            .clone();
+        if let Some(edit) = &self.edit {
+            self.current = Either::Right(edit.clone());
+            // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
+            // Introduce some sort of shared state between the two scenes
+            edit.write().unwrap().state.gallery_state = self
+                .organize
+                .read()
+                .unwrap()
+                .state
+                .image_gallery_state
+                .clone();
+        }
     }
 
     fn mode_selector(&mut self, ui: &mut Ui) {
@@ -126,6 +131,9 @@ impl OrganizeEditScene {
             match modal_response {
                 Some(response) => match response {
                     ModalActionResponse::Confirm => {
+                        if self.edit.is_none() {
+                            self.edit = Some(Arc::new(RwLock::new(CanvasScene::new())));
+                        }
                         self.show_edit();
                     }
                     _ => {}
@@ -339,23 +347,34 @@ impl Scene for OrganizeEditScene {
                                 let directory = export_path.parent().unwrap();
                                 let file_name = export_path.file_name().unwrap();
 
-                                exporter.with_lock_mut(|exporter| {
-                                    exporter.export(
-                                        ui.ctx().clone(),
-                                        self.edit
-                                            .read()
-                                            .unwrap()
-                                            .state
-                                            .pages_state
-                                            .pages
-                                            .values()
-                                            .into_iter()
-                                            .map(|x| x.clone())
-                                            .collect::<Vec<_>>(),
-                                        directory.into(),
-                                        file_name.to_str().unwrap(),
-                                    );
-                                });
+                                match &self.edit {
+                                    Some(edit) => {
+                                        exporter.with_lock_mut(|exporter| {
+                                            exporter.export(
+                                                ui.ctx().clone(),
+                                                edit.read()
+                                                    .unwrap()
+                                                    .state
+                                                    .pages_state
+                                                    .pages
+                                                    .values()
+                                                    .into_iter()
+                                                    .map(|x| x.clone())
+                                                    .collect::<Vec<_>>(),
+                                                directory.into(),
+                                                file_name.to_str().unwrap(),
+                                            );
+                                        });
+                                    }
+                                    None => {
+                                        // Show alert
+                                        ModalManager::push(BasicModal::new(
+                                            "Error",
+                                            "Nothing to export",
+                                            "OK",
+                                        ));
+                                    }
+                                };
                             }
                             Err(e) => {
                                 error!("Error opening export file dialog: {:?}", e);
@@ -379,6 +398,13 @@ impl Scene for OrganizeEditScene {
                     });
                 });
 
+                ui.menu_button("Project Settings", |ui| {
+                    if ui.button("Page Settings").clicked() {
+                        self.page_settings_modal_id =
+                            Some(ModalManager::push(PageSettingsModal::new()));
+                    }
+                });
+
                 ui.menu_button("Debug", |ui| {
                     Dependency::<DebugSettings>::get().with_lock_mut(|debug_settings| {
                         fn enabled_disabled_suffix(enabled: bool) -> &'static str {
@@ -388,7 +414,7 @@ impl Scene for OrganizeEditScene {
                                 "(Disabled)"
                             }
                         }
-                        
+
                         if ui
                             .button(format!(
                                 "Quick Layout Numbers:{}",
@@ -437,7 +463,7 @@ impl Scene for OrganizeEditScene {
                             .state
                             .image_gallery_state
                             .clone();
-                        *self.edit.write().unwrap() = scene;
+                        self.edit = Some(Arc::new(RwLock::new(scene)));
                         self.show_edit();
                         SceneResponse::None
                     }

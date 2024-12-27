@@ -1,4 +1,3 @@
-
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     model::{edit_state::EditablePage, page::Page},
@@ -15,8 +14,15 @@ pub struct PageSettingsModal {
 
 impl PageSettingsModal {
     pub fn new() -> Self {
+        let current_page = Dependency::<ProjectSettingsManager>::get().with_lock(|settings| {
+            settings
+                .project_settings
+                .default_page
+                .clone()
+                .unwrap_or_default()
+        });
         Self {
-            editable_page: EditablePage::new(Page::default()),
+            editable_page: EditablePage::new(current_page),
         }
     }
 }

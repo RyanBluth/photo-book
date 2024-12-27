@@ -10,7 +10,17 @@ use indexmap::{indexmap, IndexMap};
 use printpdf::image_crate::flat::SampleLayout;
 
 use crate::{
-    cursor_manager::CursorManager, debug::DebugSettings, dependencies::{Dependency, Singleton, SingletonFor}, id::{next_layer_id, next_quick_layout_index, LayerId}, model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode}, photo::Photo, photo_manager::PhotoManager, project_settings::ProjectSettingsManager, scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager}, template::{Template, TemplateRegionKind}, utils::{IdExt, RectExt, Toggle}
+    cursor_manager::CursorManager,
+    debug::DebugSettings,
+    dependencies::{Dependency, Singleton, SingletonFor},
+    id::{next_layer_id, next_quick_layout_index, LayerId},
+    model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
+    photo::Photo,
+    photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager,
+    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    template::{Template, TemplateRegionKind},
+    utils::{IdExt, RectExt, Toggle},
 };
 
 use super::{
@@ -52,6 +62,7 @@ pub struct CanvasState {
     pub template: Option<Template>,
     pub quick_layout_order: Vec<LayerId>,
     pub last_quick_layout: Option<quick_layout::Layout>,
+    pub canvas_id: egui::Id,
     computed_initial_zoom: bool,
 }
 
@@ -74,6 +85,7 @@ impl CanvasState {
             template: None,
             quick_layout_order: Vec::new(),
             last_quick_layout: None,
+            canvas_id: Id::random(),
             computed_initial_zoom: false,
         }
     }
@@ -93,6 +105,7 @@ impl CanvasState {
             template,
             quick_layout_order: quick_layout_order,
             last_quick_layout: None,
+            canvas_id: Id::random(),
             computed_initial_zoom: false,
         }
     }
@@ -149,6 +162,7 @@ impl CanvasState {
             template: None,
             quick_layout_order: vec![layer.id],
             last_quick_layout: None,
+            canvas_id: Id::random(),
             computed_initial_zoom: false,
         }
     }
@@ -240,6 +254,7 @@ impl CanvasState {
             template: Some(template),
             quick_layout_order: ids,
             last_quick_layout: None,
+            canvas_id: Id::random(),
             computed_initial_zoom: false,
         }
     }
@@ -933,14 +948,16 @@ impl<'a> Canvas<'a> {
         let layer_response = match &mut layer.content {
             LayerContent::Photo(ref mut photo) => {
                 let transform_response = ui
-                    .push_id(format!("CanvasPhoto_{}", layer.id), |ui| {
-                        self.photo_manager.with_lock_mut(|photo_manager| {
-                            if let Ok(Some(texture)) = photo_manager
-                                .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                            {
-                                let mut transform_state = layer.transform_state.clone();
+                    .push_id(
+                        format!("{}_CanvasPhoto_{}", self.state.canvas_id.value(), layer.id),
+                        |ui| {
+                            self.photo_manager.with_lock_mut(|photo_manager| {
+                                if let Ok(Some(texture)) = photo_manager
+                                    .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
+                                {
+                                    let mut transform_state = layer.transform_state.clone();
 
-                                let transform_response = TransformableWidget::new(
+                                    let transform_response = TransformableWidget::new(
                                     &mut transform_state,
                                 )
                                 .show(
@@ -992,14 +1009,15 @@ impl<'a> Canvas<'a> {
                                     |_ui, _rect| {},
                                 );
 
-                                layer.transform_state = transform_state;
+                                    layer.transform_state = transform_state;
 
-                                Some(transform_response)
-                            } else {
-                                None
-                            }
-                        })
-                    })
+                                    Some(transform_response)
+                                } else {
+                                    None
+                                }
+                            })
+                        },
+                    )
                     .inner;
 
                 Dependency::<DebugSettings>::get().with_lock(|debug_settings| {
@@ -1013,7 +1031,6 @@ impl<'a> Canvas<'a> {
                     }
                 });
 
-                
                 self.state.layers.insert(*layer_id, layer.clone());
                 return transform_response;
             }

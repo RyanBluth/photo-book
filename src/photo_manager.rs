@@ -87,6 +87,10 @@ impl PhotoManager {
         }
     }
 
+    fn photo_exists(&self, path: &PathBuf) -> bool {
+        self.photos.contains_key(path)
+    }
+
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
         tokio::spawn(async move {
             let glob_patterns = vec![
@@ -110,7 +114,8 @@ impl PhotoManager {
                 .filter_map(|entry| {
                     let path = entry.as_ref().ok()?;
                     let lowercase_extension = path.extension()?.to_ascii_lowercase();
-                    if lowercase_extension == "jpg" || lowercase_extension == "jpeg" {
+                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg") 
+                        && !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path)) {
                         Some(path.clone())
                     } else {
                         None
@@ -168,9 +173,14 @@ impl PhotoManager {
     pub fn load_photos(&self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
         tokio::spawn(async move {
             let mut photos_since_regroup: usize = 0;
-            let num_photos = photos.len();
+            let filtered_photos: Vec<(PathBuf, Option<PhotoRating>)> = photos
+                .into_iter()
+                .filter(|(path, _)| !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path)))
+                .collect();
 
-            for (path, rating) in photos {
+            let num_photos = filtered_photos.len();
+
+            for (path, rating) in filtered_photos {
                 let photo =
                     Photo::with_rating_async(path.clone(), rating.unwrap_or_default()).await;
 
