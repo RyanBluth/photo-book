@@ -66,12 +66,8 @@ impl Project {
             .collect();
 
         let mut app_pages = match &root_scene.edit {
-            Some(edit) => {
-                edit.read().unwrap().state.pages_state.pages.clone()
-            }
-            None => {
-                IndexMap::new()
-            }
+            Some(edit) => edit.read().unwrap().state.pages_state.pages.clone(),
+            None => IndexMap::new(),
         };
 
         let pages: Vec<CanvasPage> = app_pages
@@ -523,12 +519,16 @@ impl Into<OrganizeEditScene> for Project {
             })
             .collect();
 
-        let first_page_id = pages.first().map(|(id, _)| *id).unwrap();
+        let edit_scene = if let Some(first_page_id) = pages.first().map(|(id, _)| *id) {
+            Some(CanvasScene::with_state(CanvasSceneState::with_pages(
+                pages,
+                first_page_id,
+            )))
+        } else {
+            None
+        };
 
         let organize_scene = GalleryScene::new();
-
-        let edit_scene =
-            CanvasScene::with_state(CanvasSceneState::with_pages(pages, first_page_id));
 
         let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
 

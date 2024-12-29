@@ -66,6 +66,8 @@ impl<'a> Pages<'a> {
         let num_rows = self.state.pages.len().div_ceil(num_columns.max(1));
 
         let mut clicked_page = None;
+        let mut from = None;
+        let mut to = None;
 
         ui.set_clip_rect(ui.available_rect_before_wrap());
 
@@ -77,6 +79,7 @@ impl<'a> Pages<'a> {
         ui.allocate_ui(table_size, |ui| {
             egui_extras::TableBuilder::new(ui)
                 .min_scrolled_height(table_size.y)
+                .drag_to_scroll(false)
                 .auto_shrink(false)
                 .columns(Column::exact(column_width), num_columns)
                 .column(Column::exact(spacer_width))
@@ -90,35 +93,58 @@ impl<'a> Pages<'a> {
 
                             let index: usize = offset + i;
                             let id: usize = *self.state.pages.get_index(index).unwrap().0;
-                            let page = self.state.pages.get_index_mut(index).unwrap().1;
+                            let page = &mut self.state.pages.get_index_mut(index).unwrap().1.clone_with_new_widget_ids();
 
                             row.col(|ui| {
+                                let item_id = egui::Id::new(("page_list", index));
+                                
                                 ui.vertical(|ui| {
                                     ui.add_space(10.0);
 
-                                    ui.label(format!("Page {}", index + 1));
+                                    let response = ui.dnd_drag_source(item_id, index, |ui| {
+                                        ui.label(format!("Page {}", index + 1));
 
-                                    let mut page_rect = ui.max_rect();
-                                    page_rect.min.y += 30.0;
+                                        let mut page_rect = ui.max_rect();
+                                        page_rect.min.y += 30.0;
 
-                                    Canvas::new(
-                                        page,
-                                        page_rect,
-                                        &mut CanvasHistoryManager::preview(),
-                                    )
-                                    .show_preview(ui, page_rect);
+                                        Canvas::new(
+                                            page,
+                                            page_rect,
+                                            &mut CanvasHistoryManager::preview(),
+                                        )
+                                        .show_preview(ui, page_rect);
+                                    });
 
-                                    let click_response =
-                                        ui.allocate_rect(page_rect, Sense::click());
+                                    let page_rect = ui.max_rect();
 
-                                    if click_response.clicked() {
+                                    if let (Some(pointer), Some(hovered_idx)) = (
+                                        ui.input(|i| i.pointer.interact_pos()),
+                                        response.response.dnd_hover_payload::<usize>(),
+                                    ) {
+                                        if *hovered_idx != index {
+                                            let stroke = egui::Stroke::new(2.0, Color32::WHITE);
+                                            if pointer.y < page_rect.center().y {
+                                                ui.painter().hline(page_rect.x_range(), page_rect.top(), stroke);
+                                                to = Some(index);
+                                            } else {
+                                                ui.painter().hline(page_rect.x_range(), page_rect.bottom(), stroke);
+                                                to = Some(index + 1);
+                                            }
+                                        }
+
+                                        if let Some(dragged_idx) = response.response.dnd_release_payload() {
+                                            from = Some(*dragged_idx);
+                                        }
+                                    }
+
+                                    if ui.input(|i| i.pointer.primary_clicked())
+                                        && ui.rect_contains_pointer(page_rect)
+                                    {
                                         clicked_page = Some(id);
                                     }
 
                                     if self.state.selected_page == id {
-                                        // Expand the clip rect for the highlight
                                         ui.set_clip_rect(ui.max_rect().expand(10.0));
-
                                         ui.painter().rect_stroke(
                                             page_rect,
                                             4.0,
@@ -135,6 +161,22 @@ impl<'a> Pages<'a> {
                     })
                 });
         });
+
+        // Handle reordering
+        if let (Some(from_idx), Some(to_idx)) = (from, to) {
+            if from_idx != to_idx {
+                let (from_key, from_page) = self.state.pages.get_index(from_idx).unwrap();
+                let (from_key, from_page) = (from_key.clone(), from_page.clone());
+                
+                self.state.pages.shift_remove(&from_key);
+                
+                if to_idx < self.state.pages.len() {
+                    self.state.pages.shift_insert(to_idx, from_key, from_page);
+                } else {
+                    self.state.pages.insert(from_key, from_page);
+                }
+            }
+        }
 
         ui.painter()
             .rect_filled(ui.available_rect_before_wrap(), 0.0, Color32::from_gray(40));

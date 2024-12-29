@@ -110,7 +110,7 @@ impl SceneManager {
 impl Default for SceneManager {
     fn default() -> Self {
         Self {
-            root_scene: OrganizeEditScene::new(GalleryScene::new(), CanvasScene::new()),
+            root_scene: OrganizeEditScene::new(GalleryScene::new(), Some(CanvasScene::new())),
             scenes: vec![],
         }
     }

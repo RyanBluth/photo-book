@@ -84,6 +84,10 @@ impl CanvasSceneState {
             .unwrap();
         (&mut *page, &mut self.history_manager)
     }
+
+    pub fn has_pages(&self) -> bool {
+        !self.pages_state.pages.is_empty() 
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -266,6 +270,13 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             CanvasScenePane::Canvas => {
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("Add a page to get started");
+                    });
+                    return UiResponse::None;
+                }
+                
                 let rect = ui.available_rect_before_wrap();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
                 Canvas::new(page, rect, history).show(ui);
@@ -273,6 +284,13 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Info => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No page selected");
+                    });
+                    return UiResponse::None;
+                }
 
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
                 let response = CanvasInfo {
@@ -319,6 +337,13 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             CanvasScenePane::QuickLayout => {
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No page selected");
+                    });
+                    return UiResponse::None;
+                }
+
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
                 QuickLayout::new(&mut QuickLayoutState::new(page, history)).show(ui);
             }

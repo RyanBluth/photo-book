@@ -41,11 +41,12 @@ pub struct OrganizeEditScene {
 }
 
 impl OrganizeEditScene {
-    pub fn new(organize: GalleryScene, edit: CanvasScene) -> Self {
-        let organize_scene = Arc::new(RwLock::new(organize));
+    pub fn new(organize: GalleryScene, edit: Option<CanvasScene>) -> Self {
+        let organize_scene: Arc<RwLock<GalleryScene>> = Arc::new(RwLock::new(organize));
+        let edit = edit.map(|edit| Arc::new(RwLock::new(edit)));
         Self {
             organize: organize_scene.clone(),
-            edit: None,
+            edit: edit,
             current: Either::Left(organize_scene.clone()),
             page_settings_modal_id: None,
         }
@@ -76,6 +77,12 @@ impl OrganizeEditScene {
 
         if let Some(edit) = &self.edit {
             self.current = Either::Right(edit.clone());
+        } else {
+            self.edit = Some(Arc::new(RwLock::new(CanvasScene::new())));
+            self.current = Either::Right(self.edit.as_ref().unwrap().clone());
+        }
+
+        if let Some(edit) = &self.edit {
             // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
             // Introduce some sort of shared state between the two scenes
             edit.write().unwrap().state.gallery_state = self
