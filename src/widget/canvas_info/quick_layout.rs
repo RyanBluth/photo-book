@@ -49,9 +49,9 @@ impl<'a> QuickLayoutState<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Layout {
-    GridLayout { n: usize },
+    GridLayout { n: usize, padding: f32 },
+    CenteredWeightedGridLayout { n: usize, padding: f32 },
     HighlightLayout { padding: f32 },
-    GridLayoutWithPadding { n: usize },
     VerticalStackLayout,
     HorizontalStackLayout,
     ZigzagLayout,
@@ -60,8 +60,9 @@ pub enum Layout {
 impl Layout {
     pub fn apply(&self, canvas_state: &mut CanvasState) {
         let regions = match self {
-            Layout::GridLayout { n } => {
+            Layout::GridLayout { n, padding } => {
                 let grid_size = (*n as f32).sqrt().ceil() as usize;
+                let cell_size = 1.0 / grid_size as f32;
                 canvas_state
                     .quick_layout_order
                     .iter()
@@ -71,9 +72,63 @@ impl Layout {
                         let row = index / grid_size;
                         let col = index % grid_size;
                         let rect = Rect::from_min_size(
-                            Pos2::new(col as f32 / grid_size as f32, row as f32 / grid_size as f32),
-                            Vec2::new(1.0 / grid_size as f32, 1.0 / grid_size as f32),
+                            Pos2::new(
+                                col as f32 * cell_size + padding,
+                                row as f32 * cell_size + padding,
+                            ),
+                            Vec2::new(cell_size - 2.0 * padding, cell_size - 2.0 * padding),
                         );
+                        QuickLayoutRegion {
+                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
+                                layer,
+                                &canvas_state.page.value,
+                                rect,
+                                QuickLayoutFillMode::Fill,
+                            ),
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            }
+            Layout::CenteredWeightedGridLayout { n, padding } => {
+                let grid_size = (*n as f32).sqrt().ceil() as usize;
+                let fixed_spacing = 0.02; // 2% of page size between images
+                let rows = ((n + grid_size - 1) / grid_size) as f32;
+                
+                // Calculate cell sizes based on both width and height constraints
+                let inner_width = 1.0 - (2.0 * padding);
+                let inner_height = 1.0 - (2.0 * padding);
+                
+                let width_based_cell_size = (inner_width - (fixed_spacing * (grid_size - 1) as f32)) / grid_size as f32;
+                let height_based_cell_size = (inner_height - (fixed_spacing * (rows - 1.0))) / rows;
+                
+                // Use the smaller cell size to maintain equal spacing
+                let cell_size = width_based_cell_size.min(height_based_cell_size);
+                
+                // Recalculate total dimensions with final cell size
+                let total_width = (cell_size * grid_size as f32) + (fixed_spacing * (grid_size - 1) as f32);
+                let total_height = (cell_size * rows) + (fixed_spacing * (rows - 1.0));
+                
+                // Center the grid
+                let x_offset = (1.0 - total_width) / 2.0;
+                let y_offset = (1.0 - total_height) / 2.0;
+                
+                canvas_state
+                    .quick_layout_order
+                    .iter()
+                    .enumerate()
+                    .map(|(index, layer_id)| {
+                        let layer = canvas_state.layers.get(layer_id).unwrap();
+                        let row = index / grid_size;
+                        let col = index % grid_size;
+                        
+                        let x = x_offset + (col as f32 * (cell_size + fixed_spacing));
+                        let y = y_offset + (row as f32 * (cell_size + fixed_spacing));
+                        
+                        let rect = Rect::from_min_size(
+                            Pos2::new(x, y),
+                            Vec2::new(cell_size, cell_size),
+                        );
+                        
                         QuickLayoutRegion {
                             absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
                                 layer,
@@ -131,36 +186,6 @@ impl Layout {
                 }
 
                 regions
-            }
-            Layout::GridLayoutWithPadding { n } => {
-                let grid_size = (*n as f32).sqrt().ceil() as usize;
-                let padding = 0.02;
-                let cell_size = 1.0 / grid_size as f32;
-                canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .enumerate()
-                    .map(|(index, layer_id)| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-                        let row = index / grid_size;
-                        let col = index % grid_size;
-                        let rect = Rect::from_min_size(
-                            Pos2::new(
-                                col as f32 * cell_size + padding,
-                                row as f32 * cell_size + padding,
-                            ),
-                            Vec2::new(cell_size - 2.0 * padding, cell_size - 2.0 * padding),
-                        );
-                        QuickLayoutRegion {
-                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
-                                layer,
-                                &canvas_state.page.value,
-                                rect,
-                                QuickLayoutFillMode::Fill,
-                            ),
-                        }
-                    })
-                    .collect::<Vec<_>>()
             }
             Layout::VerticalStackLayout => {
                 let n = canvas_state.quick_layout_order.len();
@@ -353,23 +378,34 @@ impl<'a> QuickLayout<'a> {
         let mut layouts: Vec<Layout> = vec![];
 
         if n == 1 {
-            layouts.push(Layout::GridLayout { n });
-            layouts.push(Layout::HighlightLayout { padding: 0.1 });
-            layouts.push(Layout::HighlightLayout { padding: 0.3 });
-            layouts.push(Layout::GridLayoutWithPadding { n });
+            // Grid serves as a centering layout for a single photo
+            layouts.push(Layout::GridLayout { n, padding: 0.0 });
+            layouts.push(Layout::GridLayout { n, padding: 0.05 });
+            layouts.push(Layout::GridLayout { n, padding: 0.1 });
+            layouts.push(Layout::GridLayout { n, padding: 0.2 });
+            layouts.push(Layout::GridLayout { n, padding: 0.3 });
         } else if n == 2 {
-            layouts.push(Layout::GridLayout { n });
+            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
             layouts.push(Layout::HighlightLayout { padding: 0.2 });
             layouts.push(Layout::HighlightLayout { padding: 0.1 });
-            layouts.push(Layout::GridLayoutWithPadding { n });
+            layouts.push(Layout::VerticalStackLayout);
+            layouts.push(Layout::HorizontalStackLayout);
         } else if n >= 3 {
-            layouts.push(Layout::GridLayout { n });
+            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.0 });
+            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
+            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.1 });
+
             layouts.push(Layout::HighlightLayout { padding: 0.0 });
             layouts.push(Layout::HighlightLayout { padding: 0.1 });
-            layouts.push(Layout::GridLayoutWithPadding { n });
             layouts.push(Layout::VerticalStackLayout);
             layouts.push(Layout::HorizontalStackLayout);
             layouts.push(Layout::ZigzagLayout);
+
+            layouts.push(Layout::GridLayout { n, padding: 0.0 });
+            layouts.push(Layout::GridLayout { n, padding: 0.025 });
+            layouts.push(Layout::GridLayout { n, padding: 0.05 });
+            layouts.push(Layout::GridLayout { n, padding: 0.1 });
+            
         }
 
         layouts

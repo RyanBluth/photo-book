@@ -9,7 +9,7 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
     egui::{self, ViewportBuilder, Widget},
-   // egui_wgpu::{WgpuConfiguration, WgpuSetup},
+    // egui_wgpu::{WgpuConfiguration, WgpuSetup},
     //wgpu,
 };
 
@@ -57,14 +57,11 @@ mod widget;
 async fn main() -> anyhow::Result<()> {
     let log: Arc<StringLog> = Arc::new(StringLog::new());
 
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(4)
-        .build_global()
-        .unwrap();
+    let num_cores: i32 = num_cpus::get() as i32;
 
     let rt = runtime::Builder::new_multi_thread()
         .enable_all()
-        .max_blocking_threads(8)
+        .max_blocking_threads((num_cores - 2).max(1) as usize)
         .build()
         .unwrap();
 

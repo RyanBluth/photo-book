@@ -2,7 +2,6 @@ use std::sync::{Arc, RwLock};
 
 use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
-use rayon::iter::Either;
 
 use crate::{
     auto_persisting::AutoPersisting,
@@ -21,7 +20,7 @@ use crate::{
     project::v1::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
-    utils::Toggle,
+    utils::{Either, Toggle},
     widget::page_canvas::CanvasState,
 };
 

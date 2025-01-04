@@ -1,4 +1,7 @@
-use std::{fmt::Display, str::FromStr};
+use std::{
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use chrono::{ParseError, TimeZone, Utc};
 use eframe::{
@@ -298,8 +301,63 @@ impl ExifDateTimeExt for exif::DateTime {
     }
 }
 
-
-enum Either<Left, Right> {
+pub enum Either<Left, Right> {
     Left(Left),
-    Right(Right)
+    Right(Right),
+}
+
+impl<Left, Right> Either<Left, Right> {
+
+    pub fn is_left(&self) -> bool {
+        match self {
+            Either::Left(_) => true,
+            Either::Right(_) => false,
+        }
+    }
+
+    pub fn is_right(&self) -> bool {
+        match self {
+            Either::Left(_) => false,
+            Either::Right(_) => true,
+        }
+    }
+}
+
+impl<Left, Right> Debug for Either<Left, Right>
+where
+    Left: Debug,
+    Right: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Either::Left(left) => write!(f, "Left({:?})", left),
+            Either::Right(right) => write!(f, "Right({:?})", right),
+        }
+    }
+}
+
+impl<Left, Right> Display for Either<Left, Right>
+where
+    Left: Display,
+    Right: Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Either::Left(left) => write!(f, "{}", left),
+            Either::Right(right) => write!(f, "{}", right),
+        }
+    }
+}
+
+impl<Left, Right> Clone for Either<Left, Right>
+where
+    Left: Clone,
+    Right: Clone,
+{
+    fn clone(&self) -> Self {
+        match self {
+            Either::Left(left) => Either::Left(left.clone()),
+            Either::Right(right) => Either::Right(right.clone()),
+        }
+    }
 }
