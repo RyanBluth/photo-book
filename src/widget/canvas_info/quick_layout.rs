@@ -371,7 +371,7 @@ impl<'a> QuickLayout<'a> {
     fn available_layouts(&self) -> Vec<Layout> {
         let n = self.state.canvas_state.quick_layout_order.len();
 
-        if (n == 0) {
+        if n == 0 {
             return vec![];
         }
 

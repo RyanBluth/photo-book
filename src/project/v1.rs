@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_page_id, LayerId, PageId},
+    id::{next_layer_id, next_page_id, LayerId, PageId},
     model::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
@@ -206,7 +206,7 @@ impl Project {
                             visible: layer.visible,
                             locked: layer.locked,
                             selected: layer.selected,
-                            id: layer.id,
+                            id: next_layer_id(),
                             rect: layer.transform_state.rect,
                             rotation: layer.transform_state.rotation,
                         }
