@@ -170,12 +170,17 @@ impl PhotoBookApp {
 
     fn try_load_auto_save() -> Option<OrganizeEditScene> {
         let auto_save_time = AutoSaveManager::get_auto_save_modification_time()?;
-        let last_project_time = Self::get_last_project_time()?;
+        let last_project_time = Self::get_last_project_time();
 
-        if auto_save_time > last_project_time {
-            AutoSaveManager::load_auto_save()
-        } else {
-            None
+        match last_project_time {
+            Some(time) => {
+                if auto_save_time > time {
+                    AutoSaveManager::load_auto_save()
+                } else {
+                    None
+                }
+            }
+            None => AutoSaveManager::load_auto_save(),
         }
     }
 
