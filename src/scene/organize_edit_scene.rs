@@ -76,9 +76,6 @@ impl OrganizeEditScene {
 
         if let Some(edit) = &self.edit {
             self.current = Either::Right(edit.clone());
-        } else {
-            self.edit = Some(Arc::new(RwLock::new(CanvasScene::new())));
-            self.current = Either::Right(self.edit.as_ref().unwrap().clone());
         }
 
         if let Some(edit) = &self.edit {
