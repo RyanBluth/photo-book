@@ -598,8 +598,6 @@ impl<'a> Canvas<'a> {
 
         ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
-        ui.set_clip_rect(page_rect);
-
         let current_zoom = self.state.zoom;
         self.state.zoom = zoom;
 

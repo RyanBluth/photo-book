@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_layer_id, next_page_id, LayerId, PageId},
+    id::{next_layer_id, next_page_id, set_min_layer_id, LayerId, PageId},
     model::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
@@ -206,7 +206,7 @@ impl Project {
                             visible: layer.visible,
                             locked: layer.locked,
                             selected: layer.selected,
-                            id: next_layer_id(),
+                            id: layer.id,
                             rect: layer.transform_state.rect,
                             rotation: layer.transform_state.rotation,
                         }
@@ -466,6 +466,8 @@ impl Into<OrganizeEditScene> for Project {
                             ),
                             transform_state: transformable_state,
                         };
+
+                        set_min_layer_id(layer.id);
 
                         (layer.id, layer)
                     })

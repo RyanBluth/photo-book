@@ -301,6 +301,8 @@ impl<'a> QuickLayout<'a> {
             return;
         }
 
+        ui.set_clip_rect(ui.available_rect_before_wrap());
+
         let available_width = ui.available_width();
         let available_height = ui.available_height();
         let column_width = 256.0;

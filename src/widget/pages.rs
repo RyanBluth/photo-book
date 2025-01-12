@@ -73,7 +73,7 @@ impl<'a> Pages<'a> {
 
         let bottom_bar_height = 50.0;
 
-        let mut table_size = ui.available_size();
+        let mut table_size = ui.available_size() - Vec2::splat(10.0);
         table_size.y -= bottom_bar_height;
 
         ui.allocate_ui(table_size, |ui| {
@@ -102,9 +102,13 @@ impl<'a> Pages<'a> {
                                     ui.add_space(10.0);
 
                                     let response = ui.dnd_drag_source(item_id, index, |ui| {
-                                        ui.label(format!("Page {}", index + 1));
+                                        ui.horizontal(|ui|{
+                                            ui.add_space(10.0);
+                                            ui.label(format!("Page {}", index + 1));
+                                        });
+                                        
 
-                                        let mut page_rect = ui.max_rect();
+                                        let mut page_rect = ui.max_rect().shrink(10.0);
                                         page_rect.min.y += 30.0;
 
                                         Canvas::new(
@@ -115,7 +119,7 @@ impl<'a> Pages<'a> {
                                         .show_preview(ui, page_rect);
                                     });
 
-                                    let page_rect = ui.max_rect();
+                                    let page_rect = ui.max_rect().shrink(10.0);
 
                                     if let (Some(pointer), Some(hovered_idx)) = (
                                         ui.input(|i| i.pointer.interact_pos()),
@@ -144,9 +148,9 @@ impl<'a> Pages<'a> {
                                     }
 
                                     if self.state.selected_page == id {
-                                        ui.set_clip_rect(ui.max_rect().expand(10.0));
+                                       // ui.set_clip_rect(ui.max_rect().expand(10.0));
                                         ui.painter().rect_stroke(
-                                            page_rect,
+                                            page_rect.expand(3.0),
                                             4.0,
                                             Stroke::new(3.0, theme::color::FOCUSED),
                                         );
