@@ -63,6 +63,7 @@ impl<'a> ImageGallery<'a> {
 
                 let mut table_size = ui.available_size();
                 table_size.y -= bottom_bar_height;
+                table_size = table_size.max(Vec2::splat(0.0));
 
                 ui.allocate_ui(table_size, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(spacing);
@@ -79,7 +80,7 @@ impl<'a> ImageGallery<'a> {
                         .max(0.0);
 
                     let grouped_photos = photo_manager
-                        .with_lock_mut(|photo_manager| photo_manager.grouped_photos().clone());
+                        .with_lock(|photo_manager| photo_manager.grouped_photos().clone());
 
                     struct RowMetadata {
                         height: f32,

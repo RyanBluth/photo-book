@@ -5,7 +5,12 @@ use eframe::{
 use egui::{Spinner, Stroke};
 use log::error;
 
-use crate::{photo::Photo, theme::{self, color}, utils::Truncate, widget::placeholder::RectPlaceholder};
+use crate::{
+    photo::Photo,
+    theme::{self, color},
+    utils::Truncate,
+    widget::placeholder::RectPlaceholder,
+};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -92,12 +97,24 @@ impl Widget for GalleryImage {
                                 } else {
                                     0.75
                                 };
-                            let rotated_scaled_image_size =
-                                if self.photo.metadata.does_rotation_alter_dimensions() {
-                                    scaled_image_size.rot90().abs()
+                            let rotated_scaled_image_size = {
+                                let image_size =
+                                    if self.photo.metadata.does_rotation_alter_dimensions() {
+                                        scaled_image_size.rot90().abs()
+                                    } else {
+                                        scaled_image_size
+                                    };
+
+                                if image_size.x < 0.0
+                                    || image_size.y < 0.0
+                                    || image_size.x.is_nan()
+                                    || image_size.y.is_nan()
+                                {
+                                    available_size - Vec2::splat(20.0)
                                 } else {
-                                    scaled_image_size
-                                };
+                                    image_size
+                                }
+                            };
 
                             let verical_spacing = if matches!(self.texture, Ok(Some(_))) {
                                 (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0)
