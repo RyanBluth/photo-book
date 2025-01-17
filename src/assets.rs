@@ -17,7 +17,10 @@ impl Asset {
     image_asset!(smaller, "assets/smaller.png");
     image_asset!(add_page, "assets/add_page.png");
     image_asset!(horizontal_align_left, "assets/horizontal_align_left.png");
-    image_asset!(horizontal_align_center, "assets/horizontal_align_center.png");
+    image_asset!(
+        horizontal_align_center,
+        "assets/horizontal_align_center.png"
+    );
     image_asset!(horizontal_align_right, "assets/horizontal_align_right.png");
     image_asset!(vertical_align_top, "assets/vertical_align_top.png");
     image_asset!(vertical_align_center, "assets/vertical_align_center.png");

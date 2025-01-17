@@ -97,7 +97,7 @@ pub enum TransformableWidgetResponseAction {
 }
 
 #[derive(Debug, Clone)]
-pub struct TransformableWidgetResponse<Inner, Accessory> {
+pub struct TransformableWidgetResponse<Inner> {
     pub inner: Inner,
     pub began_moving: bool,
     pub began_resizing: bool,
@@ -107,7 +107,11 @@ pub struct TransformableWidgetResponse<Inner, Accessory> {
     pub ended_rotating: bool,
     pub mouse_down: bool,
     pub clicked: bool,
-    pub accessory_response: Accessory,
+}
+
+pub struct AccessoryBounds {
+    pub left_top: Pos2,
+    pub width: f32,
 }
 
 impl<'a> TransformableWidget<'a> {
@@ -117,15 +121,14 @@ impl<'a> TransformableWidget<'a> {
         Self { state }
     }
 
-    pub fn show<R, A>(
+    pub fn show<R>(
         &mut self,
         ui: &mut Ui,
         pre_scaled_container_rect: Rect,
         global_scale: f32,
         active: bool,
-        add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
-        add_accessory: impl FnOnce(&mut Ui, Rect) -> A,
-    ) -> TransformableWidgetResponse<R, A> {
+        add_contents: impl FnOnce(&mut Ui, Rect, AccessoryBounds, &mut TransformableState) -> R,
+    ) -> TransformableWidgetResponse<R> {
         let initial_is_moving = self.state.is_moving;
         let initial_active_handle = self.state.active_handle;
         let initial_mode = self.state.handle_mode;
@@ -480,8 +483,6 @@ impl<'a> TransformableWidget<'a> {
             self.state.change_in_rotation = None;
         }
 
-        let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
-
         let accessory_height = 60.0;
         let margin_top = 20.0;
         let accessory_rect = Rect::from_min_max(
@@ -492,7 +493,16 @@ impl<'a> TransformableWidget<'a> {
                     margin_top + accessory_height,
                 ),
         );
-        let accessory_response = add_accessory(ui, accessory_rect);
+
+        let inner_response = add_contents(
+            ui,
+            pre_rotated_inner_content_rect,
+            AccessoryBounds {
+                left_top: accessory_rect.left_top(),
+                width: accessory_rect.width(),
+            },
+            self.state,
+        );
 
         if active {
             self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
@@ -517,7 +527,6 @@ impl<'a> TransformableWidget<'a> {
                 && matches!(initial_mode, TransformHandleMode::Rotate),
             mouse_down: interact_response.is_pointer_button_down_on(),
             clicked: interact_response.clicked(),
-            accessory_response,
         }
     }
 

@@ -1,4 +1,3 @@
-
 pub trait PersistentModifiable<T> {
     type Error;
     type Modification;

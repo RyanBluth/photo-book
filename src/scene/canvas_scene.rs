@@ -77,8 +77,11 @@ impl CanvasSceneState {
             .unwrap()
     }
 
-    pub fn selected_page_and_history_mut(&mut self) -> (&mut CanvasState, &mut CanvasHistoryManager) {
-        let page = self.pages_state
+    pub fn selected_page_and_history_mut(
+        &mut self,
+    ) -> (&mut CanvasState, &mut CanvasHistoryManager) {
+        let page = self
+            .pages_state
             .pages
             .get_mut(&self.pages_state.selected_page)
             .unwrap();
@@ -86,7 +89,7 @@ impl CanvasSceneState {
     }
 
     pub fn has_pages(&self) -> bool {
-        !self.pages_state.pages.is_empty() 
+        !self.pages_state.pages.is_empty()
     }
 }
 
@@ -152,7 +155,7 @@ impl CanvasScene {
 impl Scene for CanvasScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         // Remove the sync code since we're working directly with the selected page
-        
+
         match self.state.export_task_id {
             Some(task_id) => {
                 let exporter: Singleton<Exporter> = Dependency::get();
@@ -221,7 +224,8 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state) {
+                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state)
+                {
                     match response {
                         ImageGalleryResponse::SelectPhotoSecondaryAction(photo) => {
                             self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
@@ -251,19 +255,19 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                     }
                                     // Create a snapshot of the state after modification
                                     let page_snapshot = self.scene_state.selected_page().clone();
-                                    self.scene_state.history_manager.save_history(
-                                        CanvasHistoryKind::AddPhoto,
-                                        &page_snapshot,
-                                    );
+                                    self.scene_state
+                                        .history_manager
+                                        .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
                                 }
                             } else {
-                                self.scene_state.selected_page_mut().add_photo(photo.clone());
+                                self.scene_state
+                                    .selected_page_mut()
+                                    .add_photo(photo.clone());
                                 // Create a snapshot of the state after modification
                                 let page_snapshot = self.scene_state.selected_page().clone();
-                                self.scene_state.history_manager.save_history(
-                                    CanvasHistoryKind::AddPhoto,
-                                    &page_snapshot,
-                                );
+                                self.scene_state
+                                    .history_manager
+                                    .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
                             }
                         }
                     }
@@ -276,7 +280,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     });
                     return UiResponse::None;
                 }
-                
+
                 let rect = ui.available_rect_before_wrap();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
                 Canvas::new(page, rect, history).show(ui);

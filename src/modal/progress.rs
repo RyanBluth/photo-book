@@ -37,7 +37,7 @@ impl Modal for ProgressModal {
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
     }
-    
+
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
         if ui.button(&self.dismiss_title).clicked() {
             return ModalActionResponse::Cancel;

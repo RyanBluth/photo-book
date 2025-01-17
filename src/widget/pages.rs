@@ -93,20 +93,25 @@ impl<'a> Pages<'a> {
 
                             let index: usize = offset + i;
                             let id: usize = *self.state.pages.get_index(index).unwrap().0;
-                            let page = &mut self.state.pages.get_index_mut(index).unwrap().1.clone_with_new_widget_ids();
+                            let page = &mut self
+                                .state
+                                .pages
+                                .get_index_mut(index)
+                                .unwrap()
+                                .1
+                                .clone_with_new_widget_ids();
 
                             row.col(|ui| {
                                 let item_id = egui::Id::new(("page_list", index));
-                                
+
                                 ui.vertical(|ui| {
                                     ui.add_space(10.0);
 
                                     let response = ui.dnd_drag_source(item_id, index, |ui| {
-                                        ui.horizontal(|ui|{
+                                        ui.horizontal(|ui| {
                                             ui.add_space(10.0);
                                             ui.label(format!("Page {}", index + 1));
                                         });
-                                        
 
                                         let mut page_rect = ui.max_rect().shrink(10.0);
                                         page_rect.min.y += 30.0;
@@ -128,15 +133,25 @@ impl<'a> Pages<'a> {
                                         if *hovered_idx != index {
                                             let stroke = egui::Stroke::new(2.0, Color32::WHITE);
                                             if pointer.y < page_rect.center().y {
-                                                ui.painter().hline(page_rect.x_range(), page_rect.top(), stroke);
+                                                ui.painter().hline(
+                                                    page_rect.x_range(),
+                                                    page_rect.top(),
+                                                    stroke,
+                                                );
                                                 to = Some(index);
                                             } else {
-                                                ui.painter().hline(page_rect.x_range(), page_rect.bottom(), stroke);
+                                                ui.painter().hline(
+                                                    page_rect.x_range(),
+                                                    page_rect.bottom(),
+                                                    stroke,
+                                                );
                                                 to = Some(index + 1);
                                             }
                                         }
 
-                                        if let Some(dragged_idx) = response.response.dnd_release_payload() {
+                                        if let Some(dragged_idx) =
+                                            response.response.dnd_release_payload()
+                                        {
                                             from = Some(*dragged_idx);
                                         }
                                     }
@@ -148,7 +163,7 @@ impl<'a> Pages<'a> {
                                     }
 
                                     if self.state.selected_page == id {
-                                       // ui.set_clip_rect(ui.max_rect().expand(10.0));
+                                        // ui.set_clip_rect(ui.max_rect().expand(10.0));
                                         ui.painter().rect_stroke(
                                             page_rect.expand(3.0),
                                             4.0,
@@ -171,9 +186,9 @@ impl<'a> Pages<'a> {
             if from_idx != to_idx {
                 let (from_key, from_page) = self.state.pages.get_index(from_idx).unwrap();
                 let (from_key, from_page) = (from_key.clone(), from_page.clone());
-                
+
                 self.state.pages.shift_remove(&from_key);
-                
+
                 if to_idx < self.state.pages.len() {
                     self.state.pages.shift_insert(to_idx, from_key, from_page);
                 } else {
@@ -206,7 +221,9 @@ impl<'a> Pages<'a> {
                     if let Some(index) = self.state.pages.get_index_of(&self.state.selected_page) {
                         self.state.pages.shift_remove_index(index);
                         // Select the previous page, or the first page if we deleted the first one
-                        self.state.selected_page = *self.state.pages
+                        self.state.selected_page = *self
+                            .state
+                            .pages
                             .get_index(index.saturating_sub(1))
                             .unwrap()
                             .0;

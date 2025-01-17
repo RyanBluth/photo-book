@@ -18,7 +18,6 @@ where
     Value: Clone,
     Value: HistoricallyEqual,
 {
-
     pub fn new(initial_value: Value) -> Self {
         Self {
             initial_value,

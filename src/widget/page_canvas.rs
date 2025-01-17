@@ -32,7 +32,7 @@ use super::{
         quick_layout::{self, QuickLayout},
     },
     transformable::{
-        ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
+        AccessoryBounds, ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
         TransformableWidgetResponse,
     },
 };
@@ -44,11 +44,16 @@ pub enum CanvasResponse {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
     pub photo: Photo,
+    // Normalized crop rect
+    pub crop: Rect,
 }
 
 impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
-        Self { photo }
+        Self {
+            photo,
+            crop: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+        }
     }
 }
 
@@ -118,7 +123,7 @@ impl CanvasState {
         clone
     }
 
-    pub fn with_photo(photo: Photo, next_quick_layout_layer_id: Option<usize>) -> Self {
+    pub fn with_photo(photo: Photo) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {
                 Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
@@ -128,7 +133,7 @@ impl CanvasState {
             }
         };
 
-        let canvas_photo = CanvasPhoto { photo };
+        let canvas_photo = CanvasPhoto::new(photo);
 
         let name: String = canvas_photo.photo.file_name().to_string();
         let transform_state = TransformableState {
@@ -686,7 +691,10 @@ impl<'a> Canvas<'a> {
                     rect,
                     self.state.zoom,
                     true,
-                    |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
+                    |ui: &mut Ui,
+                     _transformed_rect: Rect,
+                     accessory: AccessoryBounds,
+                     transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child_id in child_ids_content {
                             let layer: &mut Layer = self.state.layers.get_mut(&child_id).unwrap();
@@ -803,13 +811,21 @@ impl<'a> Canvas<'a> {
                                         transformable_state.rotation - last_frame_rotation;
                                 }
                             }
-                        }
-                    },
-                    |ui, rect| {
-                        ui.painter().rect_filled(rect, 2.0, Color32::from_gray(30));
-                        if child_ids_accessory.len() == 2 {
-                            return ui
-                                .allocate_new_ui(UiBuilder::new().max_rect(rect), |ui| {
+                            // Accessories
+                            {
+                                let accessory_rect = Rect::from_min_size(
+                                    accessory.left_top,
+                                    Vec2::new(accessory.width, 30.0),
+                                );
+
+                                ui.painter().rect_filled(
+                                    accessory_rect,
+                                    2.0,
+                                    Color32::from_gray(30),
+                                );
+                                if child_ids_accessory.len() == 2 {
+                                    return ui
+                                .allocate_new_ui(UiBuilder::new().max_rect(accessory_rect), |ui| {
                                     if ui.button("Swap Centers").clicked() {
                                         return AccessoryResponse::SwapCenters(
                                             child_ids_accessory[0],
@@ -832,6 +848,8 @@ impl<'a> Canvas<'a> {
                                     AccessoryResponse::None
                                 })
                                 .inner;
+                                }
+                            }
                         }
                         AccessoryResponse::None
                     },
@@ -846,7 +864,7 @@ impl<'a> Canvas<'a> {
         };
 
         if let Some(transform_response) = transform_response {
-            match transform_response.accessory_response {
+            match transform_response.inner {
                 AccessoryResponse::SwapCenters(id1, id2) => {
                     let original_child_a_rect = self
                         .state
@@ -920,7 +938,7 @@ impl<'a> Canvas<'a> {
                     .save_history(CanvasHistoryKind::Transform, self.state);
             }
 
-            match transform_response.accessory_response {
+            match transform_response.inner {
                 AccessoryResponse::SwapCenters(_, _)
                 | AccessoryResponse::SwapCentersAndBounds(_, _)
                 | AccessoryResponse::SwapQuickLayoutPosition(_, _) => {
@@ -939,7 +957,7 @@ impl<'a> Canvas<'a> {
         is_preview: bool,
         available_rect: Rect,
         ui: &mut Ui,
-    ) -> Option<TransformableWidgetResponse<(), ()>> {
+    ) -> Option<TransformableWidgetResponse<()>> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap().clone();
         let active = layer.selected && self.state.multi_select.is_none();
 
@@ -968,14 +986,11 @@ impl<'a> Canvas<'a> {
                                     available_rect,
                                     self.state.zoom,
                                     active && !is_preview,
-                                    |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
+                                    |ui: &mut Ui, transformed_rect: Rect, accessory, _transformable_state| {
                                         let uv = Rect::from_min_max(
                                             Pos2::new(0.0, 0.0),
                                             Pos2 { x: 1.0, y: 1.0 },
                                         );
-
-                                        let painter = ui.painter();
-                                        let mut mesh = Mesh::with_texture(texture.id);
 
                                         // If the photo is rotated swap the width and height
                                         let mesh_rect =
@@ -990,6 +1005,16 @@ impl<'a> Canvas<'a> {
                                                     ),
                                                 )
                                             };
+
+
+                                        let crop_rect = photo.crop;
+                                        let clip_rect: Rect = Rect::from_min_max(
+                                            mesh_rect.min + crop_rect.min.to_vec2() * mesh_rect.size(),
+                                            mesh_rect.min + crop_rect.max.to_vec2() * mesh_rect.size(),
+                                        );
+
+                                        let painter = ui.painter().with_clip_rect(clip_rect);
+                                        let mut mesh = Mesh::with_texture(texture.id);
 
                                         mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
 
@@ -1008,8 +1033,26 @@ impl<'a> Canvas<'a> {
                                         );
 
                                         painter.add(Shape::mesh(mesh));
+
+                                        {
+                                            if active {
+
+                                                let accessory_rect = Rect::from_min_size(
+                                                    accessory.left_top,
+                                                    Vec2::new(accessory.width, 30.0),
+                                                );
+
+                                                ui.painter().rect_filled(accessory_rect, 2.0, Color32::from_gray(30));
+
+                                                    ui
+                                                        .allocate_new_ui(UiBuilder::new().max_rect(accessory_rect), |ui| {
+                                                            if ui.button("Crop").clicked() {
+                                                            }
+                                                        })
+                                                        .inner;
+                                            }
+                                        }
                                     },
-                                    |_ui, _rect| {},
                                 );
 
                                     layer.transform_state = transform_state;
@@ -1040,13 +1083,16 @@ impl<'a> Canvas<'a> {
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
 
-                let transform_response: TransformableWidgetResponse<(), _> =
+                let transform_response: TransformableWidgetResponse<()> =
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
                         available_rect,
                         self.state.zoom,
                         active && !is_preview,
-                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
+                        |ui: &mut Ui,
+                         transformed_rect: Rect,
+                         _accessory: AccessoryBounds,
+                         _transformable_state| {
                             Self::draw_text(
                                 ui,
                                 &text.text,
@@ -1058,7 +1104,6 @@ impl<'a> Canvas<'a> {
                                 text.vertical_alignment,
                             );
                         },
-                        |_ui, _rect| {},
                     );
 
                 layer.transform_state = transform_state;
@@ -1197,7 +1242,6 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
-                    accessory_response: (),
                 })
             }
             LayerContent::TemplateText { region, text } => {
@@ -1244,7 +1288,6 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
-                    accessory_response: (),
                 })
             }
         };

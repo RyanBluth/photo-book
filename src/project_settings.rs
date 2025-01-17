@@ -1,4 +1,3 @@
-
 use crate::model::page::Page;
 
 #[derive(Debug, Clone, PartialEq)]

@@ -15,8 +15,7 @@ use crate::{
 };
 
 use super::{
-    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
-    SceneResponse, SceneTransition,
+    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition,
 };
 
 #[derive(Debug, Clone)]

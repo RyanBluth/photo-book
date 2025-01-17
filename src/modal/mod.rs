@@ -1,9 +1,7 @@
 use std::any::Any;
 
-
-
-pub mod manager;
 pub mod basic;
+pub mod manager;
 pub mod page_settings;
 pub mod progress;
 
@@ -15,7 +13,6 @@ pub enum ModalActionResponse {
 }
 
 pub trait Modal: Send + Any {
-    
     fn title(&self) -> String;
 
     fn body_ui(&mut self, ui: &mut egui::Ui);

@@ -1,7 +1,4 @@
-use egui::{
-    Rect, Response, Sense, Ui, Vec2, Widget
-};
-
+use egui::{Rect, Response, Sense, Ui, Vec2, Widget};
 
 pub struct SegmentControl<'a, T: PartialEq + Clone> {
     segments: &'a [(T, String)],
@@ -59,7 +56,9 @@ impl<'a, T: PartialEq + Clone> Widget for SegmentControl<'a, T> {
                     text_color,
                 );
 
-                if response.clicked_by(egui::PointerButton::Primary) && segment_rect.contains(response.interact_pointer_pos().unwrap()) {
+                if response.clicked_by(egui::PointerButton::Primary)
+                    && segment_rect.contains(response.interact_pointer_pos().unwrap())
+                {
                     *self.selected = value.clone();
                     response.mark_changed();
                 }

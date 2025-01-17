@@ -2,7 +2,10 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config, cursor_manager::CursorManager, debug::DebugSettings, export::Exporter, font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager, project_settings::ProjectSettingsManager, session::Session
+    auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config,
+    cursor_manager::CursorManager, debug::DebugSettings, export::Exporter,
+    font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager, session::Session,
 };
 
 macro_rules! singleton {

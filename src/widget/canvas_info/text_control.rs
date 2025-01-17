@@ -8,8 +8,9 @@ use strum::IntoEnumIterator;
 use crate::utils::EditableValueTextEdit;
 
 use super::layers::{
-    TextHorizontalAlignment, TextVerticalAlignment, Layer,
+    Layer,
     LayerContent::{Photo, TemplatePhoto, TemplateText, Text},
+    TextHorizontalAlignment, TextVerticalAlignment,
 };
 
 pub struct TextControlState<'a> {

@@ -87,6 +87,7 @@ impl Project {
                                             path: canvas_photo.photo.path,
                                             rating: canvas_photo.photo.rating.into(),
                                         },
+                                        crop: canvas_photo.crop,
                                     })
                                 }
                                 AppLayerContent::Text(canvas_text) => {
@@ -146,6 +147,7 @@ impl Project {
                                             path: canvas_photo.photo.path,
                                             rating: canvas_photo.photo.rating.into(),
                                         },
+                                        crop: canvas_photo.crop,
                                     }),
                                     scale_mode: match scale_mode {
                                         AppScaleMode::Fit => ScaleMode::Fit,
@@ -343,6 +345,7 @@ impl Into<OrganizeEditScene> for Project {
                                             photo.photo.rating.into(),
                                         )
                                         .unwrap(),
+                                        crop: photo.crop,
                                     })
                                 }
                                 LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
@@ -399,6 +402,7 @@ impl Into<OrganizeEditScene> for Project {
                                             photo.photo.rating.into(),
                                         )
                                         .unwrap(), // TODO: Don't unwrap
+                                        crop: photo.crop,
                                     }),
                                     scale_mode: match scale_mode {
                                         ScaleMode::Fit => AppScaleMode::Fit,
@@ -610,6 +614,7 @@ enum TemplateRegionKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CanvasPhoto {
     pub photo: Photo,
+    pub crop: Rect,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -307,7 +307,6 @@ pub enum Either<Left, Right> {
 }
 
 impl<Left, Right> Either<Left, Right> {
-
     pub fn is_left(&self) -> bool {
         match self {
             Either::Left(_) => true,

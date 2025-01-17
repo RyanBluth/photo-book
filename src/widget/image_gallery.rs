@@ -50,7 +50,7 @@ impl<'a> ImageGallery<'a> {
         let selected_images = &mut state.selected_images;
 
         let has_photos = photo_manager.with_lock(|photo_manager| !photo_manager.photos.is_empty());
-        
+
         if has_photos {
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
@@ -195,7 +195,6 @@ impl<'a> ImageGallery<'a> {
                             });
                         })
                 });
-                
                 ui.painter().rect_filled(
                     ui.available_rect_before_wrap(),
                     0.0,

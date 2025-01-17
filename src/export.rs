@@ -119,7 +119,8 @@ impl Exporter {
                 modal_manager.with_lock_mut(|modal_manager| {
                     modal_manager.modify(&modal_id, |progress_modal| {
                         progress_modal.progress = progress;
-                        progress_modal.message = format!("Exporting page {}/{}", page_number, num_pages);
+                        progress_modal.message =
+                            format!("Exporting page {}/{}", page_number, num_pages);
                     })
                 });
 
@@ -152,7 +153,8 @@ impl Exporter {
         directory: &PathBuf,
         page_number: u32,
     ) -> Result<(), ExportError> {
-       /* */ let directory = PathBuf::from(directory);
+        /* */
+        let directory = PathBuf::from(directory);
 
         let size = canvas_state.page.size_pixels();
         canvas_state.zoom = 1.0;

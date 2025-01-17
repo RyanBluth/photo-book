@@ -114,8 +114,9 @@ impl PhotoManager {
                 .filter_map(|entry| {
                     let path = entry.as_ref().ok()?;
                     let lowercase_extension = path.extension()?.to_ascii_lowercase();
-                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg") 
-                        && !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path)) {
+                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg")
+                        && !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path))
+                    {
                         Some(path.clone())
                     } else {
                         None
@@ -175,7 +176,9 @@ impl PhotoManager {
             let mut photos_since_regroup: usize = 0;
             let filtered_photos: Vec<(PathBuf, Option<PhotoRating>)> = photos
                 .into_iter()
-                .filter(|(path, _)| !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path)))
+                .filter(|(path, _)| {
+                    !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path))
+                })
                 .collect();
 
             let num_photos = filtered_photos.len();
@@ -524,11 +527,12 @@ impl PhotoManager {
                 let uri = uri.to_string();
                 let ctx = ctx.clone();
                 spawn_blocking(move || {
-                    let texture: Result<egui::load::TexturePoll, egui::load::LoadError> = ctx.try_load_texture(
-                        &uri,
-                        eframe::egui::TextureOptions::default(),
-                        eframe::egui::SizeHint::Scale(OrderedFloat(1.0)),
-                    );
+                    let texture: Result<egui::load::TexturePoll, egui::load::LoadError> = ctx
+                        .try_load_texture(
+                            &uri,
+                            eframe::egui::TextureOptions::default(),
+                            eframe::egui::SizeHint::Scale(OrderedFloat(1.0)),
+                        );
 
                     let photo_manager = Dependency::<PhotoManager>::get();
                     match texture {

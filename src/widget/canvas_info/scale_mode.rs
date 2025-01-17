@@ -1,14 +1,9 @@
-
-
 use eframe::egui::{self};
-use egui::{Vec2};
+use egui::Vec2;
 
 use strum::IntoEnumIterator;
 
-
-use crate::{model};
-
-
+use crate::model;
 
 #[derive(Debug, PartialEq)]
 pub struct ScaleModeState<'a> {

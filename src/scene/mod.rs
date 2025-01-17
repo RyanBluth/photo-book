@@ -1,5 +1,3 @@
-
-
 use crate::{
     photo::Photo,
     widget::{
@@ -63,7 +61,6 @@ pub struct SceneManager {
 }
 
 impl SceneManager {
-
     pub fn new(root_scene: OrganizeEditScene) -> Self {
         Self {
             root_scene,

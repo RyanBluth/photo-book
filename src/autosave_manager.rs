@@ -110,14 +110,11 @@ impl AutoSaveManager {
     }
 }
 
-fn create_save_task(
-    root_scene: OrganizeEditScene,
-    path: PathBuf,
-) -> tokio::task::JoinHandle<()> {
+fn create_save_task(root_scene: OrganizeEditScene, path: PathBuf) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         info!("Auto saving project to {}", path.display());
 
-        let auto_save: AutoSave = 
+        let auto_save: AutoSave =
             Dependency::<PhotoManager>::get().with_lock(|photo_manager| AutoSave {
                 active_project: Dependency::<Session>::get()
                     .with_lock(|session| session.active_project.clone()),

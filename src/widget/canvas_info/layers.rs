@@ -409,10 +409,15 @@ impl<'a> Layers<'a> {
         });
 
         if let (Some(from_idx), Some(to_idx)) = (from, to) {
-            // We draw the layers in reverse, but the from and to indices are not reversed, so we reverse to do the 
+            // We draw the layers in reverse, but the from and to indices are not reversed, so we reverse to do the
             // the swap and then reverse again before assigning back to self.layers.
 
-            let mut layers = self.layers.clone().into_iter().rev().collect::<IndexMap<_, _>>();
+            let mut layers = self
+                .layers
+                .clone()
+                .into_iter()
+                .rev()
+                .collect::<IndexMap<_, _>>();
 
             let (from_key, from_layer) = layers.get_index(from_idx).unwrap();
             let (from_key, from_layer) = (from_key.clone(), from_layer.clone());

@@ -28,7 +28,6 @@ impl<'a> TransformControl<'a> {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let _response = ui.allocate_ui(ui.available_size(), |ui| {
-
             if self.state.layer.content.is_template() {
                 ui.set_enabled(false);
             }
