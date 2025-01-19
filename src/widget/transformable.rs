@@ -109,11 +109,6 @@ pub struct TransformableWidgetResponse<Inner> {
     pub clicked: bool,
 }
 
-pub struct AccessoryBounds {
-    pub left_top: Pos2,
-    pub width: f32,
-}
-
 impl<'a> TransformableWidget<'a> {
     const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
 
@@ -127,7 +122,7 @@ impl<'a> TransformableWidget<'a> {
         pre_scaled_container_rect: Rect,
         global_scale: f32,
         active: bool,
-        add_contents: impl FnOnce(&mut Ui, Rect, AccessoryBounds, &mut TransformableState) -> R,
+        add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
     ) -> TransformableWidgetResponse<R> {
         let initial_is_moving = self.state.is_moving;
         let initial_active_handle = self.state.active_handle;
@@ -483,24 +478,9 @@ impl<'a> TransformableWidget<'a> {
             self.state.change_in_rotation = None;
         }
 
-        let accessory_height = 60.0;
-        let margin_top = 20.0;
-        let accessory_rect = Rect::from_min_max(
-            rotated_inner_content_rect.left_bottom() + Vec2::new(0.0, margin_top),
-            rotated_inner_content_rect.left_bottom()
-                + Vec2::new(
-                    rotated_inner_content_rect.width(),
-                    margin_top + accessory_height,
-                ),
-        );
-
         let inner_response = add_contents(
             ui,
             pre_rotated_inner_content_rect,
-            AccessoryBounds {
-                left_top: accessory_rect.left_top(),
-                width: accessory_rect.width(),
-            },
             self.state,
         );
 

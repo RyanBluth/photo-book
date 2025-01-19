@@ -32,7 +32,7 @@ use super::{
         quick_layout::{self, QuickLayout},
     },
     transformable::{
-        AccessoryBounds, ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
+        ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
         TransformableWidgetResponse,
     },
 };
@@ -52,7 +52,7 @@ impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
         Self {
             photo,
-            crop: Rect::from_min_size(Pos2::new(0.2, 0.2), Vec2::splat(0.8)),
+            crop: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
         }
     }
 }
@@ -443,6 +443,25 @@ impl MultiSelect {
     }
 }
 
+#[derive(Debug)]
+struct ActionBarState {
+    actions: Vec<ActionBarItem>,
+}
+
+#[derive(Debug, Clone)]
+struct ActionBarItem {
+    label: String,
+    action: ActionBarAction,
+}
+
+#[derive(Debug, Clone)]
+enum ActionBarAction {
+    SwapCenters(LayerId, LayerId),
+    SwapCentersAndBounds(LayerId, LayerId),
+    SwapQuickLayoutPosition(LayerId, LayerId),
+    Crop(LayerId),
+}
+
 pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     photo_manager: Singleton<PhotoManager>,
@@ -591,7 +610,186 @@ impl<'a> Canvas<'a> {
 
         self.draw_multi_select(ui, page_rect);
 
+        // Add action bar at the bottom
+        if self.state.layers.values().any(|layer| layer.selected) {
+            self.show_action_bar(ui);
+        }
+
         None
+    }
+
+    fn show_action_bar(&mut self, ui: &mut Ui) {
+        let selected_layers: Vec<LayerId> = self
+            .state
+            .layers
+            .iter()
+            .filter(|(_, layer)| layer.selected)
+            .map(|(id, _)| *id)
+            .collect();
+
+        let mut actions = vec![];
+
+        // Add actions based on selection
+        match selected_layers.len() {
+            1 => {
+                let layer_id = selected_layers[0];
+                if let Some(layer) = self.state.layers.get(&layer_id) {
+                    if matches!(layer.content, LayerContent::Photo(_)) {
+                        actions.push(ActionBarItem {
+                            label: "Crop".to_string(),
+                            action: ActionBarAction::Crop(layer_id),
+                        });
+                    }
+                }
+            }
+            2 => {
+                actions.extend_from_slice(&[
+                    ActionBarItem {
+                        label: "Swap Centers".to_string(),
+                        action: ActionBarAction::SwapCenters(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                    ActionBarItem {
+                        label: "Swap Centers and Bounds".to_string(),
+                        action: ActionBarAction::SwapCentersAndBounds(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                    ActionBarItem {
+                        label: "Swap Quick Layout Position".to_string(),
+                        action: ActionBarAction::SwapQuickLayoutPosition(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                ]);
+            }
+            _ => {}
+        }
+
+        // Draw action bar
+        if !actions.is_empty() {
+            let screen_rect = ui.ctx().screen_rect();
+            let bar_height = 40.0;
+            let bar_width = 400.0; // Fixed width for the action bar
+            let bar_margin_bottom = 20.0;
+
+            // Center the bar horizontally and place at bottom with margin
+            let bar_rect = Rect::from_center_size(
+                Pos2::new(
+                    screen_rect.center().x,
+                    screen_rect.max.y - bar_margin_bottom - bar_height / 2.0,
+                ),
+                Vec2::new(bar_width, bar_height),
+            );
+
+            // Draw multi-layer shadow
+            for (offset, alpha) in &[(4.0, 10), (3.0, 20), (2.0, 30), (1.0, 40)] {
+                ui.painter().rect_filled(
+                    bar_rect.translate(Vec2::new(0.0, *offset)),
+                    8.0,
+                    Color32::from_black_alpha(*alpha),
+                );
+            }
+
+            let action_response = ui.allocate_ui_at_rect(bar_rect, |ui| {
+                // Set the background style
+                ui.style_mut().visuals.window_fill = Color32::from_gray(40);
+                ui.style_mut().visuals.window_stroke = Stroke::new(1.0, Color32::from_gray(60));
+
+                // Add background
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 8.0, ui.style().visuals.window_fill);
+
+                // Add border
+                ui.painter()
+                    .rect_stroke(ui.max_rect(), 8.0, ui.style().visuals.window_stroke);
+
+                ui.horizontal_centered(|ui| {
+                    for action in &actions {
+                        if ui.button(&action.label).clicked() {
+                            return Some(action.action.clone());
+                        }
+                    }
+                    None
+                })
+                .inner
+            });
+
+            if let Some(action) = action_response.inner {
+                match action {
+                    ActionBarAction::SwapCenters(id1, id2) => {
+                        let original_child_a_rect = self
+                            .state
+                            .layers
+                            .get(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        let original_child_b_rect = self
+                            .state
+                            .layers
+                            .get(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        self.state
+                            .layers
+                            .get_mut(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_b_rect.center());
+
+                        self.state
+                            .layers
+                            .get_mut(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_a_rect.center());
+                    }
+                    ActionBarAction::SwapCentersAndBounds(id1, id2) => {
+                        self.state.swap_layer_centers_and_bounds(id1, id2);
+                    }
+                    ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
+                        if let Some(layout) = self.state.last_quick_layout {
+                            let first_id_index = self
+                                .state
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id1)
+                                .unwrap();
+
+                            let second_id_index = self
+                                .state
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id2)
+                                .unwrap();
+
+                            self.state
+                                .quick_layout_order
+                                .swap(first_id_index, second_id_index);
+
+                            layout.apply(&mut self.state);
+                        }
+                    }
+                    ActionBarAction::Crop(_) => {
+                        // TODO: Implement crop action
+                    }
+                }
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, self.state);
+            }
+        }
     }
 
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
@@ -644,13 +842,6 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
-        enum AccessoryResponse {
-            None,
-            SwapCenters(LayerId, LayerId),
-            SwapCentersAndBounds(LayerId, LayerId),
-            SwapQuickLayoutPosition(LayerId, LayerId),
-        }
-
         let selected_layer_ids = self
             .state
             .layers
@@ -684,17 +875,12 @@ impl<'a> Canvas<'a> {
                     .map(|child| child.id)
                     .collect::<Vec<_>>();
 
-                let child_ids_accessory = child_ids_content.clone();
-
                 let transform_response = TransformableWidget::new(&mut transform_state).show(
                     ui,
                     rect,
                     self.state.zoom,
                     true,
-                    |ui: &mut Ui,
-                     _transformed_rect: Rect,
-                     accessory: AccessoryBounds,
-                     transformable_state| {
+                    |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child_id in child_ids_content {
                             let layer: &mut Layer = self.state.layers.get_mut(&child_id).unwrap();
@@ -811,47 +997,7 @@ impl<'a> Canvas<'a> {
                                         transformable_state.rotation - last_frame_rotation;
                                 }
                             }
-                            // Accessories
-                            {
-                                let accessory_rect = Rect::from_min_size(
-                                    accessory.left_top,
-                                    Vec2::new(accessory.width, 30.0),
-                                );
-
-                                ui.painter().rect_filled(
-                                    accessory_rect,
-                                    2.0,
-                                    Color32::from_gray(30),
-                                );
-                                if child_ids_accessory.len() == 2 {
-                                    return ui
-                                .allocate_new_ui(UiBuilder::new().max_rect(accessory_rect), |ui| {
-                                    if ui.button("Swap Centers").clicked() {
-                                        return AccessoryResponse::SwapCenters(
-                                            child_ids_accessory[0],
-                                            child_ids_accessory[1],
-                                        );
-                                    }
-                                    if ui.button("Swap Centers and Bounds").clicked() {
-                                        return AccessoryResponse::SwapCentersAndBounds(
-                                            child_ids_accessory[0],
-                                            child_ids_accessory[1],
-                                        );
-                                    }
-
-                                    if ui.button("Swap Quick Layout Position").clicked() {
-                                        return AccessoryResponse::SwapQuickLayoutPosition(
-                                            child_ids_accessory[0],
-                                            child_ids_accessory[1],
-                                        );
-                                    }
-                                    AccessoryResponse::None
-                                })
-                                .inner;
-                                }
-                            }
                         }
-                        AccessoryResponse::None
                     },
                 );
 
@@ -864,89 +1010,12 @@ impl<'a> Canvas<'a> {
         };
 
         if let Some(transform_response) = transform_response {
-            match transform_response.inner {
-                AccessoryResponse::SwapCenters(id1, id2) => {
-                    let original_child_a_rect = self
-                        .state
-                        .layers
-                        .get(&id1)
-                        .unwrap()
-                        .transform_state
-                        .rect
-                        .clone();
-
-                    let original_child_b_rect = self
-                        .state
-                        .layers
-                        .get(&id2)
-                        .unwrap()
-                        .transform_state
-                        .rect
-                        .clone();
-
-                    self.state
-                        .layers
-                        .get_mut(&id1)
-                        .unwrap()
-                        .transform_state
-                        .rect
-                        .set_center(original_child_b_rect.center());
-
-                    self.state
-                        .layers
-                        .get_mut(&id2)
-                        .unwrap()
-                        .transform_state
-                        .rect
-                        .set_center(original_child_a_rect.center());
-                }
-                AccessoryResponse::SwapCentersAndBounds(id1, id2) => {
-                    self.state.swap_layer_centers_and_bounds(id1, id2);
-                }
-                AccessoryResponse::SwapQuickLayoutPosition(id1, id2) => {
-                    if let Some(layout) = self.state.last_quick_layout {
-                        let first_id_index = self
-                            .state
-                            .quick_layout_order
-                            .iter()
-                            .position(|id| *id == id1)
-                            .unwrap();
-
-                        let second_id_index = self
-                            .state
-                            .quick_layout_order
-                            .iter()
-                            .position(|id| *id == id2)
-                            .unwrap();
-
-                        self.state
-                            .quick_layout_order
-                            .swap(first_id_index, second_id_index);
-
-                        layout.apply(&mut self.state);
-                    }
-                }
-
-                AccessoryResponse::None => {}
-            }
-
             if transform_response.ended_moving
                 || transform_response.ended_resizing
                 || transform_response.ended_rotating
             {
                 self.history_manager
                     .save_history(CanvasHistoryKind::Transform, self.state);
-            }
-
-            match transform_response.inner {
-                AccessoryResponse::SwapCenters(_, _)
-                | AccessoryResponse::SwapCentersAndBounds(_, _)
-                | AccessoryResponse::SwapQuickLayoutPosition(_, _) => {
-                    // TODO: Maybe use a different history kind for these operationsap
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, self.state);
-                }
-                AccessoryResponse::None => {}
             }
         }
     }
@@ -986,7 +1055,7 @@ impl<'a> Canvas<'a> {
                                     available_rect,
                                     self.state.zoom,
                                     active && !is_preview,
-                                    |ui: &mut Ui, transformed_rect: Rect, accessory, _transformable_state| {
+                                    |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                                         // If the photo is rotated swap the width and height
                                         let mesh_rect =
                                             if photo.photo.metadata.rotation().is_horizontal() {
@@ -1021,25 +1090,6 @@ impl<'a> Canvas<'a> {
                                         );
 
                                         painter.add(Shape::mesh(mesh));
-
-                                        {
-                                            if active {
-
-                                                let accessory_rect = Rect::from_min_size(
-                                                    accessory.left_top,
-                                                    Vec2::new(accessory.width, 30.0),
-                                                );
-
-                                                ui.painter().rect_filled(accessory_rect, 2.0, Color32::from_gray(30));
-
-                                                    ui
-                                                        .allocate_new_ui(UiBuilder::new().max_rect(accessory_rect), |ui| {
-                                                            if ui.button("Crop").clicked() {
-                                                            }
-                                                        })
-                                                        .inner;
-                                            }
-                                        }
                                     },
                                 );
 
@@ -1077,10 +1127,7 @@ impl<'a> Canvas<'a> {
                         available_rect,
                         self.state.zoom,
                         active && !is_preview,
-                        |ui: &mut Ui,
-                         transformed_rect: Rect,
-                         _accessory: AccessoryBounds,
-                         _transformable_state| {
+                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                             Self::draw_text(
                                 ui,
                                 &text.text,
