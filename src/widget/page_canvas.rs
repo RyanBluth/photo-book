@@ -52,7 +52,7 @@ impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
         Self {
             photo,
-            crop: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+            crop: Rect::from_min_size(Pos2::new(0.2, 0.2), Vec2::splat(0.8)),
         }
     }
 }
@@ -987,11 +987,6 @@ impl<'a> Canvas<'a> {
                                     self.state.zoom,
                                     active && !is_preview,
                                     |ui: &mut Ui, transformed_rect: Rect, accessory, _transformable_state| {
-                                        let uv = Rect::from_min_max(
-                                            Pos2::new(0.0, 0.0),
-                                            Pos2 { x: 1.0, y: 1.0 },
-                                        );
-
                                         // If the photo is rotated swap the width and height
                                         let mesh_rect =
                                             if photo.photo.metadata.rotation().is_horizontal() {
@@ -1006,17 +1001,10 @@ impl<'a> Canvas<'a> {
                                                 )
                                             };
 
-
-                                        let crop_rect = photo.crop;
-                                        let clip_rect: Rect = Rect::from_min_max(
-                                            mesh_rect.min + crop_rect.min.to_vec2() * mesh_rect.size(),
-                                            mesh_rect.min + crop_rect.max.to_vec2() * mesh_rect.size(),
-                                        );
-
-                                        let painter = ui.painter().with_clip_rect(clip_rect);
+                                        let painter = ui.painter();
                                         let mut mesh = Mesh::with_texture(texture.id);
 
-                                        mesh.add_rect_with_uv(mesh_rect, uv, Color32::WHITE);
+                                        mesh.add_rect_with_uv(mesh_rect, photo.crop, Color32::WHITE);
 
                                         let mesh_center: Pos2 =
                                             mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
@@ -1201,7 +1189,8 @@ impl<'a> Canvas<'a> {
 
                             let current_clip = ui.clip_rect();
 
-                            ui.set_clip_rect(rect.intersect(current_clip));
+                            let clipped_rect = scaled_rect.intersect(current_clip);
+                            ui.set_clip_rect(clipped_rect);
 
                             let painter = ui.painter();
                             let mut mesh = Mesh::with_texture(texture.id);
