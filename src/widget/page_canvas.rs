@@ -15,7 +15,7 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     id::{next_layer_id, next_quick_layout_index, LayerId},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
-    photo::Photo,
+    photo::{self, Photo},
     photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
@@ -39,6 +39,18 @@ use super::{
 
 pub enum CanvasResponse {
     Exit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CanvasInteractionMode {
+    Normal,
+    Crop(CropState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CropState {
+    pub target_layer: LayerId,
+    pub transform_state: TransformableState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +80,7 @@ pub struct CanvasState {
     pub quick_layout_order: Vec<LayerId>,
     pub last_quick_layout: Option<quick_layout::Layout>,
     pub canvas_id: egui::Id,
+    pub interaction_mode: CanvasInteractionMode,
     computed_initial_zoom: bool,
 }
 
@@ -91,6 +104,7 @@ impl CanvasState {
             quick_layout_order: Vec::new(),
             last_quick_layout: None,
             canvas_id: Id::random(),
+            interaction_mode: CanvasInteractionMode::Normal,
             computed_initial_zoom: false,
         }
     }
@@ -111,6 +125,7 @@ impl CanvasState {
             quick_layout_order: quick_layout_order,
             last_quick_layout: None,
             canvas_id: Id::random(),
+            interaction_mode: CanvasInteractionMode::Normal,
             computed_initial_zoom: false,
         }
     }
@@ -168,6 +183,7 @@ impl CanvasState {
             quick_layout_order: vec![layer.id],
             last_quick_layout: None,
             canvas_id: Id::random(),
+            interaction_mode: CanvasInteractionMode::Normal,
             computed_initial_zoom: false,
         }
     }
@@ -260,6 +276,7 @@ impl CanvasState {
             quick_layout_order: ids,
             last_quick_layout: None,
             canvas_id: Id::random(),
+            interaction_mode: CanvasInteractionMode::Normal,
             computed_initial_zoom: false,
         }
     }
@@ -498,298 +515,232 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
-        if let Some(response) = self.handle_keys(ui.ctx()) {
-            return Some(response);
-        }
+        let mut interaction_mode = self.state.interaction_mode.clone();
 
-        // Adjust the zoom so that the page fits in the available rect
-        if !self.state.computed_initial_zoom {
-            let page_size = self.state.page.size_pixels() * 1.1;
-            self.state.zoom = (self.available_rect.width() / page_size.x)
-                .min(self.available_rect.height() / page_size.y);
-            self.state.computed_initial_zoom = true;
-        }
-
-        let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
-        let canvas_rect = canvas_response.rect;
-
-        let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
-
-        ui.set_clip_rect(canvas_rect);
-
-        if ui.ctx().pointer_hover_pos().is_some() {
-            if is_pointer_on_canvas {
-                ui.input(|input| {
-                    // if input.raw_scroll_delta.y != 0.0 {
-                    let zoom_factor = if input.raw_scroll_delta.y > 0.0 {
-                        1.1
-                    } else if input.raw_scroll_delta.y < 0.0 {
-                        1.0 / 1.1
-                    } else {
-                        1.0
-                    };
-                    let new_zoom = self.state.zoom * zoom_factor;
-
-                    if let Some(pointer_pos) = input.pointer.hover_pos() {
-                        let current_page_rect: Rect = Rect::from_center_size(
-                            canvas_rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * self.state.zoom,
-                        );
-                        let old_pointer_to_page = pointer_pos - current_page_rect.center();
-                        let new_page_rect: Rect = Rect::from_center_size(
-                            canvas_rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * new_zoom,
-                        );
-                        let new_pointer_to_page = pointer_pos - new_page_rect.center();
-
-                        // Corrected offset calculation
-                        self.state.offset += old_pointer_to_page
-                            - new_pointer_to_page * (new_zoom / self.state.zoom);
-
-                        self.state.zoom = new_zoom;
-                    }
-                });
-            }
-        }
-
-        let page_rect: Rect = Rect::from_center_size(
-            canvas_rect.center() + self.state.offset,
-            self.state.page.size_pixels() * self.state.zoom,
-        );
-
-        ui.input(|input| {
-            if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
-                self.state.offset += input.pointer.delta();
-                Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
-                    cursor_manager.set_cursor(CursorIcon::Grabbing);
-                });
-                true
-            } else {
-                false
-            }
-        });
-
-        ui.painter().rect_filled(canvas_rect, 0.0, Color32::BLACK);
-        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
-
-        self.draw_template(ui, page_rect);
-
-        // Draw the layers by iterating over the layers and drawing them
-        // We collect the ids into a map to avoid borrowing issues
-        // TODO: Is there a better way?
-        for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
-            if let Some(transform_response) = self.draw_layer(&layer_id, false, page_rect, ui) {
-                let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
-
-                let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
-                let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
-
-                // If the canvas was clicked but not on the photo then deselect the photo
-                if canvas_response.clicked()
-                    && !transform_state
-                        .rect
-                        .contains(canvas_response.interact_pointer_pos().unwrap_or(Pos2::ZERO))
-                    && self.is_pointer_on_canvas(ui)
-                    && self.state.is_layer_selected(&layer_id)
-                {
-                    self.deselect_all_photos();
-                } else if transform_response.mouse_down && primary_pointer_pressed {
-                    self.select_photo(&layer_id, ui.ctx());
+        match &mut interaction_mode {
+            CanvasInteractionMode::Normal => {
+                if let Some(response) = self.handle_keys(ui.ctx()) {
+                    return Some(response);
                 }
 
-                if primary_pointer_released
-                    && (transform_response.ended_moving
-                        || transform_response.ended_resizing
-                        || transform_response.ended_rotating)
-                {
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, self.state);
+                // Adjust the zoom so that the page fits in the available rect
+                if !self.state.computed_initial_zoom {
+                    let page_size = self.state.page.size_pixels() * 1.1;
+                    self.state.zoom = (self.available_rect.width() / page_size.x)
+                        .min(self.available_rect.height() / page_size.y);
+                    self.state.computed_initial_zoom = true;
                 }
-            }
-        }
 
-        self.draw_multi_select(ui, page_rect);
+                let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
+                let canvas_rect = canvas_response.rect;
 
-        // Add action bar at the bottom
-        if self.state.layers.values().any(|layer| layer.selected) {
-            self.show_action_bar(ui);
-        }
+                let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
 
-        None
-    }
+                ui.set_clip_rect(canvas_rect);
 
-    fn show_action_bar(&mut self, ui: &mut Ui) {
-        let selected_layers: Vec<LayerId> = self
-            .state
-            .layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .map(|(id, _)| *id)
-            .collect();
+                if ui.ctx().pointer_hover_pos().is_some() {
+                    if is_pointer_on_canvas {
+                        ui.input(|input| {
+                            // if input.raw_scroll_delta.y != 0.0 {
+                            let zoom_factor = if input.raw_scroll_delta.y > 0.0 {
+                                1.1
+                            } else if input.raw_scroll_delta.y < 0.0 {
+                                1.0 / 1.1
+                            } else {
+                                1.0
+                            };
+                            let new_zoom = self.state.zoom * zoom_factor;
 
-        let mut actions = vec![];
+                            if let Some(pointer_pos) = input.pointer.hover_pos() {
+                                let current_page_rect: Rect = Rect::from_center_size(
+                                    canvas_rect.center() + self.state.offset,
+                                    self.state.page.size_pixels() * self.state.zoom,
+                                );
+                                let old_pointer_to_page = pointer_pos - current_page_rect.center();
+                                let new_page_rect: Rect = Rect::from_center_size(
+                                    canvas_rect.center() + self.state.offset,
+                                    self.state.page.size_pixels() * new_zoom,
+                                );
+                                let new_pointer_to_page = pointer_pos - new_page_rect.center();
 
-        // Add actions based on selection
-        match selected_layers.len() {
-            1 => {
-                let layer_id = selected_layers[0];
-                if let Some(layer) = self.state.layers.get(&layer_id) {
-                    if matches!(layer.content, LayerContent::Photo(_)) {
-                        actions.push(ActionBarItem {
-                            label: "Crop".to_string(),
-                            action: ActionBarAction::Crop(layer_id),
+                                // Corrected offset calculation
+                                self.state.offset += old_pointer_to_page
+                                    - new_pointer_to_page * (new_zoom / self.state.zoom);
+
+                                self.state.zoom = new_zoom;
+                            }
                         });
                     }
                 }
-            }
-            2 => {
-                actions.extend_from_slice(&[
-                    ActionBarItem {
-                        label: "Swap Centers".to_string(),
-                        action: ActionBarAction::SwapCenters(
-                            selected_layers[0],
-                            selected_layers[1],
-                        ),
-                    },
-                    ActionBarItem {
-                        label: "Swap Centers and Bounds".to_string(),
-                        action: ActionBarAction::SwapCentersAndBounds(
-                            selected_layers[0],
-                            selected_layers[1],
-                        ),
-                    },
-                    ActionBarItem {
-                        label: "Swap Quick Layout Position".to_string(),
-                        action: ActionBarAction::SwapQuickLayoutPosition(
-                            selected_layers[0],
-                            selected_layers[1],
-                        ),
-                    },
-                ]);
-            }
-            _ => {}
-        }
 
-        // Draw action bar
-        if !actions.is_empty() {
-            let screen_rect = ui.ctx().screen_rect();
-            let bar_height = 40.0;
-            let bar_width = 400.0; // Fixed width for the action bar
-            let bar_margin_bottom = 20.0;
-
-            // Center the bar horizontally and place at bottom with margin
-            let bar_rect = Rect::from_center_size(
-                Pos2::new(
-                    screen_rect.center().x,
-                    screen_rect.max.y - bar_margin_bottom - bar_height / 2.0,
-                ),
-                Vec2::new(bar_width, bar_height),
-            );
-
-            // Draw multi-layer shadow
-            for (offset, alpha) in &[(4.0, 10), (3.0, 20), (2.0, 30), (1.0, 40)] {
-                ui.painter().rect_filled(
-                    bar_rect.translate(Vec2::new(0.0, *offset)),
-                    8.0,
-                    Color32::from_black_alpha(*alpha),
+                let page_rect: Rect = Rect::from_center_size(
+                    canvas_rect.center() + self.state.offset,
+                    self.state.page.size_pixels() * self.state.zoom,
                 );
-            }
 
-            let action_response = ui.allocate_ui_at_rect(bar_rect, |ui| {
-                // Set the background style
-                ui.style_mut().visuals.window_fill = Color32::from_gray(40);
-                ui.style_mut().visuals.window_stroke = Stroke::new(1.0, Color32::from_gray(60));
+                ui.input(|input| {
+                    if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
+                        self.state.offset += input.pointer.delta();
+                        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                            cursor_manager.set_cursor(CursorIcon::Grabbing);
+                        });
+                        true
+                    } else {
+                        false
+                    }
+                });
 
-                // Add background
-                ui.painter()
-                    .rect_filled(ui.max_rect(), 8.0, ui.style().visuals.window_fill);
+                ui.painter().rect_filled(canvas_rect, 0.0, Color32::BLACK);
+                ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
 
-                // Add border
-                ui.painter()
-                    .rect_stroke(ui.max_rect(), 8.0, ui.style().visuals.window_stroke);
+                self.draw_template(ui, page_rect);
 
-                ui.horizontal_centered(|ui| {
-                    for action in &actions {
-                        if ui.button(&action.label).clicked() {
-                            return Some(action.action.clone());
+                // Draw the layers by iterating over the layers and drawing them
+                // We collect the ids into a map to avoid borrowing issues
+                // TODO: Is there a better way?
+                for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
+                    if let Some(transform_response) =
+                        self.draw_layer(&layer_id, false, page_rect, ui)
+                    {
+                        let transform_state =
+                            &self.state.layers.get(&layer_id).unwrap().transform_state;
+
+                        let primary_pointer_pressed =
+                            ui.input(|input| input.pointer.primary_pressed());
+                        let primary_pointer_released =
+                            ui.input(|input| input.pointer.primary_released());
+
+                        // If the canvas was clicked but not on the photo then deselect the photo
+                        if canvas_response.clicked()
+                            && !transform_state.rect.contains(
+                                canvas_response.interact_pointer_pos().unwrap_or(Pos2::ZERO),
+                            )
+                            && self.is_pointer_on_canvas(ui)
+                            && self.state.is_layer_selected(&layer_id)
+                        {
+                            self.deselect_all_photos();
+                        } else if transform_response.mouse_down && primary_pointer_pressed {
+                            self.select_photo(&layer_id, ui.ctx());
                         }
-                    }
-                    None
-                })
-                .inner
-            });
 
-            if let Some(action) = action_response.inner {
-                match action {
-                    ActionBarAction::SwapCenters(id1, id2) => {
-                        let original_child_a_rect = self
-                            .state
-                            .layers
-                            .get(&id1)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        let original_child_b_rect = self
-                            .state
-                            .layers
-                            .get(&id2)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .clone();
-
-                        self.state
-                            .layers
-                            .get_mut(&id1)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_b_rect.center());
-
-                        self.state
-                            .layers
-                            .get_mut(&id2)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_a_rect.center());
-                    }
-                    ActionBarAction::SwapCentersAndBounds(id1, id2) => {
-                        self.state.swap_layer_centers_and_bounds(id1, id2);
-                    }
-                    ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
-                        if let Some(layout) = self.state.last_quick_layout {
-                            let first_id_index = self
-                                .state
-                                .quick_layout_order
-                                .iter()
-                                .position(|id| *id == id1)
-                                .unwrap();
-
-                            let second_id_index = self
-                                .state
-                                .quick_layout_order
-                                .iter()
-                                .position(|id| *id == id2)
-                                .unwrap();
-
-                            self.state
-                                .quick_layout_order
-                                .swap(first_id_index, second_id_index);
-
-                            layout.apply(&mut self.state);
+                        if primary_pointer_released
+                            && (transform_response.ended_moving
+                                || transform_response.ended_resizing
+                                || transform_response.ended_rotating)
+                        {
+                            self.history_manager
+                                .save_history(CanvasHistoryKind::Transform, self.state);
                         }
-                    }
-                    ActionBarAction::Crop(_) => {
-                        // TODO: Implement crop action
                     }
                 }
-                self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, self.state);
+
+                self.draw_multi_select(ui, page_rect);
+
+                // Add action bar at the bottom
+                if self.state.layers.values().any(|layer| layer.selected) {
+                    self.show_action_bar(ui);
+                }
+            }
+            CanvasInteractionMode::Crop(crop_state) => {
+                ui.painter()
+                    .rect_filled(self.available_rect, 0.0, Color32::BLACK);
+
+                if let Some(layer) = self.state.layers.get(&crop_state.target_layer) {
+                    if let LayerContent::Photo(photo) = &layer.content {
+                        let texture = Dependency::<PhotoManager>::get()
+                            .with_lock_mut(|photo_manager| {
+                                photo_manager
+                                    .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
+                            })
+                            .unwrap()
+                            .unwrap(); // TODO: Don't unwrap
+
+                        let painter: &egui::Painter = ui.painter();
+                        let mut mesh: Mesh = Mesh::with_texture(texture.id);
+
+                        let mesh_rect = if photo.photo.metadata.width()
+                            != photo.photo.metadata.rotated_width()
+                        {
+                            Rect::from_center_size(
+                                crop_state.transform_state.rect.center(),
+                                Vec2::new(
+                                    crop_state.transform_state.rect.height(),
+                                    crop_state.transform_state.rect.width(),
+                                ),
+                            )
+                        } else {
+                            crop_state.transform_state.rect
+                        };
+
+                        mesh.add_rect_with_uv(
+                            mesh_rect,
+                            Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
+                            Color32::WHITE,
+                        );
+
+                        let mesh_center: Pos2 = crop_state.transform_state.rect.min
+                            + Vec2::splat(0.5) * crop_state.transform_state.rect.size();
+
+                        mesh.rotate(
+                            Rot2::from_angle(photo.photo.metadata.rotation().radians()),
+                            mesh_center,
+                        );
+
+                        painter.add(Shape::mesh(mesh));
+
+                        let transform_response = ui.push_id(
+                            format!(
+                                "{}_{}_CanvasPhoto_{}",
+                                false,
+                                self.state.canvas_id.value(),
+                                layer.id
+                            ),
+                            |ui| {
+                                    let mut transform_state = crop_state.transform_state.clone();
+
+                                    let transform_response = TransformableWidget::new(
+                                        &mut transform_state,
+                                    )
+                                    .show(
+                                        ui,
+                                        self.available_rect,
+                                        1.0,
+                                        true,
+                                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
+                                        },
+                                    );
+
+                                    crop_state.transform_state = transform_state;
+
+                                    Some(transform_response)
+                                },
+                        ).inner;
+
+                        if let Some(transform_response) = transform_response {
+                            if transform_response.ended_moving
+                                || transform_response.ended_resizing
+                                || transform_response.ended_rotating
+                            {
+                                self.history_manager
+                                    .save_history(CanvasHistoryKind::Transform, self.state);
+                            }
+                        }
+                    }
+                }
+
+                ui.painter().rect_stroke(
+                    crop_state.transform_state.rect,
+                    0.0,
+                    Stroke::new(2.0, Color32::GREEN),
+                );
+
+                // Show a separate action bar with "Apply" and "Cancel"
+                self.show_crop_action_bar(ui, crop_state.clone());
+                return None;
             }
         }
+
+        None
     }
 
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
@@ -1560,5 +1511,242 @@ impl<'a> Canvas<'a> {
         }
         self.history_manager
             .save_history(CanvasHistoryKind::DeselectLayer, self.state);
+    }
+
+    fn show_crop_action_bar(&mut self, ui: &mut Ui, crop_state: CropState) {
+        let bar_rect = Rect::from_min_size(
+            Pos2::new(ui.max_rect().center().x - 100.0, ui.max_rect().max.y - 50.0),
+            Vec2::new(200.0, 40.0),
+        );
+        let response = ui.allocate_ui_at_rect(bar_rect, |ui| {
+            ui.horizontal_centered(|ui| {
+                if ui.button("Apply").clicked() {
+                    // Update the target layer's crop rect
+                    if let Some(layer) = self.state.layers.get_mut(&crop_state.target_layer) {
+                        if let LayerContent::Photo(photo) = &mut layer.content {
+                            photo.crop = crop_state.transform_state.rect;
+                        }
+                    }
+                    // Return to normal
+                    self.state.interaction_mode = CanvasInteractionMode::Normal;
+                }
+                if ui.button("Cancel").clicked() {
+                    // Revert and return to normal
+                    self.state.interaction_mode = CanvasInteractionMode::Normal;
+                }
+            });
+        });
+    }
+
+    fn show_action_bar(&mut self, ui: &mut Ui) {
+        ui.painter()
+            .clone()
+            .with_layer_id(egui::LayerId::debug())
+            .rect_stroke(
+                self.available_rect.shrink(20.0),
+                0.0,
+                Stroke::new(2.0, Color32::GREEN),
+            );
+
+        let selected_layers: Vec<LayerId> = self
+            .state
+            .layers
+            .iter()
+            .filter(|(_, layer)| layer.selected)
+            .map(|(id, _)| *id)
+            .collect();
+
+        let mut actions = vec![];
+
+        // Add actions based on selection
+        match selected_layers.len() {
+            1 => {
+                let layer_id = selected_layers[0];
+                if let Some(layer) = self.state.layers.get(&layer_id) {
+                    if matches!(layer.content, LayerContent::Photo(_)) {
+                        actions.push(ActionBarItem {
+                            label: "Crop".to_string(),
+                            action: ActionBarAction::Crop(layer_id),
+                        });
+                    }
+                }
+            }
+            2 => {
+                actions.extend_from_slice(&[
+                    ActionBarItem {
+                        label: "Swap Centers".to_string(),
+                        action: ActionBarAction::SwapCenters(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                    ActionBarItem {
+                        label: "Swap Centers and Bounds".to_string(),
+                        action: ActionBarAction::SwapCentersAndBounds(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                    ActionBarItem {
+                        label: "Swap Quick Layout Position".to_string(),
+                        action: ActionBarAction::SwapQuickLayoutPosition(
+                            selected_layers[0],
+                            selected_layers[1],
+                        ),
+                    },
+                ]);
+            }
+            _ => {}
+        }
+
+        // Draw action bar
+        if !actions.is_empty() {
+            let bar_height = 40.0;
+            let bar_width = 400.0; // Fixed width for the action bar
+            let bar_margin_bottom = 20.0;
+
+            // Center the bar horizontally and place at bottom with margin
+            let bar_rect = Rect::from_center_size(
+                Pos2::new(
+                    self.available_rect.center().x,
+                    self.available_rect.max.y - bar_margin_bottom - bar_height / 2.0,
+                ),
+                Vec2::new(bar_width, bar_height),
+            );
+
+            // Draw multi-layer shadow
+            for (offset, alpha) in &[(4.0, 10), (3.0, 20), (2.0, 30), (1.0, 40)] {
+                ui.painter().rect_filled(
+                    bar_rect.translate(Vec2::new(0.0, *offset)),
+                    8.0,
+                    Color32::from_black_alpha(*alpha),
+                );
+            }
+
+            let action_response = ui.allocate_ui_at_rect(bar_rect, |ui| {
+                // Set the background style
+                ui.style_mut().visuals.window_fill = Color32::from_gray(40);
+                ui.style_mut().visuals.window_stroke = Stroke::new(1.0, Color32::from_gray(60));
+
+                // Add background
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 8.0, ui.style().visuals.window_fill);
+
+                // Add border
+                ui.painter()
+                    .rect_stroke(ui.max_rect(), 8.0, ui.style().visuals.window_stroke);
+
+                ui.horizontal_centered(|ui| {
+                    for action in &actions {
+                        if ui.button(&action.label).clicked() {
+                            return Some(action.action.clone());
+                        }
+                    }
+                    None
+                })
+                .inner
+            });
+
+            if let Some(action) = action_response.inner {
+                match action {
+                    ActionBarAction::SwapCenters(id1, id2) => {
+                        let original_child_a_rect = self
+                            .state
+                            .layers
+                            .get(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        let original_child_b_rect = self
+                            .state
+                            .layers
+                            .get(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .clone();
+
+                        self.state
+                            .layers
+                            .get_mut(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_b_rect.center());
+
+                        self.state
+                            .layers
+                            .get_mut(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_a_rect.center());
+                    }
+                    ActionBarAction::SwapCentersAndBounds(id1, id2) => {
+                        self.state.swap_layer_centers_and_bounds(id1, id2);
+                    }
+                    ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
+                        if let Some(layout) = self.state.last_quick_layout {
+                            let first_id_index = self
+                                .state
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id1)
+                                .unwrap();
+
+                            let second_id_index = self
+                                .state
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id2)
+                                .unwrap();
+
+                            self.state
+                                .quick_layout_order
+                                .swap(first_id_index, second_id_index);
+
+                            layout.apply(&mut self.state);
+                        }
+                    }
+                    ActionBarAction::Crop(layer_id) => {
+                        if let Some(layer) = self.state.layers.get(&layer_id) {
+                            if let LayerContent::Photo(photo) = &layer.content {
+                                let padded_available_rect = self.available_rect.shrink2(Vec2::new(
+                                    self.available_rect.width() * 0.1,
+                                    self.available_rect.height() * 0.1,
+                                ));
+
+                                let mut photo_rect = padded_available_rect
+                                    .with_aspect_ratio(photo.photo.aspect_ratio());
+
+                                photo_rect =
+                                    photo_rect.fit_and_center_within(padded_available_rect);
+
+                                let crop_transform_state = TransformableState {
+                                    rect: photo_rect,
+                                    rotation: 0.0,
+                                    handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
+                                    active_handle: None,
+                                    is_moving: false,
+                                    last_frame_rotation: 0.0,
+                                    change_in_rotation: None,
+                                    id: Id::random(),
+                                };
+
+                                self.state.interaction_mode =
+                                    CanvasInteractionMode::Crop(CropState {
+                                        target_layer: layer_id,
+                                        transform_state: crop_transform_state,
+                                    });
+                            }
+                        }
+                    }
+                }
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, self.state);
+            }
+        }
     }
 }

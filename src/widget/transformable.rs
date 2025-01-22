@@ -478,11 +478,7 @@ impl<'a> TransformableWidget<'a> {
             self.state.change_in_rotation = None;
         }
 
-        let inner_response = add_contents(
-            ui,
-            pre_rotated_inner_content_rect,
-            self.state,
-        );
+        let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
 
         if active {
             self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);

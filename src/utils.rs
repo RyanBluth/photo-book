@@ -56,6 +56,7 @@ pub trait RectExt {
     fn corners(&self) -> [Pos2; 4];
     fn center_within(&self, rect: Rect) -> Rect;
     fn fit_and_center_within(&self, rect: Rect) -> Rect;
+    fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect;
 }
 
 impl RectExt for Rect {
@@ -198,6 +199,26 @@ impl RectExt for Rect {
             let new_width = new_height * aspect_ratio;
             let new_size = Vec2::new(new_width, new_height);
             let new_min = rect.center() - new_size / 2.0;
+            Rect::from_min_size(new_min, new_size)
+        }
+    }
+
+    fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect {
+        // Scale down to fit the aspect ratio
+        let current_aspect_ratio = self.width() / self.height();
+        if current_aspect_ratio > aspect_ratio {
+            // Scale to fit the width
+            let new_width = self.width();
+            let new_height = new_width / aspect_ratio;
+            let new_size = Vec2::new(new_width, new_height);
+            let new_min = self.center() - new_size / 2.0;
+            Rect::from_min_size(new_min, new_size)
+        } else {
+            // Scale to fit the height
+            let new_height = self.height();
+            let new_width = new_height * aspect_ratio;
+            let new_size = Vec2::new(new_width, new_height);
+            let new_min = self.center() - new_size / 2.0;
             Rect::from_min_size(new_min, new_size)
         }
     }
