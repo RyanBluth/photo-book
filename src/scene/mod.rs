@@ -1,7 +1,7 @@
 use crate::{
     photo::Photo,
     widget::{
-        image_gallery::ImageGalleryState, image_viewer::ImageViewerState, page_canvas::CanvasState,
+        canvas::CanvasState, image_gallery::ImageGalleryState, image_viewer::ImageViewerState,
     },
 };
 

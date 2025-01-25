@@ -21,7 +21,7 @@ use crate::{
     project_settings::ProjectSettingsManager,
     session::Session,
     utils::{Either, Toggle},
-    widget::page_canvas::CanvasState,
+    widget::canvas::CanvasState,
 };
 
 use super::{

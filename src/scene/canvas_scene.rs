@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use egui::{Key, Ui};
+use egui::{Id, Key, Ui, Vec2};
 use egui_tiles::UiResponse;
 use indexmap::{indexmap, IndexMap};
 
@@ -10,16 +10,19 @@ use crate::{
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId, PageId},
     model::{edit_state::EditablePage, page::Page},
+    utils::IdExt,
     widget::{
+        canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::CanvasInfo,
             quick_layout::{QuickLayout, QuickLayoutState},
         },
+        crop::CropResponse,
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
-        page_canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         pages::{Pages, PagesResponse, PagesState},
         templates::{Templates, TemplatesResponse, TemplatesState},
+        transformable::{ResizeMode, TransformHandleMode, TransformableState},
     },
 };
 
@@ -28,6 +31,10 @@ use super::{
     SceneTransition::Viewer,
 };
 
+use crate::widget::canvas::CanvasResponse;
+use crate::widget::canvas_state::{CanvasInteractionMode, CropState};
+use crate::widget::crop::Crop;
+
 #[derive(Debug, Clone)]
 pub struct CanvasSceneState {
     pub gallery_state: ImageGalleryState,
@@ -35,6 +42,7 @@ pub struct CanvasSceneState {
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,
+    crop_state: Option<CropState>,
 }
 
 impl CanvasSceneState {
@@ -48,6 +56,7 @@ impl CanvasSceneState {
             pages_state: PagesState::new(indexmap! { page_id => initial_state }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
+            crop_state: None,
         }
     }
 
@@ -60,6 +69,7 @@ impl CanvasSceneState {
             pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
+            crop_state: None,
         }
     }
 
@@ -106,7 +116,7 @@ pub enum CanvasScenePane {
 #[derive(Debug, Clone)]
 pub struct CanvasScene {
     pub state: CanvasSceneState,
-    tree: egui_tiles::Tree<CanvasScenePane>,
+    pub tree: egui_tiles::Tree<CanvasScenePane>,
 }
 
 impl CanvasScene {
@@ -150,6 +160,40 @@ impl CanvasScene {
         res.state = state;
         res
     }
+
+    // fn enter_crop_mode(&mut self, layer_id: LayerId) {
+    //     let page = self.state.selected_page();
+
+    //     if let Some(layer) = page.layers.get(&layer_id) {
+    //         if let LayerContent::Photo(photo) = &layer.content {
+    //             let padded_available_rect = page.available_rect.shrink2(Vec2::new(
+    //                 self.available_rect.width() * 0.1,
+    //                 self.available_rect.height() * 0.1,
+    //             ));
+
+    //             let mut photo_rect = padded_available_rect.with_aspect_ratio(photo.photo.aspect_ratio());
+    //             photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
+
+    //             let crop_transform_state = TransformableState {
+    //                 rect: photo_rect,
+    //                 rotation: 0.0,
+    //                 handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
+    //                 active_handle: None,
+    //                 is_moving: false,
+    //                 last_frame_rotation: 0.0,
+    //                 change_in_rotation: None,
+    //                 id: Id::random(),
+    //             };
+
+    //             self.state.selected_page_mut().interaction_mode =
+    //                 CanvasInteractionMode::Crop(CropState {
+    //                     target_layer: layer_id,
+    //                     transform_state: crop_transform_state,
+    //                     original_crop: photo.crop,
+    //                 });
+    //         }
+    //     }
+    // }
 }
 
 impl Scene for CanvasScene {
@@ -282,8 +326,50 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
 
                 let rect = ui.available_rect_before_wrap();
+                let mut crop_state = self.scene_state.crop_state.clone();
+
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
-                Canvas::new(page, rect, history).show(ui);
+
+                // Handle crop mode if active
+                if let Some(ref mut crop_state) = crop_state {
+                    let (page, history) = self.scene_state.selected_page_and_history_mut();
+                    if let CropResponse::Exit = Crop::new(page, rect, history, crop_state).show(ui)
+                    {
+                        self.scene_state.crop_state = None;
+                    } else {
+                        self.scene_state.crop_state = Some(crop_state.clone());
+                    }
+                } else {
+                    match Canvas::new(page, rect, history).show(ui) {
+                        Some(CanvasResponse::EnterCropMode {
+                            target_layer,
+                            initial_rect,
+                            original_crop,
+                        }) => {
+                            let crop_transform_state = TransformableState {
+                                rect: initial_rect,
+                                rotation: 0.0,
+                                handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
+                                active_handle: None,
+                                is_moving: false,
+                                last_frame_rotation: 0.0,
+                                change_in_rotation: None,
+                                id: Id::random(),
+                            };
+
+                            self.scene_state.crop_state = Some(CropState {
+                                target_layer,
+                                transform_state: crop_transform_state,
+                                original_crop,
+                                photo_rect: initial_rect,
+                            });
+                        }
+                        Some(CanvasResponse::Exit) => {
+                            return UiResponse::None;
+                        }
+                        None => {}
+                    }
+                }
             }
             CanvasScenePane::Info => {
                 ui.painter()
@@ -297,7 +383,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
 
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
-                let response = CanvasInfo {
+                let response: egui::InnerResponse<
+                    crate::widget::canvas_info::panel::CanvasInfoResponse,
+                > = CanvasInfo {
                     canvas_state: page,
                     history_manager: history,
                 }

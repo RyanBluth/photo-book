@@ -26,13 +26,13 @@ use crate::{
     },
     utils::IdExt,
     widget::{
+        canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
         canvas_info::layers::{
             CanvasText as AppCanvasText, CanvasTextEditState, Layer as AppLayer,
             LayerContent as AppLayerContent, LayerTransformEditState,
             TextHorizontalAlignment as AppTextHorizontalAlignment,
             TextVerticalAlignment as AppTextVerticalAlignment,
         },
-        page_canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
         transformable::{ResizeMode, TransformHandleMode::Resize, TransformableState},
     },
 };

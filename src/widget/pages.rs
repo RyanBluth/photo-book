@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    page_canvas::{Canvas, CanvasState},
+    canvas::{Canvas, CanvasState},
     spacer::Spacer,
 };
 

@@ -16,7 +16,7 @@ use crate::{
     template::TemplateRegion,
     utils::{IdExt, Toggle},
     widget::{
-        page_canvas::CanvasPhoto,
+        canvas::CanvasPhoto,
         placeholder::RectPlaceholder,
         transformable::{TransformHandleMode, TransformableState},
     },

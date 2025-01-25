@@ -4,11 +4,11 @@ use egui::InnerResponse;
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
+        canvas::CanvasState,
         canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             page_info::{PageInfo, PageInfoState},
         },
-        page_canvas::CanvasState,
     },
 };
 

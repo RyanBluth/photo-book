@@ -25,8 +25,8 @@ use crate::modal::manager::ModalManager;
 use crate::modal::progress::ProgressModal;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
+use crate::widget::canvas::{Canvas, CanvasState};
 use crate::widget::canvas_info::layers::LayerContent;
-use crate::widget::page_canvas::{Canvas, CanvasState};
 
 #[derive(Error, Debug, Clone)]
 pub enum ExportError {

@@ -11,7 +11,7 @@ use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{
-        page_canvas::{Canvas, CanvasState},
+        canvas::{Canvas, CanvasState},
         spacer::Spacer,
     },
 };

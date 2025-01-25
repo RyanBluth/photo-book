@@ -1,8 +1,8 @@
+pub mod canvas;
 pub mod canvas_info;
 pub mod gallery_image;
 pub mod image_gallery;
 pub mod image_viewer;
-pub mod page_canvas;
 pub mod pages;
 pub mod photo_info;
 pub mod placeholder;
@@ -10,3 +10,6 @@ pub mod segment_control;
 pub mod spacer;
 pub mod templates;
 pub mod transformable;
+pub mod crop;
+pub mod canvas_state;
+pub mod action_bar;
