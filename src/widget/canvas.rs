@@ -25,6 +25,7 @@ use crate::{
 
 use super::{
     action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind},
+    auto_center::AutoCenter,
     canvas_info::{
         layers::{
             CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
@@ -1437,13 +1438,10 @@ impl<'a> Canvas<'a> {
             }
             _ => {}
         }
-
-        // Draw action bar
         if !actions.is_empty() {
             let bar_height = 40.0;
             let bar_margin_bottom: f32 = 40.0;
 
-            // Center the bar horizontally and place at bottom with margin
             let bar_rect = Rect::from_min_size(
                 Pos2::new(
                     self.available_rect.left(),
@@ -1452,12 +1450,19 @@ impl<'a> Canvas<'a> {
                 Vec2::new(self.available_rect.width(), bar_height),
             );
 
+            let action_bar_id: String = actions
+                .iter()
+                .map(|item| format!("{:?}", item.action))
+                .collect::<String>();
+
             match ui
                 .allocate_new_ui(UiBuilder::new().max_rect(bar_rect), |ui| {
-                    ui.horizontal_centered(|ui|{
-                        ActionBar::with_items(actions).show(ui)
-                    }).inner
-                    
+                    AutoCenter::new(format!("action_bar_{}", action_bar_id))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| ActionBar::with_items(actions).show(ui))
+                                .inner
+                        })
+                        .inner
                 })
                 .inner
             {

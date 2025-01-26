@@ -13,3 +13,4 @@ pub mod transformable;
 pub mod crop;
 pub mod canvas_state;
 pub mod action_bar;
+pub mod auto_center;

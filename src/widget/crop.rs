@@ -1,10 +1,13 @@
 use eframe::egui::{self, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
+use egui::UiBuilder;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager};
+use crate::widget::action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind};
+use crate::widget::auto_center::AutoCenter;
 use crate::widget::canvas::CanvasState;
 use crate::widget::canvas_info::layers::LayerContent;
 use crate::widget::canvas_state::{CanvasInteractionMode, CropState};
@@ -83,13 +86,14 @@ impl<'a> Crop<'a> {
 
                 painter.add(Shape::mesh(mesh));
 
-                let transform_response = TransformableWidget::new(&mut self.crop_state.transform_state).show(
-                    ui,
-                    self.available_rect,
-                    1.0,
-                    true,
-                    |_ui: &mut Ui, _transformed_rect: Rect, _transformable_state| {},
-                );
+                let transform_response =
+                    TransformableWidget::new(&mut self.crop_state.transform_state).show(
+                        ui,
+                        self.available_rect,
+                        1.0,
+                        true,
+                        |_ui: &mut Ui, _transformed_rect: Rect, _transformable_state| {},
+                    );
 
                 if transform_response.ended_moving
                     || transform_response.ended_resizing
@@ -115,51 +119,83 @@ impl<'a> Crop<'a> {
     }
 
     fn show_action_bar(&mut self, ui: &mut Ui) -> bool {
+        let bar_height = 40.0;
+        let bar_margin_bottom = 40.0;
+
         let bar_rect = Rect::from_min_size(
-            Pos2::new(ui.max_rect().center().x - 100.0, ui.max_rect().max.y - 50.0),
-            Vec2::new(200.0, 40.0),
+            Pos2::new(
+                ui.max_rect().left(),
+                ui.max_rect().max.y - bar_margin_bottom - bar_height / 2.0,
+            ),
+            Vec2::new(ui.max_rect().width(), bar_height),
         );
 
-        ui.allocate_ui_at_rect(bar_rect, |ui| {
-            ui.horizontal_centered(|ui| {
-                if ui.button("Apply").clicked() {
+        let actions = vec![
+            ActionItem {
+                kind: ActionItemKind::Text("Apply".to_string()),
+                action: "apply",
+            },
+            ActionItem {
+                kind: ActionItemKind::Text("Cancel".to_string()),
+                action: "cancel",
+            },
+        ];
+
+        match ui
+            .allocate_new_ui(UiBuilder::new().max_rect(bar_rect), |ui| {
+                AutoCenter::new("crop_action_bar")
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| ActionBar::with_items(actions).show(ui))
+                            .inner
+                    })
+                    .inner
+            })
+            .inner
+        {
+            ActionBarResponse::Clicked(action) => match action {
+                "apply" => {
                     // Update the target layer's crop rect
                     if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
                         if let LayerContent::Photo(photo) = &mut layer.content {
                             // Calculate a normalized crop rect by intersecting the crop rect with the photo rect and then normalizing it
-                            let intersection = self.crop_state.photo_rect.intersect(self.crop_state.transform_state.rect);
+                            let intersection = self
+                                .crop_state
+                                .photo_rect
+                                .intersect(self.crop_state.transform_state.rect);
                             let normalized_intersection = Rect::from_min_size(
                                 Pos2::new(
-                                    (intersection.min - self.crop_state.photo_rect.min).x / self.crop_state.photo_rect.size().x,
-                                    (intersection.min - self.crop_state.photo_rect.min).y / self.crop_state.photo_rect.size().y
+                                    (intersection.min - self.crop_state.photo_rect.min).x
+                                        / self.crop_state.photo_rect.size().x,
+                                    (intersection.min - self.crop_state.photo_rect.min).y
+                                        / self.crop_state.photo_rect.size().y,
                                 ),
                                 Vec2::new(
                                     intersection.size().x / self.crop_state.photo_rect.size().x,
-                                    intersection.size().y / self.crop_state.photo_rect.size().y
+                                    intersection.size().y / self.crop_state.photo_rect.size().y,
                                 ),
                             );
-                            if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
+                            if let Some(layer) =
+                                self.state.layers.get_mut(&self.crop_state.target_layer)
+                            {
                                 if let LayerContent::Photo(photo) = &mut layer.content {
                                     photo.crop = normalized_intersection;
                                 }
                             }
                         }
                     }
-                    return true;
+                    true
                 }
-                if ui.button("Cancel").clicked() {
+                "cancel" => {
                     if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
                         if let LayerContent::Photo(photo) = &mut layer.content {
                             photo.crop = self.crop_state.original_crop;
                         }
                     }
-                    return true;
+                    true
                 }
-
-                false
-            })
-            .inner
-        })
-        .inner
+                _ => false,
+            },
+            _ => false,
+        }
     }
 }
