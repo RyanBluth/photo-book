@@ -138,7 +138,7 @@ impl<'a> TransformableWidget<'a> {
         let scaled_photo_size = self.state.rect.size() * global_scale;
 
         // Create the new scaled and translated rect for the photo
-        let pre_rotated_inner_content_rect =
+        let pre_rotated_inner_content_rect: Rect =
             Rect::from_min_size(translated_rect_left_top, scaled_photo_size);
 
         let rotated_inner_content_rect =

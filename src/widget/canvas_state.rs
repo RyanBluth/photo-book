@@ -12,6 +12,5 @@ pub enum CanvasInteractionMode {
 pub struct CropState {
     pub target_layer: LayerId,
     pub transform_state: TransformableState,
-    pub original_crop: Rect,
     pub photo_rect: Rect,
 }

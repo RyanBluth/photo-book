@@ -42,6 +42,7 @@ impl<'a> Crop<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
+
         ui.painter()
             .rect_filled(self.available_rect, 0.0, Color32::BLACK);
 
@@ -89,7 +90,7 @@ impl<'a> Crop<'a> {
                 let transform_response =
                     TransformableWidget::new(&mut self.crop_state.transform_state).show(
                         ui,
-                        self.available_rect,
+                        mesh_rect,
                         1.0,
                         true,
                         |_ui: &mut Ui, _transformed_rect: Rect, _transformable_state| {},
@@ -106,7 +107,7 @@ impl<'a> Crop<'a> {
         }
 
         ui.painter().rect_stroke(
-            self.crop_state.transform_state.rect,
+            self.crop_state.photo_rect,
             0.0,
             Stroke::new(2.0, Color32::GREEN),
         );
@@ -186,11 +187,6 @@ impl<'a> Crop<'a> {
                     true
                 }
                 "cancel" => {
-                    if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
-                        if let LayerContent::Photo(photo) = &mut layer.content {
-                            photo.crop = self.crop_state.original_crop;
-                        }
-                    }
                     true
                 }
                 _ => false,

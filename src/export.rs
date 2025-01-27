@@ -176,8 +176,7 @@ impl Exporter {
         let photo_manager = Singleton::new(PhotoManager::new());
         let mut history_manager = CanvasHistoryManager::preview();
 
-        let mut canvas = Canvas::with_photo_manager(
-            photo_manager.clone(),
+        let mut canvas = Canvas::new(
             &mut canvas_state,
             Rect::from_min_max(Pos2::ZERO, size.to_pos2()),
             &mut history_manager,

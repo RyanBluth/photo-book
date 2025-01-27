@@ -44,8 +44,7 @@ pub enum CanvasResponse {
     Exit,
     EnterCropMode {
         target_layer: LayerId,
-        initial_rect: Rect,
-        original_crop: Rect,
+        photo: CanvasPhoto,
     },
 }
 
@@ -461,7 +460,6 @@ enum ActionBarAction {
 
 pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
-    photo_manager: Singleton<PhotoManager>,
     available_rect: Rect,
     history_manager: &'a mut CanvasHistoryManager,
 }
@@ -474,21 +472,6 @@ impl<'a> Canvas<'a> {
     ) -> Self {
         Self {
             state,
-            photo_manager: Dependency::get(),
-            available_rect,
-            history_manager,
-        }
-    }
-
-    pub fn with_photo_manager(
-        photo_manager: Singleton<PhotoManager>,
-        state: &'a mut CanvasState,
-        available_rect: Rect,
-        history_manager: &'a mut CanvasHistoryManager,
-    ) -> Self {
-        Self {
-            state,
-            photo_manager,
             available_rect,
             history_manager,
         }
@@ -866,7 +849,7 @@ impl<'a> Canvas<'a> {
                             layer.id
                         ),
                         |ui| {
-                            self.photo_manager.with_lock_mut(|photo_manager| {
+                            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                                 if let Ok(Some(texture)) = photo_manager
                                     .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                                 {
@@ -994,7 +977,7 @@ impl<'a> Canvas<'a> {
                 );
 
                 if let Some(photo) = photo {
-                    self.photo_manager.with_lock_mut(|photo_manager| {
+                    Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                         if let Ok(Some(texture)) = photo_manager
                             .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                         {
@@ -1532,22 +1515,9 @@ impl<'a> Canvas<'a> {
                         ActionBarAction::Crop(layer_id) => {
                             if let Some(layer) = self.state.layers.get(&layer_id) {
                                 if let LayerContent::Photo(photo) = &layer.content {
-                                    let padded_available_rect =
-                                        self.available_rect.shrink2(Vec2::new(
-                                            self.available_rect.width() * 0.1,
-                                            self.available_rect.height() * 0.1,
-                                        ));
-
-                                    let mut photo_rect = padded_available_rect
-                                        .with_aspect_ratio(photo.photo.aspect_ratio());
-
-                                    photo_rect =
-                                        photo_rect.fit_and_center_within(padded_available_rect);
-
                                     return Some(CanvasResponse::EnterCropMode {
                                         target_layer: layer_id,
-                                        initial_rect: photo_rect,
-                                        original_crop: photo.crop,
+                                        photo: photo.clone(),
                                     });
                                 }
                             }

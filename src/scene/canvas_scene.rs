@@ -10,7 +10,7 @@ use crate::{
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId, PageId},
     model::{edit_state::EditablePage, page::Page},
-    utils::IdExt,
+    utils::{IdExt, RectExt},
     widget::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         canvas_info::{
@@ -326,7 +326,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
 
                 let rect = ui.available_rect_before_wrap();
-                let mut crop_state = self.scene_state.crop_state.clone();
+                let mut crop_state: Option<CropState> = self.scene_state.crop_state.clone();
 
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
 
@@ -343,11 +343,22 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     match Canvas::new(page, rect, history).show(ui) {
                         Some(CanvasResponse::EnterCropMode {
                             target_layer,
-                            initial_rect,
-                            original_crop,
+                            photo,
                         }) => {
+                            let padded_available_rect = ui
+                                .max_rect()
+                                .shrink2(Vec2::new(rect.width() * 0.1, rect.height() * 0.1));
+
+                            let mut photo_rect =
+                                padded_available_rect.with_aspect_ratio(photo.photo.aspect_ratio());
+
+                            photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
+
+                            let transform_rect =
+                                photo_rect.translate_top_to(0.0).translate_left_to(0.0);
+
                             let crop_transform_state = TransformableState {
-                                rect: initial_rect,
+                                rect: transform_rect,
                                 rotation: 0.0,
                                 handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
                                 active_handle: None,
@@ -360,8 +371,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                             self.scene_state.crop_state = Some(CropState {
                                 target_layer,
                                 transform_state: crop_transform_state,
-                                original_crop,
-                                photo_rect: initial_rect,
+                                photo_rect: photo_rect,
                             });
                         }
                         Some(CanvasResponse::Exit) => {

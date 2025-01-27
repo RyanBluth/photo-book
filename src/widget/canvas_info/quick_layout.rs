@@ -305,8 +305,8 @@ impl<'a> QuickLayout<'a> {
 
         let available_width = ui.available_width();
         let available_height = ui.available_height();
-        let column_width = 256.0;
-        let row_height = 256.0;
+        let column_width: f32 = ui.available_width();
+        let row_height = column_width;
         let num_columns: usize = (available_width / column_width).floor() as usize;
 
         let spacer_width = (available_width
@@ -339,7 +339,7 @@ impl<'a> QuickLayout<'a> {
                         layout.apply(&mut canvas_state);
 
                         row.col(|ui| {
-                            let page_rect = ui.max_rect();
+                            let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
                             Canvas::new(
                                 &mut canvas_state,
                                 page_rect,
