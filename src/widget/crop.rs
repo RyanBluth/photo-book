@@ -1,3 +1,5 @@
+use std::thread::current;
+
 use eframe::egui::{self, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
@@ -6,6 +8,7 @@ use egui::UiBuilder;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager};
+use crate::utils::RectExt;
 use crate::widget::action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind};
 use crate::widget::auto_center::AutoCenter;
 use crate::widget::canvas::CanvasState;
@@ -42,7 +45,6 @@ impl<'a> Crop<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
-
         ui.painter()
             .rect_filled(self.available_rect, 0.0, Color32::BLACK);
 
@@ -106,12 +108,6 @@ impl<'a> Crop<'a> {
             }
         }
 
-        ui.painter().rect_stroke(
-            self.crop_state.photo_rect,
-            0.0,
-            Stroke::new(2.0, Color32::GREEN),
-        );
-
         if self.show_action_bar(ui) {
             return CropResponse::Exit;
         }
@@ -158,11 +154,16 @@ impl<'a> Crop<'a> {
                     // Update the target layer's crop rect
                     if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
                         if let LayerContent::Photo(photo) = &mut layer.content {
-                            // Calculate a normalized crop rect by intersecting the crop rect with the photo rect and then normalizing it
-                            let intersection = self
+
+                            let world_transform_rect = self
                                 .crop_state
-                                .photo_rect
-                                .intersect(self.crop_state.transform_state.rect);
+                                .transform_state
+                                .rect
+                                .to_world_space(self.crop_state.photo_rect);
+
+                            let intersection =
+                                world_transform_rect.intersect(self.crop_state.photo_rect);
+
                             let normalized_intersection = Rect::from_min_size(
                                 Pos2::new(
                                     (intersection.min - self.crop_state.photo_rect.min).x
@@ -178,17 +179,35 @@ impl<'a> Crop<'a> {
                             if let Some(layer) =
                                 self.state.layers.get_mut(&self.crop_state.target_layer)
                             {
-                                if let LayerContent::Photo(photo) = &mut layer.content {
+                                if let LayerContent::Photo(photo) = &mut layer.content {                                   
                                     photo.crop = normalized_intersection;
+
+                                    let crop_aspect_ratio = normalized_intersection.width() / normalized_intersection.height();
+                                    let mut transform_rect = layer.transform_state.rect;
+                                    let rect_center = transform_rect.center();
+
+                                    let old_w = transform_rect.width();
+                                    let old_h = transform_rect.height();
+                                    let old_ar = old_w / old_h;
+
+                                    if old_ar < crop_aspect_ratio {
+                                        // Keep width, shrink height
+                                        let new_h = old_w / crop_aspect_ratio;
+                                        transform_rect = Rect::from_center_size(rect_center, Vec2::new(old_w, new_h));
+                                    } else {
+                                        // Keep height, shrink width
+                                        let new_w = old_h * crop_aspect_ratio;
+                                        transform_rect = Rect::from_center_size(rect_center, Vec2::new(new_w, old_h));
+                                    }
+
+                                    layer.transform_state.rect = transform_rect;
                                 }
                             }
                         }
                     }
                     true
                 }
-                "cancel" => {
-                    true
-                }
+                "cancel" => true,
                 _ => false,
             },
             _ => false,
