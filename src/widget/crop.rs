@@ -22,6 +22,12 @@ pub enum CropResponse {
     None,
 }
 
+#[derive(Debug, Clone, PartialEq, Copy)]
+enum CropActionBarResponse {
+    Apply,
+    Cancel,
+}
+
 pub struct Crop<'a> {
     pub state: &'a mut CanvasState,
     pub available_rect: Rect,
@@ -130,11 +136,11 @@ impl<'a> Crop<'a> {
         let actions = vec![
             ActionItem {
                 kind: ActionItemKind::Text("Apply".to_string()),
-                action: "apply",
+                action: CropActionBarResponse::Apply,
             },
             ActionItem {
                 kind: ActionItemKind::Text("Cancel".to_string()),
-                action: "cancel",
+                action: CropActionBarResponse::Cancel,
             },
         ];
 
@@ -150,11 +156,10 @@ impl<'a> Crop<'a> {
             .inner
         {
             ActionBarResponse::Clicked(action) => match action {
-                "apply" => {
+                CropActionBarResponse::Apply => {
                     // Update the target layer's crop rect
                     if let Some(layer) = self.state.layers.get_mut(&self.crop_state.target_layer) {
                         if let LayerContent::Photo(photo) = &mut layer.content {
-
                             let world_transform_rect = self
                                 .crop_state
                                 .transform_state
@@ -179,35 +184,28 @@ impl<'a> Crop<'a> {
                             if let Some(layer) =
                                 self.state.layers.get_mut(&self.crop_state.target_layer)
                             {
-                                if let LayerContent::Photo(photo) = &mut layer.content {                                   
+                                if let LayerContent::Photo(photo) = &mut layer.content {
                                     photo.crop = normalized_intersection;
 
-                                    let crop_aspect_ratio = normalized_intersection.width() / normalized_intersection.height();
-                                    let mut transform_rect = layer.transform_state.rect;
-                                    let rect_center = transform_rect.center();
+                                    let photo_rect = Rect::from_center_size(
+                                        self.crop_state.photo_rect.center(),
+                                        Vec2::new(
+                                            photo.photo.metadata.rotated_width() as f32
+                                                * normalized_intersection.size().x,
+                                            photo.photo.metadata.rotated_height() as f32
+                                                * normalized_intersection.size().y,
+                                        ),
+                                    );
 
-                                    let old_w = transform_rect.width();
-                                    let old_h = transform_rect.height();
-                                    let old_ar = old_w / old_h;
-
-                                    if old_ar < crop_aspect_ratio {
-                                        // Keep width, shrink height
-                                        let new_h = old_w / crop_aspect_ratio;
-                                        transform_rect = Rect::from_center_size(rect_center, Vec2::new(old_w, new_h));
-                                    } else {
-                                        // Keep height, shrink width
-                                        let new_w = old_h * crop_aspect_ratio;
-                                        transform_rect = Rect::from_center_size(rect_center, Vec2::new(new_w, old_h));
-                                    }
-
-                                    layer.transform_state.rect = transform_rect;
+                                    layer.transform_state.rect = photo_rect
+                                        .fit_and_center_within(layer.transform_state.rect);
                                 }
                             }
                         }
                     }
                     true
                 }
-                "cancel" => true,
+                CropActionBarResponse::Cancel => true,
                 _ => false,
             },
             _ => false,
