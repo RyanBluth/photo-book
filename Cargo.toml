@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-egui = { version = "0.30", features = ["persistence"] }
-eframe = { version = "0.30", features = ["glow"] }
-egui_extras = { version = "0.30", features = ["default", "all_loaders"] }
+egui = { version = "0.31", features = ["persistence"] }
+eframe = { version = "0.31", features = ["glow"] }
+egui_extras = { version = "0.31", features = ["default", "all_loaders"] }
 native-dialog = "0.7.0"
 env_logger = "0.11.5"
 image = { version = "0.25.4", features = ["jpeg", "png"] }
@@ -27,7 +27,7 @@ strum_macros = "0.26.4"
 chrono = { version = "0.4.31", features = ["serde"] }
 indexmap = { version = "2.1.0", features = ["serde"] }
 font-kit = "0.14.2"
-egui_tiles = "0.11"
+egui_tiles = "0.12"
 ab_glyph = "0.2.23"
 rand = "0.8.5"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }
@@ -55,7 +55,7 @@ codegen-units = 1
 panic = "abort"
 
 
-[patch.crates-io]
-egui = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["persistence"] }
-eframe = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["glow"] }
-egui_extras = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["default", "all_loaders"] }
+# [patch.crates-io]
+# egui = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["persistence"] }
+# eframe = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["glow"] }
+# egui_extras = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["default", "all_loaders"] }

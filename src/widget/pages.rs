@@ -168,6 +168,7 @@ impl<'a> Pages<'a> {
                                             page_rect.expand(3.0),
                                             4.0,
                                             Stroke::new(3.0, theme::color::FOCUSED),
+                                            egui::StrokeKind::Outside,
                                         );
                                     }
                                 });

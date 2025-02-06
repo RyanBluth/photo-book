@@ -2,7 +2,7 @@ use eframe::{
     egui::{self, Button, CursorIcon, Image, Response, Sense, Ui},
     epaint::{Color32, Pos2, Rect, Stroke, Vec2},
 };
-use egui::Id;
+use egui::{Id, StrokeKind};
 
 use crate::{
     assets::Asset,
@@ -545,7 +545,7 @@ impl<'a> TransformableWidget<'a> {
         handles: &[(TransformHandle, Pos2)],
     ) {
         ui.painter()
-            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY));
+            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY), StrokeKind::Outside);
 
         // Draw the resize handles
         for (handle, handle_pos) in handles {
@@ -559,6 +559,7 @@ impl<'a> TransformableWidget<'a> {
                     Color32::WHITE
                 },
                 Stroke::new(2.0, Color32::BLACK),
+                StrokeKind::Outside
             );
         }
     }
@@ -581,7 +582,7 @@ impl<'a> TransformableWidget<'a> {
         );
 
         ui.painter()
-            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE);
+            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE, StrokeKind::Outside);
 
         let left_half_rect =
             Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);

@@ -2,7 +2,7 @@ use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::{Color32, Vec2},
 };
-use egui::{Spinner, Stroke};
+use egui::{Spinner, Stroke, StrokeKind};
 use log::error;
 
 use crate::{
@@ -65,6 +65,7 @@ impl Widget for GalleryImage {
                             ui.max_rect(),
                             4.0,
                             Stroke::new(3.0, theme::color::FOCUSED),
+                            StrokeKind::Outside,
                         );
                     }
 

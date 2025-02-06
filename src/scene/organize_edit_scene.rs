@@ -80,7 +80,7 @@ impl OrganizeEditScene {
 
         if let Some(edit) = &self.edit {
             // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
-            // Introduce some sort of shared state between the two scenes
+            // Introduce some sort of shared state between the two scene
             edit.write().unwrap().state.gallery_state = self
                 .organize
                 .read()

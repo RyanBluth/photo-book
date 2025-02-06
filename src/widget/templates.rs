@@ -1,5 +1,5 @@
 use eframe::egui;
-use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2};
+use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
 
 use egui_extras::Column;
 
@@ -140,6 +140,7 @@ impl TemplatePreview {
                             region_rect,
                             0.0,
                             Stroke::new(2.0, Color32::DARK_GRAY),
+                            StrokeKind::Outside
                         );
 
                         ui.allocate_ui_at_rect(region_rect, |ui| {

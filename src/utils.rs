@@ -44,6 +44,7 @@ where
 }
 
 pub trait RectExt {
+    fn rotate_bb_around_point(&self, angle: f32, point: Pos2) -> Rect;
     fn constrain_to(&self, rect: Rect) -> Rect;
     fn rotate_bb_around_center(&self, angle: f32) -> Rect;
     fn to_local_space(&self, parent: Rect) -> Rect;
@@ -96,6 +97,73 @@ impl RectExt for Rect {
             rotated_top_right + center,
             rotated_bottom_left + center,
             rotated_bottom_right + center,
+        ];
+
+        // Find the minimum and maximum points among the rotated corners
+        let min_x = rotated_corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f32::INFINITY, f32::min);
+        let max_x = rotated_corners
+            .iter()
+            .map(|p| p.x)
+            .fold(f32::NEG_INFINITY, f32::max);
+        let min_y = rotated_corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::INFINITY, f32::min);
+        let max_y = rotated_corners
+            .iter()
+            .map(|p| p.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        Rect::from_min_max(Pos2::new(min_x, min_y), Pos2::new(max_x, max_y))
+    }
+
+    fn rotate_bb_around_point(&self, angle: f32, point: Pos2) -> Rect {
+        let origin = point;
+        let top_left = self.min.to_vec2();
+        let top_right = Pos2::new(self.max.x, self.min.y).to_vec2();
+        let bottom_left = Pos2::new(self.min.x, self.max.y).to_vec2();
+        let bottom_right = self.max.to_vec2();
+
+        let rotated_top_left = Pos2::new(
+            (angle.cos() * (top_left.x - origin.x) - angle.sin() * (top_left.y - origin.y)
+                + origin.x),
+            (angle.sin() * (top_left.x - origin.x)
+                + angle.cos() * (top_left.y - origin.y)
+                + origin.y),
+        );
+
+        let rotated_top_right = Pos2::new(
+            (angle.cos() * (top_right.x - origin.x) - angle.sin() * (top_right.y - origin.y)
+                + origin.x),
+            (angle.sin() * (top_right.x - origin.x)
+                + angle.cos() * (top_right.y - origin.y)
+                + origin.y),
+        );
+
+        let rotated_bottom_left = Pos2::new(
+            (angle.cos() * (bottom_left.x - origin.x) - angle.sin() * (bottom_left.y - origin.y)
+                + origin.x),
+            (angle.sin() * (bottom_left.x - origin.x)
+                + angle.cos() * (bottom_left.y - origin.y)
+                + origin.y),
+        );
+
+        let rotated_bottom_right = Pos2::new(
+            (angle.cos() * (bottom_right.x - origin.x) - angle.sin() * (bottom_right.y - origin.y)
+                + origin.x),
+            (angle.sin() * (bottom_right.x - origin.x)
+                + angle.cos() * (bottom_right.y - origin.y)
+                + origin.y),
+        );
+
+        let rotated_corners = [
+            rotated_top_left,
+            rotated_top_right,
+            rotated_bottom_left,
+            rotated_bottom_right,
         ];
 
         // Find the minimum and maximum points among the rotated corners

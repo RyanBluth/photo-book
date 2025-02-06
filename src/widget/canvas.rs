@@ -5,7 +5,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Button, Frame, Id, Layout, RichText, Stroke, UiBuilder};
+use egui::{Align, Button, Frame, Id, Layout, RichText, Stroke, StrokeKind, UiBuilder};
 use indexmap::{indexmap, IndexMap};
 use printpdf::image_crate::flat::SampleLayout;
 
@@ -642,6 +642,7 @@ impl<'a> Canvas<'a> {
                             region_rect,
                             0.0,
                             Stroke::new(2.0, Color32::GRAY.gamma_multiply(0.5)),
+                            StrokeKind::Outside
                         );
                     }
                 }
@@ -1073,7 +1074,7 @@ impl<'a> Canvas<'a> {
 
                 if layer.selected {
                     ui.painter()
-                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN));
+                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN), StrokeKind::Outside);
                 }
 
                 Some(TransformableWidgetResponse {
@@ -1118,7 +1119,7 @@ impl<'a> Canvas<'a> {
 
                 if layer.selected {
                     ui.painter()
-                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN));
+                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN), StrokeKind::Outside);
                 }
 
                 // TODO: Maybe this is really just a LayerResponse?

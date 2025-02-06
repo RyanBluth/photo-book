@@ -3,7 +3,7 @@ use std::thread::current;
 use eframe::egui::{self, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
-use egui::UiBuilder;
+use egui::{StrokeKind, UiBuilder};
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::photo_manager::PhotoManager;
@@ -63,6 +63,10 @@ impl<'a> Crop<'a> {
                     .unwrap()
                     .unwrap(); // TODO: Don't unwrap
 
+                self.crop_state
+                    .photo_rect
+                    .set_center(ui.max_rect().center());
+
                 let painter: &egui::Painter = ui.painter();
                 let mut mesh: Mesh = Mesh::with_texture(texture.id);
 
@@ -98,7 +102,7 @@ impl<'a> Crop<'a> {
                 let transform_response =
                     TransformableWidget::new(&mut self.crop_state.transform_state).show(
                         ui,
-                        mesh_rect,
+                        self.crop_state.photo_rect,
                         1.0,
                         true,
                         |_ui: &mut Ui, _transformed_rect: Rect, _transformable_state| {},
@@ -166,34 +170,47 @@ impl<'a> Crop<'a> {
                                 .rect
                                 .to_world_space(self.crop_state.photo_rect);
 
-                            let intersection =
-                                world_transform_rect.intersect(self.crop_state.photo_rect);
+                            let intersection = world_transform_rect
+                                .intersect(self.crop_state.photo_rect)
+                                .rotate_bb_around_point(
+                                    -photo.photo.metadata.rotation().radians(),
+                                    self.crop_state.photo_rect.center(),
+                                );
 
-                            let normalized_intersection = Rect::from_min_size(
+                            let unrotated_photo_rect =
+                                self.crop_state.photo_rect.rotate_bb_around_center(
+                                    -photo.photo.metadata.rotation().radians(),
+                                );
+
+                            let unrotated_normalized_intersection = Rect::from_min_size(
                                 Pos2::new(
-                                    (intersection.min - self.crop_state.photo_rect.min).x
-                                        / self.crop_state.photo_rect.size().x,
-                                    (intersection.min - self.crop_state.photo_rect.min).y
-                                        / self.crop_state.photo_rect.size().y,
+                                    (intersection.min - unrotated_photo_rect.min).x
+                                        / unrotated_photo_rect.size().x,
+                                    (intersection.min - unrotated_photo_rect.min).y
+                                        / unrotated_photo_rect.size().y,
                                 ),
                                 Vec2::new(
-                                    intersection.size().x / self.crop_state.photo_rect.size().x,
-                                    intersection.size().y / self.crop_state.photo_rect.size().y,
+                                    intersection.size().x / unrotated_photo_rect.size().x,
+                                    intersection.size().y / unrotated_photo_rect.size().y,
                                 ),
                             );
+
+                            let rotated_normalized_intersection = unrotated_normalized_intersection
+                                .rotate_bb_around_center(photo.photo.metadata.rotation().radians());
+
                             if let Some(layer) =
                                 self.state.layers.get_mut(&self.crop_state.target_layer)
                             {
                                 if let LayerContent::Photo(photo) = &mut layer.content {
-                                    photo.crop = normalized_intersection;
+                                    photo.crop = unrotated_normalized_intersection;
 
                                     let photo_rect = Rect::from_center_size(
                                         self.crop_state.photo_rect.center(),
                                         Vec2::new(
                                             photo.photo.metadata.rotated_width() as f32
-                                                * normalized_intersection.size().x,
+                                                * rotated_normalized_intersection.size().x,
                                             photo.photo.metadata.rotated_height() as f32
-                                                * normalized_intersection.size().y,
+                                                * rotated_normalized_intersection.size().y,
                                         ),
                                     );
 
