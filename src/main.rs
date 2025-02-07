@@ -131,7 +131,6 @@ enum PrimaryComponentKind {
 
 struct PhotoBookApp {
     log: Arc<StringLog>,
-    photo_manager: Singleton<PhotoManager>,
     loaded_fonts: bool,
     scene_manager: SceneManager,
     loaded_initial_scene: bool,
@@ -140,7 +139,6 @@ struct PhotoBookApp {
 impl PhotoBookApp {
     fn new(log: Arc<StringLog>) -> Self {
         Self {
-            photo_manager: Dependency::<PhotoManager>::get(),
             log,
             loaded_fonts: false,
             scene_manager: SceneManager::default(),

@@ -4,6 +4,7 @@ use eframe::egui::{self, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
 use egui::{StrokeKind, UiBuilder};
+use skia_safe::paint;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::photo_manager::PhotoManager;
@@ -97,7 +98,20 @@ impl<'a> Crop<'a> {
                     mesh_center,
                 );
 
-                painter.add(Shape::mesh(mesh));
+                painter.add(Shape::mesh(mesh.clone()));
+
+                painter.rect_filled(ui.max_rect(), 0.0, Color32::from_black_alpha(150));
+
+                let mut clipped_painter = painter.clone();
+
+                clipped_painter.set_clip_rect(
+                    self.crop_state
+                        .transform_state
+                        .rect
+                        .to_world_space(self.crop_state.photo_rect),
+                );
+
+                clipped_painter.add(Shape::mesh(mesh.clone()));
 
                 let transform_response =
                     TransformableWidget::new(&mut self.crop_state.transform_state).show(
@@ -105,6 +119,7 @@ impl<'a> Crop<'a> {
                         self.crop_state.photo_rect,
                         1.0,
                         true,
+                        false,
                         |_ui: &mut Ui, _transformed_rect: Rect, _transformable_state| {},
                     );
 
@@ -139,12 +154,12 @@ impl<'a> Crop<'a> {
 
         let actions = vec![
             ActionItem {
-                kind: ActionItemKind::Text("Apply".to_string()),
-                action: CropActionBarResponse::Apply,
-            },
-            ActionItem {
                 kind: ActionItemKind::Text("Cancel".to_string()),
                 action: CropActionBarResponse::Cancel,
+            },
+            ActionItem {
+                kind: ActionItemKind::Text("Apply".to_string()),
+                action: CropActionBarResponse::Apply,
             },
         ];
 
@@ -202,7 +217,7 @@ impl<'a> Crop<'a> {
                                 self.state.layers.get_mut(&self.crop_state.target_layer)
                             {
                                 if let LayerContent::Photo(photo) = &mut layer.content {
-                                    photo.crop = unrotated_normalized_intersection;
+                                    photo.crop = rotated_normalized_intersection;
 
                                     let photo_rect = Rect::from_center_size(
                                         self.crop_state.photo_rect.center(),

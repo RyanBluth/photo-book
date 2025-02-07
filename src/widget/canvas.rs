@@ -642,7 +642,7 @@ impl<'a> Canvas<'a> {
                             region_rect,
                             0.0,
                             Stroke::new(2.0, Color32::GRAY.gamma_multiply(0.5)),
-                            StrokeKind::Outside
+                            StrokeKind::Outside,
                         );
                     }
                 }
@@ -688,6 +688,7 @@ impl<'a> Canvas<'a> {
                     ui,
                     rect,
                     self.state.zoom,
+                    true,
                     true,
                     |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
@@ -864,6 +865,7 @@ impl<'a> Canvas<'a> {
                                     available_rect,
                                     self.state.zoom,
                                     active && !is_preview,
+                                    true,
                                     |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                                         // If the photo is rotated swap the width and height
                                         let mesh_rect =
@@ -882,7 +884,7 @@ impl<'a> Canvas<'a> {
                                         let painter = ui.painter();
                                         let mut mesh = Mesh::with_texture(texture.id);
 
-                                        mesh.add_rect_with_uv(mesh_rect, photo.crop, Color32::WHITE);
+                                        mesh.add_rect_with_uv(mesh_rect, photo.crop.rotate_bb_around_center(photo.photo.metadata.rotation().radians()), Color32::WHITE);
 
                                         let mesh_center: Pos2 =
                                             mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
@@ -936,6 +938,7 @@ impl<'a> Canvas<'a> {
                         available_rect,
                         self.state.zoom,
                         active && !is_preview,
+                        true,
                         |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
                             Self::draw_text(
                                 ui,
@@ -1073,8 +1076,12 @@ impl<'a> Canvas<'a> {
                 }
 
                 if layer.selected {
-                    ui.painter()
-                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN), StrokeKind::Outside);
+                    ui.painter().rect_stroke(
+                        rect,
+                        0.0,
+                        Stroke::new(2.0, Color32::GREEN),
+                        StrokeKind::Outside,
+                    );
                 }
 
                 Some(TransformableWidgetResponse {
@@ -1118,8 +1125,12 @@ impl<'a> Canvas<'a> {
                 );
 
                 if layer.selected {
-                    ui.painter()
-                        .rect_stroke(rect, 0.0, Stroke::new(2.0, Color32::GREEN), StrokeKind::Outside);
+                    ui.painter().rect_stroke(
+                        rect,
+                        0.0,
+                        Stroke::new(2.0, Color32::GREEN),
+                        StrokeKind::Outside,
+                    );
                 }
 
                 // TODO: Maybe this is really just a LayerResponse?
@@ -1158,7 +1169,7 @@ impl<'a> Canvas<'a> {
                 available_rect.left_top() + (rect.left_top() * self.state.zoom).to_vec2();
 
             let circle_size = 240.0 * self.state.zoom;
-            let mut circle_rect = Rect::from_min_size(circle_pos, Vec2::splat(circle_size));
+            let circle_rect = Rect::from_min_size(circle_pos, Vec2::splat(circle_size));
             //circle_rect = circle_rect.translate(self.state.offset);
 
             // Draw circle background

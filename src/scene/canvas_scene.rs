@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use egui::{Id, Key, Ui, Vec2};
+use egui::{Color32, Id, Key, Pos2, Rect, Stroke, Ui, Vec2};
 use egui_tiles::UiResponse;
 use indexmap::{indexmap, IndexMap};
 
@@ -354,11 +354,21 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
 
                             photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
 
-                            let transform_rect =
-                                photo_rect.translate_top_to(0.0).translate_left_to(0.0);
+                            let crop_origin = Pos2::new(
+                                photo_rect.width() * photo.crop.left_top().x,
+                                photo_rect.height() * photo.crop.left_top().y,
+                            );
+
+                            let scaled_crop_rect: Rect = Rect::from_min_max(
+                                crop_origin,
+                                Pos2::new(
+                                    crop_origin.x + photo_rect.width() * photo.crop.width(),
+                                    crop_origin.y + photo_rect.height() * photo.crop.height(),
+                                ),
+                            );
 
                             let crop_transform_state = TransformableState {
-                                rect: transform_rect,
+                                rect: scaled_crop_rect,
                                 rotation: 0.0,
                                 handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
                                 active_handle: None,

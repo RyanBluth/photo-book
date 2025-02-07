@@ -45,7 +45,7 @@ impl<T: Clone> ActionBar<T> {
         Frame::canvas(ui.style())
             .inner_margin(10.0)
             .fill(ACTION_BAR)
-            .rounding(8.0)
+            .corner_radius(8.0)
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
                     for item in &self.items {

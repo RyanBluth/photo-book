@@ -122,6 +122,7 @@ impl<'a> TransformableWidget<'a> {
         pre_scaled_container_rect: Rect,
         global_scale: f32,
         active: bool,
+        rotatable: bool,
         add_contents: impl FnOnce(&mut Ui, Rect, &mut TransformableState) -> R,
     ) -> TransformableWidgetResponse<R> {
         let initial_is_moving = self.state.is_moving;
@@ -145,12 +146,16 @@ impl<'a> TransformableWidget<'a> {
             pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);
 
         let mut response = if active {
-            // Draw the mode selector above the inner content
-            let mode_selector_response =
-                self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
+            if rotatable {
+                // Draw the mode selector above the inner content
+                let mode_selector_response =
+                    self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
 
-            ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
-                .union(mode_selector_response)
+                ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
+                    .union(mode_selector_response)
+            } else {
+                ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
+            }
         } else {
             ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
         };
@@ -544,8 +549,12 @@ impl<'a> TransformableWidget<'a> {
         rotated_content_rect: &Rect,
         handles: &[(TransformHandle, Pos2)],
     ) {
-        ui.painter()
-            .rect_stroke(*rotated_content_rect, 0.0, Stroke::new(2.0, Color32::GRAY), StrokeKind::Outside);
+        ui.painter().rect_stroke(
+            *rotated_content_rect,
+            0.0,
+            Stroke::new(2.0, Color32::GRAY),
+            StrokeKind::Outside,
+        );
 
         // Draw the resize handles
         for (handle, handle_pos) in handles {
@@ -559,7 +568,7 @@ impl<'a> TransformableWidget<'a> {
                     Color32::WHITE
                 },
                 Stroke::new(2.0, Color32::BLACK),
-                StrokeKind::Outside
+                StrokeKind::Outside,
             );
         }
     }
@@ -581,8 +590,13 @@ impl<'a> TransformableWidget<'a> {
             Sense::hover(),
         );
 
-        ui.painter()
-            .rect(response.rect, 4.0, Color32::from_gray(40), Stroke::NONE, StrokeKind::Outside);
+        ui.painter().rect(
+            response.rect,
+            4.0,
+            Color32::from_gray(40),
+            Stroke::NONE,
+            StrokeKind::Outside,
+        );
 
         let left_half_rect =
             Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
