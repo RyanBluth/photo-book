@@ -345,12 +345,14 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                             target_layer,
                             photo,
                         }) => {
-                            let padded_available_rect = ui
-                                .max_rect()
+                           
+                            let padded_available_rect = rect
                                 .shrink2(Vec2::new(rect.width() * 0.1, rect.height() * 0.1));
 
-                            let mut photo_rect =
-                                padded_available_rect.with_aspect_ratio(photo.photo.aspect_ratio());
+                            let mut photo_rect = padded_available_rect.with_aspect_ratio(
+                                photo.photo.metadata.width() as f32
+                                    / photo.photo.metadata.height() as f32,
+                            );
 
                             photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
 
@@ -359,13 +361,23 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                 photo_rect.height() * photo.crop.left_top().y,
                             );
 
-                            let scaled_crop_rect: Rect = Rect::from_min_max(
+                            let mut scaled_crop_rect: Rect = Rect::from_min_max(
                                 crop_origin,
                                 Pos2::new(
                                     crop_origin.x + photo_rect.width() * photo.crop.width(),
                                     crop_origin.y + photo_rect.height() * photo.crop.height(),
                                 ),
                             );
+
+                            let rotation = photo.photo.metadata.rotation().radians();
+
+                            scaled_crop_rect = scaled_crop_rect
+                                .to_world_space(photo_rect)
+                                .rotate_bb_around_point(rotation, photo_rect.center());
+
+                            photo_rect = photo_rect.rotate_bb_around_center(rotation);
+
+                            scaled_crop_rect = scaled_crop_rect.to_local_space(photo_rect);
 
                             let crop_transform_state = TransformableState {
                                 rect: scaled_crop_rect,

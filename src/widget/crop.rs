@@ -217,7 +217,7 @@ impl<'a> Crop<'a> {
                                 self.state.layers.get_mut(&self.crop_state.target_layer)
                             {
                                 if let LayerContent::Photo(photo) = &mut layer.content {
-                                    photo.crop = rotated_normalized_intersection;
+                                    photo.crop = unrotated_normalized_intersection;
 
                                     let photo_rect = Rect::from_center_size(
                                         self.crop_state.photo_rect.center(),
