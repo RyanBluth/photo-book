@@ -87,7 +87,7 @@ impl Scene for GalleryScene {
 
         match navigator.process_pending_request() {
             Some(NavigationRequest::Push(scene)) => SceneResponse::Push(scene),
-            Some(NavigationRequest::Pop) => SceneResponse::Pop,
+            Some(NavigationRequest::Pop(response)) => SceneResponse::Pop(response),
             None => SceneResponse::None,
         }
     }

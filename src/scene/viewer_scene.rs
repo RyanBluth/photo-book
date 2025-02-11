@@ -11,7 +11,7 @@ use crate::{
     },
 };
 
-use super::{NavigationRequest, Navigator, Scene, SceneResponse};
+use super::{NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse};
 
 pub struct ViewerSceneState {
     photo: Photo,
@@ -75,7 +75,7 @@ impl Scene for ViewerScene {
 
         match navigator.process_pending_request() {
             Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),
-            Some(NavigationRequest::Pop) => SceneResponse::Pop,
+            Some(NavigationRequest::Pop(response)) => SceneResponse::Pop(response),
             None => SceneResponse::None,
         }
     }
@@ -103,7 +103,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                 if let Some(request) = viewer_response.request {
                     match request {
                         image_viewer::Request::Exit => {
-                            self.navigator.pop();
+                            self.navigator.pop(ScenePopResponse::None);
                         }
                         image_viewer::Request::Previous => {
                             photo_manager.with_lock_mut(|photo_manager| {

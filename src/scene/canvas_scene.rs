@@ -10,6 +10,7 @@ use crate::{
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId, PageId},
     model::{edit_state::EditablePage, page::Page},
+    scene::crop_scene::CropScene,
     utils::{IdExt, RectExt},
     widget::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
@@ -27,13 +28,11 @@ use crate::{
 };
 
 use super::{
-    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse,
-    SceneTransition::Viewer,
+    crop_scene::CropSceneResponse, viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
+    ScenePopResponse, SceneResponse, SceneTransition::Viewer,
 };
 
 use crate::widget::canvas::CanvasResponse;
-use crate::widget::canvas_state::{CanvasInteractionMode, CropState};
-use crate::widget::crop::Crop;
 
 #[derive(Debug, Clone)]
 pub struct CanvasSceneState {
@@ -42,7 +41,6 @@ pub struct CanvasSceneState {
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,
-    crop_state: Option<CropState>,
 }
 
 impl CanvasSceneState {
@@ -56,7 +54,6 @@ impl CanvasSceneState {
             pages_state: PagesState::new(indexmap! { page_id => initial_state }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
-            crop_state: None,
         }
     }
 
@@ -69,7 +66,6 @@ impl CanvasSceneState {
             pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
-            crop_state: None,
         }
     }
 
@@ -160,40 +156,6 @@ impl CanvasScene {
         res.state = state;
         res
     }
-
-    // fn enter_crop_mode(&mut self, layer_id: LayerId) {
-    //     let page = self.state.selected_page();
-
-    //     if let Some(layer) = page.layers.get(&layer_id) {
-    //         if let LayerContent::Photo(photo) = &layer.content {
-    //             let padded_available_rect = page.available_rect.shrink2(Vec2::new(
-    //                 self.available_rect.width() * 0.1,
-    //                 self.available_rect.height() * 0.1,
-    //             ));
-
-    //             let mut photo_rect = padded_available_rect.with_aspect_ratio(photo.photo.aspect_ratio());
-    //             photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
-
-    //             let crop_transform_state = TransformableState {
-    //                 rect: photo_rect,
-    //                 rotation: 0.0,
-    //                 handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
-    //                 active_handle: None,
-    //                 is_moving: false,
-    //                 last_frame_rotation: 0.0,
-    //                 change_in_rotation: None,
-    //                 id: Id::random(),
-    //             };
-
-    //             self.state.selected_page_mut().interaction_mode =
-    //                 CanvasInteractionMode::Crop(CropState {
-    //                     target_layer: layer_id,
-    //                     transform_state: crop_transform_state,
-    //                     original_crop: photo.crop,
-    //                 });
-    //         }
-    //     }
-    // }
 }
 
 impl Scene for CanvasScene {
@@ -246,8 +208,41 @@ impl Scene for CanvasScene {
 
         match navigator.process_pending_request() {
             Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),
-            Some(NavigationRequest::Pop) => SceneResponse::Pop,
+            Some(NavigationRequest::Pop(response)) => SceneResponse::Pop(response),
             None => SceneResponse::None,
+        }
+    }
+
+    fn popped(&mut self, popped_scene_response: ScenePopResponse) {
+        match popped_scene_response {
+            ScenePopResponse::Crop(CropSceneResponse::Apply {
+                layer_id,
+                page_id,
+                crop,
+            }) => {
+                let page = self.state.pages_state.pages.get_mut(&page_id).unwrap();
+                let layer = page.layers.get_mut(&layer_id).unwrap();
+                if let LayerContent::Photo(photo) = &mut layer.content {
+                    photo.crop = crop;
+
+                    let rotated_crop = crop
+                        .rotate_bb_around_center(
+                            photo.photo.metadata.rotation().radians(),
+                        );
+
+                    let photo_rect: Rect = Rect::from_center_size(
+                        layer.transform_state.rect.center(),
+                        Vec2::new(
+                            photo.photo.metadata.rotated_width() as f32 * rotated_crop.size().x,
+                            photo.photo.metadata.rotated_height() as f32 * rotated_crop.size().y,
+                        ),
+                    );
+
+                    layer.transform_state.rect =
+                        photo_rect.fit_and_center_within(layer.transform_state.rect);
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -326,81 +321,27 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
 
                 let rect = ui.available_rect_before_wrap();
-                let mut crop_state: Option<CropState> = self.scene_state.crop_state.clone();
-
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
 
-                // Handle crop mode if active
-                if let Some(ref mut crop_state) = crop_state {
-                    let (page, history) = self.scene_state.selected_page_and_history_mut();
-                    if let CropResponse::Exit = Crop::new(page, rect, history, crop_state).show(ui)
-                    {
-                        self.scene_state.crop_state = None;
-                    } else {
-                        self.scene_state.crop_state = Some(crop_state.clone());
-                    }
-                } else {
-                    match Canvas::new(page, rect, history).show(ui) {
-                        Some(CanvasResponse::EnterCropMode {
+                match Canvas::new(page, rect, history).show(ui) {
+                    Some(CanvasResponse::EnterCropMode {
+                        target_layer,
+                        photo,
+                    }) => {
+                        let crop_scene = CropScene::new(
                             target_layer,
-                            photo,
-                        }) => {
-                           
-                            let padded_available_rect = rect
-                                .shrink2(Vec2::new(rect.width() * 0.1, rect.height() * 0.1));
-
-                            let mut photo_rect = padded_available_rect.with_aspect_ratio(
-                                photo.photo.metadata.width() as f32
-                                    / photo.photo.metadata.height() as f32,
-                            );
-
-                            photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
-
-                            let crop_origin = Pos2::new(
-                                photo_rect.width() * photo.crop.left_top().x,
-                                photo_rect.height() * photo.crop.left_top().y,
-                            );
-
-                            let mut scaled_crop_rect: Rect = Rect::from_min_max(
-                                crop_origin,
-                                Pos2::new(
-                                    crop_origin.x + photo_rect.width() * photo.crop.width(),
-                                    crop_origin.y + photo_rect.height() * photo.crop.height(),
-                                ),
-                            );
-
-                            let rotation = photo.photo.metadata.rotation().radians();
-
-                            scaled_crop_rect = scaled_crop_rect
-                                .to_world_space(photo_rect)
-                                .rotate_bb_around_point(rotation, photo_rect.center());
-
-                            photo_rect = photo_rect.rotate_bb_around_center(rotation);
-
-                            scaled_crop_rect = scaled_crop_rect.to_local_space(photo_rect);
-
-                            let crop_transform_state = TransformableState {
-                                rect: scaled_crop_rect,
-                                rotation: 0.0,
-                                handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
-                                active_handle: None,
-                                is_moving: false,
-                                last_frame_rotation: 0.0,
-                                change_in_rotation: None,
-                                id: Id::random(),
-                            };
-
-                            self.scene_state.crop_state = Some(CropState {
-                                target_layer,
-                                transform_state: crop_transform_state,
-                                photo_rect: photo_rect,
-                            });
-                        }
-                        Some(CanvasResponse::Exit) => {
-                            return UiResponse::None;
-                        }
-                        None => {}
+                            self.scene_state.pages_state.selected_page,
+                            rect,
+                            photo.photo,
+                            photo.crop,
+                        );
+                        self.navigator
+                            .push(super::SceneTransition::Crop(crop_scene));
                     }
+                    Some(CanvasResponse::Exit) => {
+                        return UiResponse::None;
+                    }
+                    None => {}
                 }
             }
             CanvasScenePane::Info => {

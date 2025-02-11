@@ -140,7 +140,7 @@ impl TemplatePreview {
                             region_rect,
                             0.0,
                             Stroke::new(2.0, Color32::DARK_GRAY),
-                            StrokeKind::Outside
+                            StrokeKind::Outside,
                         );
 
                         ui.allocate_ui_at_rect(region_rect, |ui| {

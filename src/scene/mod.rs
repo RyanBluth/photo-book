@@ -1,3 +1,5 @@
+use crop_scene::{CropScene, CropSceneResponse};
+
 use crate::{
     photo::Photo,
     widget::{
@@ -11,14 +13,20 @@ use self::{
 };
 
 pub mod canvas_scene;
+pub mod crop_scene;
 pub mod organize_edit_scene;
 pub mod organize_scene;
 pub mod viewer_scene;
 
 pub enum SceneResponse {
     None,
-    Pop,
+    Pop(ScenePopResponse),
     Push(SceneTransition),
+}
+
+pub enum ScenePopResponse {
+    None,
+    Crop(CropSceneResponse),
 }
 
 pub enum SceneTransition {
@@ -26,6 +34,7 @@ pub enum SceneTransition {
     Gallery(GalleryScene),
     Viewer(ViewerScene),
     Canvas(CanvasScene),
+    Crop(CropScene),
 }
 
 impl SceneTransition {
@@ -35,6 +44,7 @@ impl SceneTransition {
             SceneTransition::Gallery(scene) => Box::new(scene),
             SceneTransition::Viewer(scene) => Box::new(scene),
             SceneTransition::Canvas(scene) => Box::new(scene),
+            SceneTransition::Crop(scene) => Box::new(scene),
         }
     }
 }
@@ -46,6 +56,7 @@ impl PartialEq for SceneTransition {
             (SceneTransition::Gallery(_), SceneTransition::Gallery(_)) => true,
             (SceneTransition::Viewer(_), SceneTransition::Viewer(_)) => true,
             (SceneTransition::Canvas(_), SceneTransition::Canvas(_)) => true,
+            (SceneTransition::Crop(_), SceneTransition::Crop(_)) => true,
             _ => false,
         }
     }
@@ -53,6 +64,8 @@ impl PartialEq for SceneTransition {
 
 pub trait Scene: Send + Sync {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse;
+
+    fn popped(&mut self, popped_scene_response: ScenePopResponse) {}
 }
 
 pub struct SceneManager {
@@ -90,8 +103,13 @@ impl SceneManager {
 
         match response {
             SceneResponse::None => {}
-            SceneResponse::Pop => {
+            SceneResponse::Pop(response) => {
                 self.pop();
+
+                match self.scenes.last_mut() {
+                    Some(scene) => scene.popped(response),
+                    None => self.root_scene.popped(response),
+                }
             }
             SceneResponse::Push(scene) => {
                 self.push(scene);
@@ -115,7 +133,7 @@ impl Default for SceneManager {
 
 pub enum NavigationRequest {
     Push(SceneTransition),
-    Pop,
+    Pop(ScenePopResponse),
 }
 
 pub struct Navigator {
@@ -131,8 +149,8 @@ impl Navigator {
         self.request = Some(NavigationRequest::Push(scene));
     }
 
-    pub fn pop(&mut self) {
-        self.request = Some(NavigationRequest::Pop);
+    pub fn pop(&mut self, response: ScenePopResponse) {
+        self.request = Some(NavigationRequest::Pop(response));
     }
 
     pub fn process_pending_request(self) -> Option<NavigationRequest> {

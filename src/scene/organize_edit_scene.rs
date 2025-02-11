@@ -16,18 +16,20 @@ use crate::{
         page_settings::PageSettingsModal,
         ModalActionResponse,
     },
+    photo,
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
     utils::{Either, Toggle},
-    widget::canvas::CanvasState,
+    widget::{canvas::CanvasState, canvas_info::layers::LayerContent},
 };
 
 use super::{
     canvas_scene::{self, CanvasScene},
+    crop_scene::CropSceneResponse,
     organize_scene::GalleryScene,
-    CanvasSceneState, Scene, SceneResponse,
+    CanvasSceneState, Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
 };
 
@@ -476,5 +478,16 @@ impl Scene for OrganizeEditScene {
             }
         })
         .inner
+    }
+
+    fn popped(&mut self, popped_scene_response: ScenePopResponse) {
+        match self.current {
+            Either::Left(ref mut organize) => {
+                organize.write().unwrap().popped(popped_scene_response);
+            }
+            Either::Right(ref mut edit) => {
+                edit.write().unwrap().popped(popped_scene_response);
+            }
+        }
     }
 }

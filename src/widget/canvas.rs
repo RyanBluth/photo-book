@@ -33,7 +33,6 @@ use super::{
         },
         quick_layout::{self, QuickLayout},
     },
-    canvas_state::{CanvasInteractionMode, CropState},
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
         TransformableWidgetResponse,
@@ -884,7 +883,7 @@ impl<'a> Canvas<'a> {
                                         let painter = ui.painter();
                                         let mut mesh = Mesh::with_texture(texture.id);
 
-                                        mesh.add_rect_with_uv(mesh_rect, photo.crop.rotate_bb_around_center(photo.photo.metadata.rotation().radians()), Color32::WHITE);
+                                        mesh.add_rect_with_uv(mesh_rect, photo.crop, Color32::WHITE);
 
                                         let mesh_center: Pos2 =
                                             mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
