@@ -1,6 +1,6 @@
 use crate::{id::LayerId, photo::Photo};
 use crate::widget::transformable::TransformableState;
-use eframe::egui::{Id, Rect};
+use eframe::egui::Rect;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CropState {

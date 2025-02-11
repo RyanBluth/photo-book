@@ -3,7 +3,6 @@ use crate::{
     photo::Photo,
     utils::{IdExt, RectExt},
     widget::{
-        canvas::{CanvasPhoto, CanvasState},
         canvas_state::CropState,
         crop::{Crop, CropResponse},
         transformable::{ResizeMode, TransformHandleMode, TransformableState},

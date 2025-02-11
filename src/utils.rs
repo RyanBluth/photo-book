@@ -128,35 +128,35 @@ impl RectExt for Rect {
         let bottom_right = self.max.to_vec2();
 
         let rotated_top_left = Pos2::new(
-            (angle.cos() * (top_left.x - origin.x) - angle.sin() * (top_left.y - origin.y)
-                + origin.x),
-            (angle.sin() * (top_left.x - origin.x)
+            angle.cos() * (top_left.x - origin.x) - angle.sin() * (top_left.y - origin.y)
+                + origin.x,
+            angle.sin() * (top_left.x - origin.x)
                 + angle.cos() * (top_left.y - origin.y)
-                + origin.y),
+                + origin.y,
         );
 
         let rotated_top_right = Pos2::new(
-            (angle.cos() * (top_right.x - origin.x) - angle.sin() * (top_right.y - origin.y)
-                + origin.x),
-            (angle.sin() * (top_right.x - origin.x)
+            angle.cos() * (top_right.x - origin.x) - angle.sin() * (top_right.y - origin.y)
+                + origin.x,
+            angle.sin() * (top_right.x - origin.x)
                 + angle.cos() * (top_right.y - origin.y)
-                + origin.y),
+                + origin.y,
         );
 
         let rotated_bottom_left = Pos2::new(
-            (angle.cos() * (bottom_left.x - origin.x) - angle.sin() * (bottom_left.y - origin.y)
-                + origin.x),
-            (angle.sin() * (bottom_left.x - origin.x)
+            angle.cos() * (bottom_left.x - origin.x) - angle.sin() * (bottom_left.y - origin.y)
+                + origin.x,
+            angle.sin() * (bottom_left.x - origin.x)
                 + angle.cos() * (bottom_left.y - origin.y)
-                + origin.y),
+                + origin.y,
         );
 
         let rotated_bottom_right = Pos2::new(
-            (angle.cos() * (bottom_right.x - origin.x) - angle.sin() * (bottom_right.y - origin.y)
-                + origin.x),
-            (angle.sin() * (bottom_right.x - origin.x)
+            angle.cos() * (bottom_right.x - origin.x) - angle.sin() * (bottom_right.y - origin.y)
+                + origin.x,
+            angle.sin() * (bottom_right.x - origin.x)
                 + angle.cos() * (bottom_right.y - origin.y)
-                + origin.y),
+                + origin.y,
         );
 
         let rotated_corners = [

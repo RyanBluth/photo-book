@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_layer_id, next_page_id, set_min_layer_id, LayerId, PageId},
+    dependencies::{Dependency, SingletonFor},
+    id::{next_page_id, set_min_layer_id, LayerId, PageId},
     model::{
         edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,

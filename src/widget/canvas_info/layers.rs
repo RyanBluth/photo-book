@@ -1,4 +1,4 @@
-use std::{hash::Hasher, sync::Arc};
+use std::hash::Hasher;
 
 use eframe::epaint::Color32;
 use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
@@ -9,7 +9,7 @@ use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     history::HistoricallyEqual,
-    id::{next_layer_id, next_quick_layout_index, LayerId},
+    id::{next_layer_id, LayerId},
     model::{self, editable_value::EditableValue},
     photo::Photo,
     photo_manager::PhotoManager,

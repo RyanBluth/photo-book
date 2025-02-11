@@ -1,14 +1,11 @@
-use std::thread::current;
 
-use eframe::egui::{self, CursorIcon, Pos2, Rect, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Pos2, Rect, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
-use egui::{StrokeKind, UiBuilder};
-use skia_safe::paint;
+use egui::UiBuilder;
 
-use crate::dependencies::{Dependency, Singleton, SingletonFor};
+use crate::dependencies::{Dependency, SingletonFor};
 use crate::photo_manager::PhotoManager;
-use crate::scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager};
 use crate::utils::RectExt;
 use crate::widget::action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind};
 use crate::widget::auto_center::AutoCenter;

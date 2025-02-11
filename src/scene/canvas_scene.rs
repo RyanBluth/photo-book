@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use egui::{Color32, Id, Key, Pos2, Rect, Stroke, Ui, Vec2};
+use egui::{Key, Rect, Ui, Vec2};
 use egui_tiles::UiResponse;
 use indexmap::{indexmap, IndexMap};
 
@@ -9,9 +9,9 @@ use crate::{
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_page_id, LayerId, PageId},
-    model::{edit_state::EditablePage, page::Page},
+    model::edit_state::EditablePage,
     scene::crop_scene::CropScene,
-    utils::{IdExt, RectExt},
+    utils::RectExt,
     widget::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         canvas_info::{
@@ -19,11 +19,9 @@ use crate::{
             panel::CanvasInfo,
             quick_layout::{QuickLayout, QuickLayoutState},
         },
-        crop::CropResponse,
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         pages::{Pages, PagesResponse, PagesState},
         templates::{Templates, TemplatesResponse, TemplatesState},
-        transformable::{ResizeMode, TransformHandleMode, TransformableState},
     },
 };
 

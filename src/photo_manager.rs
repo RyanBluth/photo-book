@@ -20,14 +20,13 @@ use tokio::task::spawn_blocking;
 use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
 use crate::{
-    dependencies::{Dependency, Singleton},
+    dependencies::Dependency,
     dirs::Dirs,
-    photo::{self, Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
+    photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
 use anyhow::{anyhow, Ok};
 use fr::CpuExtensions;
-use image::io::Reader as ImageReader;
 use image::ImageEncoder;
 
 use core::result::Result;

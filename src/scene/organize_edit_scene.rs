@@ -16,20 +16,16 @@ use crate::{
         page_settings::PageSettingsModal,
         ModalActionResponse,
     },
-    photo,
     photo_manager::{PhotoManager, PhotosGrouping},
     project::v1::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
     utils::{Either, Toggle},
-    widget::{canvas::CanvasState, canvas_info::layers::LayerContent},
 };
 
 use super::{
-    canvas_scene::{self, CanvasScene},
-    crop_scene::CropSceneResponse,
-    organize_scene::GalleryScene,
-    CanvasSceneState, Scene, ScenePopResponse, SceneResponse,
+    canvas_scene::{CanvasScene},
+    organize_scene::GalleryScene, Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
 };
 

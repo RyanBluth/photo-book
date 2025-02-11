@@ -18,7 +18,6 @@ use font_manager::FontManager;
 use dirs::Dirs;
 use log::info;
 use modal::manager::ModalManager;
-use photo_manager::PhotoManager;
 use project::v1::Project;
 use scene::{organize_edit_scene::OrganizeEditScene, SceneManager};
 use tokio::runtime;

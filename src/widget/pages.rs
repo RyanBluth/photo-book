@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Button, Color32, Layout, Sense, Stroke, Vec2};
+use egui::{Button, Color32, Layout, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
@@ -7,7 +7,7 @@ use indexmap::IndexMap;
 use crate::{
     assets::Asset,
     id::{next_page_id, PageId},
-    scene::canvas_scene::{CanvasHistory, CanvasHistoryManager},
+    scene::canvas_scene::CanvasHistoryManager,
     theme,
 };
 

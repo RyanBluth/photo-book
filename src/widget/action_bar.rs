@@ -1,7 +1,6 @@
-use egui::{frame, Button, Color32, Frame, ImageSource, Stroke, Theme, Ui};
-use font_kit::canvas::Canvas;
+use egui::{Button, Frame, ImageSource, Ui};
 
-use crate::{assets::Asset, theme::color::ACTION_BAR, utils::EguiUiExt};
+use crate::theme::color::ACTION_BAR;
 
 #[derive(Debug, Clone)]
 pub enum ActionItemKind {

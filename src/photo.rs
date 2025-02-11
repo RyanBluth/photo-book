@@ -9,7 +9,6 @@ use std::{
     path::PathBuf,
 };
 use tokio::fs::File as TokioFile;
-use tokio::io::BufReader as TokioBufReader;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},

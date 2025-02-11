@@ -1,21 +1,19 @@
-use std::sync::Arc;
 
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Button, Frame, Id, Layout, RichText, Stroke, StrokeKind, UiBuilder};
+use egui::{Align, Id, Layout, RichText, Stroke, StrokeKind, UiBuilder};
 use indexmap::{indexmap, IndexMap};
-use printpdf::image_crate::flat::SampleLayout;
 
 use crate::{
     cursor_manager::CursorManager,
     debug::DebugSettings,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_layer_id, next_quick_layout_index, LayerId},
+    dependencies::{Dependency, SingletonFor},
+    id::{next_layer_id, LayerId},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
-    photo::{self, Photo},
+    photo::{Photo},
     photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
@@ -31,7 +29,7 @@ use super::{
             CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
             TextVerticalAlignment,
         },
-        quick_layout::{self, QuickLayout},
+        quick_layout::{self},
     },
     transformable::{
         ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,

@@ -2,11 +2,9 @@ use eframe::egui::{self};
 use egui::{Pos2, Rect, Sense, Vec2};
 
 use egui_extras::Column;
-use indexmap::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::{
-    id::LayerId,
     model::page::Page,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,

@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use log::{error, info};
 
 use crate::{
-    auto_persisting::{AutoPersisting, PersistentModifiable},
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dependencies::{Dependency, SingletonFor},
     photo_manager::PhotoManager,
     project::v1::{Project, ProjectError},
     scene::organize_edit_scene::OrganizeEditScene,
