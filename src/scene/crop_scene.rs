@@ -44,6 +44,20 @@ impl CropScene {
 
         photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
 
+        let rotation = photo.metadata.rotation().radians();
+
+        // First rotate the photo_rect
+        let rotated_photo_rect = photo_rect.rotate_bb_around_center(rotation);
+
+        // Scale down the rotated rect to fit within padded area
+        let scale_factor = (padded_available_rect.width() / rotated_photo_rect.width())
+            .min(padded_available_rect.height() / rotated_photo_rect.height());
+
+        if scale_factor < 1.0 {
+            photo_rect = photo_rect.scale_from_center(scale_factor);
+        }
+
+        // Calculate crop rect based on the adjusted photo_rect
         let crop_origin = Pos2::new(
             photo_rect.width() * initial_crop.left_top().x,
             photo_rect.height() * initial_crop.left_top().y,
@@ -56,8 +70,6 @@ impl CropScene {
                 crop_origin.y + photo_rect.height() * initial_crop.height(),
             ),
         );
-
-        let rotation = photo.metadata.rotation().radians();
 
         scaled_crop_rect = scaled_crop_rect
             .to_world_space(photo_rect)
@@ -97,7 +109,7 @@ impl Scene for CropScene {
             photo: self.photo.clone(),
         };
 
-        match Crop::new(ui.available_rect_before_wrap(), &mut crop_state).show(ui) {
+        match Crop::new(&mut crop_state).show(ui) {
             CropResponse::Apply(crop) => {
                 SceneResponse::Pop(ScenePopResponse::Crop(CropSceneResponse::Apply {
                     layer_id: self.target_layer,

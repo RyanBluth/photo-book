@@ -26,21 +26,19 @@ enum CropActionBarResponse {
 }
 
 pub struct Crop<'a> {
-    pub available_rect: Rect,
     pub crop_state: &'a mut CropState,
 }
 
 impl<'a> Crop<'a> {
-    pub fn new(available_rect: Rect, crop_state: &'a mut CropState) -> Self {
+    pub fn new(crop_state: &'a mut CropState) -> Self {
         Self {
-            available_rect,
             crop_state,
         }
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
         ui.painter()
-            .rect_filled(self.available_rect, 0.0, Color32::BLACK);
+            .rect_filled(ui.max_rect(), 0.0, Color32::BLACK);
 
         let texture = Dependency::<PhotoManager>::get()
             .with_lock_mut(|photo_manager| {
