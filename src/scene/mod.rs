@@ -95,11 +95,11 @@ impl SceneManager {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let response = if let Some(scene) = self.scenes.last_mut() {
+        let response = match self.scenes.last_mut() { Some(scene) => {
             scene.ui(ui)
-        } else {
+        } _ => {
             self.root_scene.ui(ui)
-        };
+        }};
 
         match response {
             SceneResponse::None => {}

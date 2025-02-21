@@ -9,7 +9,7 @@ use crate::{
 };
 
 macro_rules! singleton {
-    ($name: ident, $type:ty, $init:expr) => {
+    ($name: ident, $type:ty, $init:expr_2021) => {
         static $name: once_cell::sync::Lazy<Singleton<$type>> =
             once_cell::sync::Lazy::new(|| Singleton(Arc::new(RwLock::new($init))));
 
@@ -22,7 +22,7 @@ macro_rules! singleton {
 }
 
 macro_rules! dependency {
-    ($type:ty, $init: expr) => {
+    ($type:ty, $init: expr_2021) => {
         impl DependencyFor<$type> for Dependency<$type> {
             fn get() -> $type {
                 $init

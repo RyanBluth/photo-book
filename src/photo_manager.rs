@@ -302,13 +302,13 @@ impl PhotoManager {
                     }
                     .unwrap_or_else(|| "Unknown Date".to_string());
 
-                    if let Some(group) = grouped_photos.get_mut(&key) {
+                    match grouped_photos.get_mut(&key) { Some(group) => {
                         group.insert(photo_path.clone(), photo.clone());
-                    } else {
+                    } _ => {
                         let mut group = IndexMap::new();
                         group.insert(photo_path.clone(), photo.clone());
                         grouped_photos.insert(key, group);
-                    }
+                    }}
                 }
 
                 grouped_photos.sort_by(|a, _, b, _| b.cmp(a));
@@ -323,13 +323,13 @@ impl PhotoManager {
                     let rating = photo.rating;
                     let key = format!("{:?}", rating);
 
-                    if let Some(group) = grouped_photos.get_mut(&key) {
+                    match grouped_photos.get_mut(&key) { Some(group) => {
                         group.insert(photo_path.clone(), photo.clone());
-                    } else {
+                    } _ => {
                         let mut group = IndexMap::new();
                         group.insert(photo_path.clone(), photo.clone());
                         grouped_photos.insert(key, group);
-                    }
+                    }}
                 }
 
                 if let Some(yes_index) = grouped_photos.get_index_of(&PhotoRating::Yes.to_string())

@@ -134,16 +134,16 @@ impl<'a> egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'a> {
 
                 let gallery_state = &self.scene_state.image_gallery_state;
 
-                if let Some(selected_image) = gallery_state.selected_images.iter().next() {
+                match gallery_state.selected_images.iter().next() { Some(selected_image) => {
                     let mut photo = photo_manager
                         .with_lock(|photo_manager| photo_manager.photos[selected_image].clone());
 
                     PhotoInfo::new(SaveOnDropPhoto::new(&mut photo)).show(ui);
-                } else {
+                } _ => {
                     ui.both_centered(|ui| {
                         ui.heading("Nothing selected");
                     });
-                }
+                }}
             }
         }
 

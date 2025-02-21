@@ -838,7 +838,7 @@ impl<'a> Canvas<'a> {
         let active = layer.selected && self.state.multi_select.is_none();
 
         let layer_response = match &mut layer.content {
-            LayerContent::Photo(ref mut photo) => {
+            LayerContent::Photo(photo) => {
                 let transform_response = ui
                     .push_id(
                         format!(
@@ -849,9 +849,9 @@ impl<'a> Canvas<'a> {
                         ),
                         |ui| {
                             Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                                if let Ok(Some(texture)) = photo_manager
+                                match photo_manager
                                     .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                                {
+                                { Ok(Some(texture)) => {
                                     let mut transform_state = layer.transform_state.clone();
 
                                     let transform_response = TransformableWidget::new(
@@ -904,9 +904,9 @@ impl<'a> Canvas<'a> {
                                     layer.transform_state = transform_state;
 
                                     Some(transform_response)
-                                } else {
+                                } _ => {
                                     None
-                                }
+                                }}
                             })
                         },
                     )

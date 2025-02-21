@@ -1,7 +1,7 @@
 use eframe::egui::{include_image, ImageSource};
 
 macro_rules! image_asset {
-    ($name:ident, $path:expr) => {
+    ($name:ident, $path:expr_2021) => {
         pub fn $name() -> ImageSource<'static> {
             include_image!($path)
         }

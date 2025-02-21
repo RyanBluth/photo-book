@@ -525,14 +525,14 @@ impl Into<OrganizeEditScene> for Project {
             })
             .collect();
 
-        let edit_scene = if let Some(first_page_id) = pages.first().map(|(id, _)| *id) {
+        let edit_scene = match pages.first().map(|(id, _)| *id) { Some(first_page_id) => {
             Some(CanvasScene::with_state(CanvasSceneState::with_pages(
                 pages,
                 first_page_id,
             )))
-        } else {
+        } _ => {
             None
-        };
+        }};
 
         let organize_scene = GalleryScene::new();
 
