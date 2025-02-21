@@ -318,7 +318,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                let rect = ui.available_rect_before_wrap();
+                let rect = ui.max_rect();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
 
                 match Canvas::new(page, rect, history).show(ui) {

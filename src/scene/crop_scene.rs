@@ -9,6 +9,7 @@ use crate::{
     },
 };
 use egui::{Id, Pos2, Rect, Vec2};
+use printpdf::scale;
 
 use super::{Scene, ScenePopResponse, SceneResponse};
 
@@ -102,6 +103,28 @@ impl CropScene {
 
 impl Scene for CropScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
+        let available_rect = ui.max_rect();
+        let padded_available_rect: Rect = available_rect.shrink2(Vec2::new(
+            available_rect.width() * 0.1,
+            available_rect.height() * 0.1,
+        ));
+
+        let adjusted_photo_rect = self.photo_rect.fit_and_center_within(padded_available_rect);
+
+        let scale_factor: f32 = (adjusted_photo_rect.width() / self.photo_rect.width())
+            .min(adjusted_photo_rect.height() / self.photo_rect.height());
+
+        let transform_position = self.transform_state.rect.left_top();
+        let transform_size = self.transform_state.rect.size();
+
+        self.transform_state.rect.set_left(transform_position.x * scale_factor);
+        self.transform_state.rect.set_top(transform_position.y * scale_factor);
+        
+        self.transform_state.rect.set_width(transform_size.x * scale_factor);
+        self.transform_state.rect.set_height(transform_size.y * scale_factor);
+        
+        self.photo_rect = adjusted_photo_rect;
+
         let mut crop_state = CropState {
             target_layer: self.target_layer,
             transform_state: self.transform_state.clone(),
