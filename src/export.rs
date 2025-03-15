@@ -128,7 +128,7 @@ impl Exporter {
             }
 
             if let Err(err) = Self::export_pdf(&pages, &directory, &file_name) {
-                let mut tasks = tasks.lock().unwrap();
+                let mut tasks: std::sync::MutexGuard<'_, HashMap<ExportTaskId, ExportTaskStatus>> = tasks.lock().unwrap();
                 tasks.insert(task_id, ExportTaskStatus::Failed(err));
                 ctx.request_repaint();
                 return;
