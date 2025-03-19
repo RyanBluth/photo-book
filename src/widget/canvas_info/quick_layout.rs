@@ -4,13 +4,15 @@ use eframe::egui::{self};
 use egui::{Pos2, Rect, Sense, Vec2};
 
 use egui_extras::Column;
+use exif::In;
+use indexmap::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::{
     model::page::Page,
     photo,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    utils::EguiUiExt,
+    utils::{EguiUiExt, RectExt},
     widget::{
         canvas::{Canvas, CanvasState},
         spacer::Spacer,
@@ -22,6 +24,7 @@ use super::layers::{Layer, LayerContent};
 #[derive(Debug, Clone, Copy)]
 struct QuickLayoutRegion {
     absolute_rect: Rect,
+    id: usize,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -60,35 +63,44 @@ pub enum Layout {
 
 impl Layout {
     pub fn apply(&self, canvas_state: &mut CanvasState) {
-        let regions = match self {
+        let page_size = canvas_state.page.value.size_pixels();
+
+        let regions: IndexMap<usize, Rect> = match self {
             Layout::GridLayout { n, padding } => {
                 let grid_size = (*n as f32).sqrt().ceil() as usize;
-                let cell_size = 1.0 / grid_size as f32;
-                canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .enumerate()
-                    .map(|(index, layer_id)| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-                        let row = index / grid_size;
-                        let col = index % grid_size;
-                        let rect = Rect::from_min_size(
-                            Pos2::new(
-                                col as f32 * cell_size + padding,
-                                row as f32 * cell_size + padding,
-                            ),
-                            Vec2::new(cell_size - 2.0 * padding, cell_size - 2.0 * padding),
-                        );
-                        QuickLayoutRegion {
-                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
-                                layer,
-                                &canvas_state.page.value,
-                                rect,
-                                QuickLayoutFillMode::Fill,
-                            ),
+                let column_size = page_size.x / grid_size as f32;
+
+                let stack_items: Vec<StackLayoutItem> = canvas_state.into();
+
+                (0..grid_size)
+                    .map(|column| {
+                        let stack_items = stack_items
+                            .iter()
+                            .skip(column)
+                            .step_by(grid_size)
+                            .map(|item| item.clone())
+                            .collect::<Vec<_>>();
+
+                        StackLayout {
+                            width: column_size,
+                            height: page_size.y,
+                            gap: 50.0,
+                            margin: Margin {
+                                top: 50.0,
+                                right: 50.0,
+                                bottom: 50.0,
+                                left: if column == 0 { 50.0 } else { 0.0 },
+                            },
+                            direction: StackLayoutDirection::Vertical,
+                            alignment: StackCrossAxisAlignment::Center,
+                            distribution: StackLayoutDistribution::Grid,
+                            x: column as f32 * column_size,
+                            y: 0.0,
                         }
+                        .layout(stack_items)
                     })
-                    .collect::<Vec<_>>()
+                    .flatten()
+                    .collect::<IndexMap<usize, Rect>>()
             }
             Layout::CenteredWeightedGridLayout { n, padding } => {
                 let grid_size = (*n as f32).sqrt().ceil() as usize;
@@ -130,23 +142,25 @@ impl Layout {
                         let rect =
                             Rect::from_min_size(Pos2::new(x, y), Vec2::new(cell_size, cell_size));
 
-                        QuickLayoutRegion {
-                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
+                        (
+                            *layer_id,
+                            QuickLayout::fractional_rect_for_layer_in_page(
                                 layer,
                                 &canvas_state.page.value,
                                 rect,
                                 QuickLayoutFillMode::Fill,
                             ),
-                        }
+                        )
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<IndexMap<usize, Rect>>()
             }
             Layout::HighlightLayout { padding } => {
                 let n = canvas_state.quick_layout_order.len();
-                let mut regions = vec![];
+                let mut regions = IndexMap::new();
                 let highlight_layer_index = 0;
 
                 let highlight_region = QuickLayoutRegion {
+                    id: canvas_state.quick_layout_order[highlight_layer_index],
                     absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
                         canvas_state
                             .layers
@@ -168,11 +182,12 @@ impl Layout {
 
                 for (i, layer_id) in canvas_state.quick_layout_order.iter().enumerate() {
                     if i == highlight_layer_index {
-                        regions.push(highlight_region.clone());
+                        regions.insert(*layer_id, highlight_region.absolute_rect);
                         continue;
                     }
-                    regions.push(QuickLayoutRegion {
-                        absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
+                    regions.insert(
+                        *layer_id,
+                        QuickLayout::fractional_rect_for_layer_in_page(
                             canvas_state.layers.get(layer_id).unwrap(),
                             &canvas_state.page.value,
                             Rect::from_min_size(
@@ -181,7 +196,7 @@ impl Layout {
                             ),
                             QuickLayoutFillMode::Margin(*padding),
                         ),
-                    });
+                    );
 
                     non_highlight_count += 1;
                 }
@@ -189,92 +204,44 @@ impl Layout {
                 regions
             }
             Layout::VerticalStackLayout => {
-                // let n = canvas_state.quick_layout_order.len();
-                // let margin = 0.02;
-                // let available_height = 1.0 - margin * (n as f32 + 1.0);
-                // let cell_height = available_height / n as f32;
-                // canvas_state
-                //     .quick_layout_order
-                //     .iter()
-                //     .enumerate()
-                //     .map(|(i, layer_id)| {
-                //         let layer = canvas_state.layers.get(layer_id).unwrap();
-                //         let y = margin * (i as f32 + 1.0) + cell_height * i as f32;
-                //         QuickLayoutRegion {
-                //             absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
-                //                 layer,
-                //                 &canvas_state.page.value,
-                //                 Rect::from_min_size(
-                //                     Pos2::new(margin, y),
-                //                     Vec2::new(1.0 - 2.0 * margin, cell_height),
-                //                 ),
-                //                 QuickLayoutFillMode::Fill,
-                //             ),
-                //         }
-                //     })
-                //     .collect::<Vec<_>>()
-
-                let stack_layout_items = canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .filter_map(|layer_id| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-
-                        if let LayerContent::Photo(photo) = &layer.content {
-                            Some(StackLayoutItem {
-                                aspect_ratio: photo.photo.aspect_ratio(),
-                                id: *layer_id,
-                            })
-                        } else {
-                            None
-                        }
-                    })
-                    .collect::<Vec<_>>();
-
-                let page_size = canvas_state.page.value.size_pixels();
-
                 let stack_layout = StackLayout {
                     width: page_size.x,
                     height: page_size.y,
                     gap: 50.0,
+                    margin: Margin {
+                        top: 100.0,
+                        right: 100.0,
+                        bottom: 100.0,
+                        left: 100.0,
+                    },
                     direction: StackLayoutDirection::Vertical,
-                    alignment: StackCrossAxisAlignment::Start,
-                    distribution: StackLayoutDistribution::End,
+                    alignment: StackCrossAxisAlignment::Center,
+                    distribution: StackLayoutDistribution::Grid,
+                    x: 0.0,
+                    y: 0.0,
                 };
 
-                stack_layout
-                    .layout(&stack_layout_items)
-                    .iter()
-                    .map(|rect| QuickLayoutRegion {
-                        absolute_rect: *rect,
-                    })
-                    .collect::<Vec<_>>()
+                stack_layout.layout(canvas_state.into())
             }
             Layout::HorizontalStackLayout => {
-                let n = canvas_state.quick_layout_order.len();
-                let margin = 0.02;
-                let available_width = 1.0 - margin * (n as f32 + 1.0);
-                let cell_width = available_width / n as f32;
-                canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .enumerate()
-                    .map(|(i, layer_id)| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-                        let x = margin * (i as f32 + 1.0) + cell_width * i as f32;
-                        QuickLayoutRegion {
-                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
-                                layer,
-                                &canvas_state.page.value,
-                                Rect::from_min_size(
-                                    Pos2::new(x, margin),
-                                    Vec2::new(cell_width, 1.0 - 2.0 * margin),
-                                ),
-                                QuickLayoutFillMode::Fill,
-                            ),
-                        }
-                    })
-                    .collect::<Vec<_>>()
+                let stack_layout = StackLayout {
+                    width: page_size.x,
+                    height: page_size.y,
+                    gap: 50.0,
+                    margin: Margin {
+                        top: 100.0,
+                        right: 100.0,
+                        bottom: 100.0,
+                        left: 100.0,
+                    },
+                    direction: StackLayoutDirection::Horizontal,
+                    alignment: StackCrossAxisAlignment::Center,
+                    distribution: StackLayoutDistribution::Grid,
+                    x: 0.0,
+                    y: 0.0,
+                };
+
+                stack_layout.layout(canvas_state.into())
             }
             Layout::ZigzagLayout => {
                 let size = 0.3;
@@ -287,26 +254,27 @@ impl Layout {
                         let layer = canvas_state.layers.get(layer_id).unwrap();
                         let x = x_positions[i % 2];
                         let y = 0.1 + 0.2 * i as f32;
-                        QuickLayoutRegion {
-                            absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
+                        (
+                            *layer_id,
+                            QuickLayout::fractional_rect_for_layer_in_page(
                                 layer,
                                 &canvas_state.page.value,
                                 Rect::from_min_size(Pos2::new(x, y), Vec2::new(size, size)),
                                 QuickLayoutFillMode::Fill,
                             ),
-                        }
+                        )
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<IndexMap<usize, Rect>>()
             }
         };
 
-        for (index, layer_id) in canvas_state.quick_layout_order.iter().enumerate() {
+        for layer_id in canvas_state.quick_layout_order.iter() {
             canvas_state
                 .layers
                 .get_mut(layer_id)
                 .unwrap()
                 .transform_state
-                .rect = regions[index].absolute_rect;
+                .rect = regions[layer_id];
         }
     }
 }
@@ -416,37 +384,38 @@ impl<'a> QuickLayout<'a> {
 
         let mut layouts: Vec<Layout> = vec![];
 
-        // if n == 1 {
-        //     // Grid serves as a centering layout for a single photo
-        //     layouts.push(Layout::GridLayout { n, padding: 0.0 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.05 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.1 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.2 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.3 });
-        // } else if n == 2 {
-        //     layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
-        //     layouts.push(Layout::HighlightLayout { padding: 0.2 });
-        //     layouts.push(Layout::HighlightLayout { padding: 0.1 });
-        //     layouts.push(Layout::VerticalStackLayout);
-        //     layouts.push(Layout::HorizontalStackLayout);
-        // } else if n >= 3 {
-        //     layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.0 });
-        //     layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
-        //     layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.1 });
+        if n == 1 {
+            // Grid serves as a centering layout for a single photo
+            // layouts.push(Layout::GridLayout { n, padding: 0.0 });
+            // layouts.push(Layout::GridLayout { n, padding: 0.05 });
+            // layouts.push(Layout::GridLayout { n, padding: 0.1 });
+            // layouts.push(Layout::GridLayout { n, padding: 0.2 });
+            // layouts.push(Layout::GridLayout { n, padding: 0.3 });
+        } else if n == 2 {
+            // layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
+            // layouts.push(Layout::HighlightLayout { padding: 0.2 });
+            // layouts.push(Layout::HighlightLayout { padding: 0.1 });
+            // layouts.push(Layout::VerticalStackLayout);
+            // layouts.push(Layout::HorizontalStackLayout);
+        } else if n >= 3 {
+            // layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.0 });
+            // layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.02 });
+            // layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.1 });
 
-        //     layouts.push(Layout::HighlightLayout { padding: 0.0 });
-        //     layouts.push(Layout::HighlightLayout { padding: 0.1 });
-        //     layouts.push(Layout::VerticalStackLayout);
-        //     layouts.push(Layout::HorizontalStackLayout);
-        //     layouts.push(Layout::ZigzagLayout);
+            // layouts.push(Layout::HighlightLayout { padding: 0.0 });
+            // layouts.push(Layout::HighlightLayout { padding: 0.1 });
+            // layouts.push(Layout::VerticalStackLayout);
+            // layouts.push(Layout::HorizontalStackLayout);
+            // layouts.push(Layout::ZigzagLayout);
 
-        //     layouts.push(Layout::GridLayout { n, padding: 0.0 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.025 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.05 });
-        //     layouts.push(Layout::GridLayout { n, padding: 0.1 });
-        // }
+            layouts.push(Layout::GridLayout { n, padding: 0.0 });
+            layouts.push(Layout::GridLayout { n, padding: 0.025 });
+            layouts.push(Layout::GridLayout { n, padding: 0.05 });
+            layouts.push(Layout::GridLayout { n, padding: 0.1 });
+        }
 
         layouts.push(Layout::VerticalStackLayout);
+        layouts.push(Layout::HorizontalStackLayout);
 
         layouts
     }
@@ -524,11 +493,18 @@ pub enum StackLayoutDistribution {
     Start,
     Center,
     End,
-    SpaceBetween,
-    SpaceAround,
-    SpaceEvenly,
+    EqualSpacing,
+    Grid,
 }
 
+pub struct Margin {
+    top: f32,
+    right: f32,
+    bottom: f32,
+    left: f32,
+}
+
+#[derive(Debug, Clone)]
 pub struct StackLayoutItem {
     aspect_ratio: f32,
     id: usize,
@@ -537,100 +513,337 @@ pub struct StackLayoutItem {
 pub struct StackLayout {
     width: f32,
     height: f32,
+    x: f32,
+    y: f32,
     gap: f32,
+    margin: Margin,
     direction: StackLayoutDirection,
     alignment: StackCrossAxisAlignment,
     distribution: StackLayoutDistribution,
 }
 
 impl StackLayout {
-    pub fn layout(&self, items: &[StackLayoutItem]) -> Vec<Rect> {
+    pub fn layout(&self, items: Vec<StackLayoutItem>) -> IndexMap<usize, Rect> {
         match self.direction {
-            StackLayoutDirection::Vertical => self.layout_vertical(items),
-            StackLayoutDirection::Horizontal => self.layout_horizontal(items),
+            StackLayoutDirection::Vertical => self.layout_vertical(&items),
+            StackLayoutDirection::Horizontal => self.layout_horizontal(&items),
         }
     }
 
-    fn layout_vertical(&self, items: &[StackLayoutItem]) -> Vec<Rect> {
-        let mut item_dimensions = self.calculate_item_dimensions(items);
-        let total_items_height = item_dimensions.iter().map(|dim| dim.y).sum::<f32>();
+    fn layout_vertical(&self, items: &[StackLayoutItem]) -> IndexMap<usize, Rect> {
+        let mut item_dimensions = self.calculate_vertical_item_dimensions(items);
+        let total_items_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
         let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
         let total_height = total_items_height + total_gap;
-        let max_width = item_dimensions.iter().map(|dim| dim.x).fold(0.0, f32::max);
-        if total_height > self.height || max_width > self.width {
+        let max_width = item_dimensions
+            .values()
+            .map(|dim| dim.x)
+            .fold(0.0, f32::max);
+        let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
+        let width_less_margin = self.width - (self.margin.left + self.margin.right);
+
+        if total_height > self.height || max_width > width_less_margin {
             let item_height_scale = self.height / total_items_height
                 - (self.gap * (items.len() as f32 - 1.0) / total_height);
-            let item_width_scale = self.width / max_width;
+            let item_width_scale = width_less_margin / max_width;
             let final_scale = item_height_scale.min(item_width_scale);
-            item_dimensions.iter_mut().for_each(|size| {
+            item_dimensions.values_mut().for_each(|size| {
                 *size *= final_scale;
                 size.x = size.x.floor();
                 size.y = size.y.floor();
             });
         }
 
-        let distributed: Vec<Rect> = match self.distribution {
-            StackLayoutDistribution::Start => {
+        let total_scaled_height =
+            item_dimensions.values().map(|dim| dim.y).sum::<f32>() + total_gap;
+
+        let top_left_rects = {
+            let mut y_offset = 0.0;
+            item_dimensions
+                .iter()
+                .map(|(id, size)| {
+                    let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
+                    y_offset += size.y + self.gap;
+                    (*id, rect)
+                })
+                .collect()
+        };
+
+        let distributed: IndexMap<usize, Rect> = match self.distribution {
+            StackLayoutDistribution::Start => top_left_rects,
+            StackLayoutDistribution::Center => {
+                let height_diff = height_less_margin - total_scaled_height;
+                top_left_rects
+                    .iter()
+                    .map(|(id, rect)| {
+                        (
+                            *id,
+                            Rect::from_min_size(
+                                Pos2::new(rect.min.x, rect.min.y + height_diff),
+                                rect.size(),
+                            ),
+                        )
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::End => {
+                let height_diff = height_less_margin - total_scaled_height;
+                top_left_rects
+                    .iter()
+                    .map(|(id, rect)| {
+                        (
+                            *id,
+                            Rect::from_min_size(
+                                Pos2::new(rect.min.x, rect.min.y + height_diff),
+                                rect.size(),
+                            ),
+                        )
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::EqualSpacing => {
+                let total_item_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
+                let remaining_space = height_less_margin - total_item_height;
+                let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
+
+                let mut y_offset = equal_spacing;
+                item_dimensions
+                    .iter()
+                    .map(|(id, size)| {
+                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
+                        y_offset += size.y + equal_spacing;
+                        (*id, rect)
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::Grid => {
+                let cell_size = (height_less_margin - total_gap) / items.len() as f32;
                 let mut y_offset = 0.0;
                 item_dimensions
                     .iter()
-                    .map(|size| {
+                    .map(|(id, size)| {
                         let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        y_offset += size.y + self.gap;
-                        rect
+                        let fitted_rect = rect.fit_and_center_within(Rect::from_min_size(
+                            Pos2::new(0.0, y_offset),
+                            Vec2::new(width_less_margin, cell_size),
+                        ));
+                        y_offset += cell_size + self.gap;
+                        (*id, fitted_rect)
                     })
                     .collect()
             }
-            StackLayoutDistribution::Center => {
-                let total_height = item_dimensions.iter().map(|dim| dim.y).sum::<f32>();
-                let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
-                let total_height = total_height + total_gap;
-                let mut y_offset = (self.height - total_height) / 2.0;
-                item_dimensions
-                    .iter()
-                    .map(|size| {
-                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        y_offset += size.y + self.gap;
-                        rect
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::End => todo!(),
-            StackLayoutDistribution::SpaceBetween => todo!(),
-            StackLayoutDistribution::SpaceAround => todo!(),
-            StackLayoutDistribution::SpaceEvenly => todo!(),
         };
 
-        match self.alignment {
+        let aligned = match self.alignment {
             StackCrossAxisAlignment::Start => distributed,
             StackCrossAxisAlignment::Center => distributed
                 .iter()
-                .map(|rect| {
-                    let x = (self.width - rect.width()) / 2.0;
-                    Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size())
+                .map(|(id, rect)| {
+                    let x = (width_less_margin - rect.width()) / 2.0;
+                    let rect = Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size());
+                    (*id, rect)
                 })
                 .collect(),
             StackCrossAxisAlignment::End => distributed
                 .iter()
-                .map(|rect| {
-                    let x = self.width - rect.width();
-                    Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size())
+                .map(|(id, rect)| {
+                    let x = width_less_margin - rect.width();
+                    let rect = Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size());
+                    (*id, rect)
                 })
                 .collect(),
+        };
+
+        aligned
+            .iter()
+            .map(|(id, rect)| {
+                (
+                    *id,
+                    rect.translate(Vec2::new(
+                        self.margin.left + self.x,
+                        self.margin.top + self.y,
+                    )),
+                )
+            })
+            .collect()
+    }
+
+    fn layout_horizontal(&self, items: &[StackLayoutItem]) -> IndexMap<usize, Rect> {
+        let mut item_dimensions = self.calculate_horizontal_item_dimensions(items);
+        let total_items_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
+        let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
+        let total_width = total_items_width + total_gap;
+        let max_height = item_dimensions
+            .values()
+            .map(|dim| dim.y)
+            .fold(0.0, f32::max);
+        let width_less_margin = self.width - (self.margin.left + self.margin.right);
+        let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
+
+        if total_width > width_less_margin || max_height > height_less_margin {
+            let item_width_scale = width_less_margin / total_items_width
+                - (self.gap * (items.len() as f32 - 1.0) / total_width);
+            let item_height_scale = height_less_margin / max_height;
+            let final_scale = item_width_scale.min(item_height_scale);
+
+            item_dimensions.values_mut().for_each(|size| {
+                *size *= final_scale;
+                size.x = size.x.floor();
+                size.y = size.y.floor();
+            });
         }
+
+        let total_scaled_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>() + total_gap;
+
+        let top_left_rects: IndexMap<usize, Rect> = {
+            let mut x_offset = 0.0;
+            item_dimensions
+                .iter()
+                .map(|(id, size)| {
+                    let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
+                    x_offset += size.x + self.gap;
+                    (*id, rect)
+                })
+                .collect()
+        };
+
+        let distributed: IndexMap<usize, Rect> = match self.distribution {
+            StackLayoutDistribution::Start => top_left_rects,
+            StackLayoutDistribution::Center => {
+                let width_diff = (width_less_margin - total_scaled_width) / 2.0;
+                top_left_rects
+                    .iter()
+                    .map(|(id, rect)| {
+                        let rect = Rect::from_min_size(
+                            Pos2::new(rect.min.x + width_diff, rect.min.y),
+                            rect.size(),
+                        );
+                        (*id, rect)
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::End => {
+                let width_diff = width_less_margin - total_scaled_width;
+                top_left_rects
+                    .iter()
+                    .map(|(id, rect)| {
+                        let rect = Rect::from_min_size(
+                            Pos2::new(rect.min.x + width_diff, rect.min.y),
+                            rect.size(),
+                        );
+                        (*id, rect)
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::EqualSpacing => {
+                let total_item_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
+                let remaining_space = width_less_margin - total_item_width;
+                let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
+
+                let mut x_offset = equal_spacing;
+                item_dimensions
+                    .iter()
+                    .map(|(id, size)| {
+                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
+                        x_offset += size.x + equal_spacing;
+                        (*id, rect)
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::Grid => {
+                let cell_size = (width_less_margin - total_gap) / items.len() as f32;
+                let mut x_offset = 0.0;
+                item_dimensions
+                    .iter()
+                    .map(|(id, size)| {
+                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
+                        let fitted_rect = rect.fit_and_center_within(Rect::from_min_size(
+                            Pos2::new(x_offset, 0.0),
+                            Vec2::new(cell_size, height_less_margin),
+                        ));
+                        x_offset += cell_size + self.gap;
+                        (*id, fitted_rect)
+                    })
+                    .collect()
+            }
+        };
+
+        let aligned = match self.alignment {
+            StackCrossAxisAlignment::Start => distributed,
+            StackCrossAxisAlignment::Center => distributed
+                .iter()
+                .map(|(id, rect)| {
+                    let y = (self.height - rect.height()) / 2.0;
+                    let rect = Rect::from_min_size(Pos2::new(rect.min.x, y), rect.size());
+                    (*id, rect)
+                })
+                .collect(),
+            StackCrossAxisAlignment::End => distributed
+                .iter()
+                .map(|(id, rect)| {
+                    let y = self.height - rect.height();
+                    let rect = Rect::from_min_size(Pos2::new(rect.min.x, y), rect.size());
+                    (*id, rect)
+                })
+                .collect(),
+        };
+
+        aligned
+            .iter()
+            .map(|(id, rect)| {
+                let rect = rect.translate(Vec2::new(
+                    self.margin.left + self.x,
+                    self.margin.top + self.y,
+                ));
+                (*id, rect)
+            })
+            .collect()
     }
 
-    fn layout_horizontal(&self, items: &[StackLayoutItem]) -> Vec<Rect> {
-        Vec::new()
-    }
-
-    fn calculate_item_dimensions(&self, items: &[StackLayoutItem]) -> Vec<Vec2> {
+    fn calculate_horizontal_item_dimensions(
+        &self,
+        items: &[StackLayoutItem],
+    ) -> IndexMap<usize, Vec2> {
         items
             .iter()
             .map(|item: &StackLayoutItem| {
-                let width: f32 = self.height;
-                let height = self.height / item.aspect_ratio;
-                Vec2::new(width, height)
+                let height: f32 = self.height - (self.margin.top + self.margin.bottom);
+                let width = height * item.aspect_ratio;
+                (item.id, Vec2::new(width, height))
+            })
+            .collect()
+    }
+
+    fn calculate_vertical_item_dimensions(
+        &self,
+        items: &[StackLayoutItem],
+    ) -> IndexMap<usize, Vec2> {
+        items
+            .iter()
+            .map(|item: &StackLayoutItem| {
+                let width: f32 = self.width - (self.margin.left + self.margin.right);
+                let height = width / item.aspect_ratio;
+                (item.id, Vec2::new(width, height))
+            })
+            .collect()
+    }
+}
+
+impl From<&mut CanvasState> for Vec<StackLayoutItem> {
+    fn from(state: &mut CanvasState) -> Vec<StackLayoutItem> {
+        state
+            .quick_layout_order
+            .iter()
+            .map(|layer_id| {
+                let layer = state.layers.get(layer_id).unwrap();
+                if let LayerContent::Photo(photo) = &layer.content {
+                    StackLayoutItem {
+                        aspect_ratio: photo.photo.aspect_ratio(),
+                        id: *layer_id,
+                    }
+                } else {
+                    panic!("Invalid layer content type for quick layout");
+                }
             })
             .collect()
     }
