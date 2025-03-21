@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, usize};
 
 use eframe::egui::{self};
 use egui::{Pos2, Rect, Sense, Vec2};
@@ -70,16 +70,27 @@ impl Layout {
                 let grid_size = (*n as f32).sqrt().ceil() as usize;
                 let column_size = page_size.x / grid_size as f32;
 
-                let stack_items: Vec<StackLayoutItem> = canvas_state.into();
+                let mut stack_items: Vec<StackLayoutItem> = canvas_state.into();
+
+                let mut fake_id = usize::MAX;
+                while stack_items.len() % grid_size != 0 {
+                    stack_items.push(StackLayoutItem {
+                        aspect_ratio: 1.0,
+                        id: fake_id,
+                    });
+                    fake_id -= 1;
+                }
+
+                let column_items = stack_items.chunks(grid_size).collect::<Vec<_>>();
 
                 (0..grid_size)
                     .map(|column| {
-                        let stack_items = stack_items
-                            .iter()
-                            .skip(column)
-                            .step_by(grid_size)
-                            .map(|item| item.clone())
-                            .collect::<Vec<_>>();
+                        // let stack_items = stack_items
+                        //     .iter()
+                        //     .skip(column)
+                        //     .step_by(grid_size)
+                        //     .map(|item| item.clone())
+                        //     .collect::<Vec<_>>();
 
                         StackLayout {
                             width: column_size,
@@ -89,7 +100,7 @@ impl Layout {
                                 top: 50.0,
                                 right: 50.0,
                                 bottom: 50.0,
-                                left: if column == 0 { 50.0 } else { 0.0 },
+                                left: 50.0,
                             },
                             direction: StackLayoutDirection::Vertical,
                             alignment: StackCrossAxisAlignment::Center,
@@ -97,61 +108,71 @@ impl Layout {
                             x: column as f32 * column_size,
                             y: 0.0,
                         }
-                        .layout(stack_items)
+                        .layout(column_items[column])
                     })
                     .flatten()
                     .collect::<IndexMap<usize, Rect>>()
             }
             Layout::CenteredWeightedGridLayout { n, padding } => {
                 let grid_size = (*n as f32).sqrt().ceil() as usize;
-                let fixed_spacing = 0.02; // 2% of page size between images
-                let rows = ((n + grid_size - 1) / grid_size) as f32;
+                let column_size = page_size.x / grid_size as f32;
 
-                // Calculate cell sizes based on both width and height constraints
-                let inner_width = 1.0 - (2.0 * padding);
-                let inner_height = 1.0 - (2.0 * padding);
+                let mut stack_items: Vec<StackLayoutItem> = canvas_state.into();
 
-                let width_based_cell_size =
-                    (inner_width - (fixed_spacing * (grid_size - 1) as f32)) / grid_size as f32;
-                let height_based_cell_size = (inner_height - (fixed_spacing * (rows - 1.0))) / rows;
+                let mut fake_id = usize::MAX;
+                while stack_items.len() % grid_size != 0 {
+                    stack_items.push(StackLayoutItem {
+                        aspect_ratio: 1.0,
+                        id: fake_id,
+                    });
+                    fake_id -= 1;
+                }
 
-                // Use the smaller cell size to maintain equal spacing
-                let cell_size = width_based_cell_size.min(height_based_cell_size);
-
-                // Recalculate total dimensions with final cell size
-                let total_width =
-                    (cell_size * grid_size as f32) + (fixed_spacing * (grid_size - 1) as f32);
-                let total_height = (cell_size * rows) + (fixed_spacing * (rows - 1.0));
-
-                // Center the grid
-                let x_offset = (1.0 - total_width) / 2.0;
-                let y_offset = (1.0 - total_height) / 2.0;
-
-                canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .enumerate()
-                    .map(|(index, layer_id)| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-                        let row = index / grid_size;
-                        let col = index % grid_size;
-
-                        let x = x_offset + (col as f32 * (cell_size + fixed_spacing));
-                        let y = y_offset + (row as f32 * (cell_size + fixed_spacing));
-
-                        let rect =
-                            Rect::from_min_size(Pos2::new(x, y), Vec2::new(cell_size, cell_size));
-
-                        (
-                            *layer_id,
-                            QuickLayout::fractional_rect_for_layer_in_page(
-                                layer,
-                                &canvas_state.page.value,
-                                rect,
-                                QuickLayoutFillMode::Fill,
-                            ),
+                let column_items = stack_items.chunks(grid_size);
+                let item_dimensions: Vec<IndexMap<usize, Vec2>> = column_items
+                    .clone()
+                    .map(|items| {
+                        StackLayout::calculate_vertical_item_dimensions(
+                            column_size,
+                            page_size.y,
+                            0.0,
+                            Margin::default(),
+                            items,
                         )
                     })
+                    .collect();
+
+                let max_cell_height = item_dimensions
+                    .iter()
+                    .map(|column: &IndexMap<usize, Vec2>| {
+                        column.values().map(|dim| dim.y).fold(0.0, f32::max)
+                    })
+                    .fold(0.0, f32::max);
+
+                column_items
+                    .enumerate()
+                    .map(|(index, items)| {
+                        StackLayout {
+                            width: column_size,
+                            height: max_cell_height,
+                            gap: 50.0,
+                            margin: Margin {
+                                top: 50.0,
+                                right: 50.0,
+                                bottom: 50.0,
+                                left: 50.0,
+                            },
+                            direction: StackLayoutDirection::Vertical,
+                            alignment: StackCrossAxisAlignment::Center,
+                            distribution: StackLayoutDistribution::CenterWeightedGrid {
+                                cell_height: max_cell_height,
+                            },
+                            x: index as f32 * column_size,
+                            y: 0.0,
+                        }
+                        .layout(items)
+                    })
+                    .flatten()
                     .collect::<IndexMap<usize, Rect>>()
             }
             Layout::HighlightLayout { padding } => {
@@ -221,7 +242,8 @@ impl Layout {
                     y: 0.0,
                 };
 
-                stack_layout.layout(canvas_state.into())
+                let items: Vec<StackLayoutItem> = canvas_state.into();
+                stack_layout.layout(&items)
             }
             Layout::HorizontalStackLayout => {
                 let stack_layout = StackLayout {
@@ -241,7 +263,8 @@ impl Layout {
                     y: 0.0,
                 };
 
-                stack_layout.layout(canvas_state.into())
+                let items: Vec<StackLayoutItem> = canvas_state.into();
+                stack_layout.layout(&items)
             }
             Layout::ZigzagLayout => {
                 let size = 0.3;
@@ -409,9 +432,7 @@ impl<'a> QuickLayout<'a> {
             // layouts.push(Layout::ZigzagLayout);
 
             layouts.push(Layout::GridLayout { n, padding: 0.0 });
-            layouts.push(Layout::GridLayout { n, padding: 0.025 });
-            layouts.push(Layout::GridLayout { n, padding: 0.05 });
-            layouts.push(Layout::GridLayout { n, padding: 0.1 });
+            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.0 });
         }
 
         layouts.push(Layout::VerticalStackLayout);
@@ -478,30 +499,46 @@ impl<'a> QuickLayout<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum StackLayoutDirection {
     Vertical,
     Horizontal,
 }
 
+#[derive(Debug, Clone)]
 pub enum StackCrossAxisAlignment {
     Start,
     Center,
     End,
 }
 
+#[derive(Debug, Clone)]
 pub enum StackLayoutDistribution {
     Start,
     Center,
     End,
     EqualSpacing,
     Grid,
+    CenterWeightedGrid { cell_height: f32 },
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Margin {
     top: f32,
     right: f32,
     bottom: f32,
     left: f32,
+}
+
+impl Margin {
+    pub fn all(value: f32) -> Self {
+        Self {
+            top: value,
+            right: value,
+            bottom: value,
+            left: value,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -510,6 +547,7 @@ pub struct StackLayoutItem {
     id: usize,
 }
 
+#[derive(Debug, Clone)]
 pub struct StackLayout {
     width: f32,
     height: f32,
@@ -523,36 +561,24 @@ pub struct StackLayout {
 }
 
 impl StackLayout {
-    pub fn layout(&self, items: Vec<StackLayoutItem>) -> IndexMap<usize, Rect> {
+    pub fn layout(&self, items: &[StackLayoutItem]) -> IndexMap<usize, Rect> {
         match self.direction {
-            StackLayoutDirection::Vertical => self.layout_vertical(&items),
-            StackLayoutDirection::Horizontal => self.layout_horizontal(&items),
+            StackLayoutDirection::Vertical => self.layout_vertical(items),
+            StackLayoutDirection::Horizontal => self.layout_horizontal(items),
         }
     }
 
     fn layout_vertical(&self, items: &[StackLayoutItem]) -> IndexMap<usize, Rect> {
-        let mut item_dimensions = self.calculate_vertical_item_dimensions(items);
-        let total_items_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
+        let item_dimensions = StackLayout::calculate_vertical_item_dimensions(
+            self.width,
+            self.height,
+            self.gap,
+            self.margin,
+            items,
+        );
         let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
-        let total_height = total_items_height + total_gap;
-        let max_width = item_dimensions
-            .values()
-            .map(|dim| dim.x)
-            .fold(0.0, f32::max);
         let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
         let width_less_margin = self.width - (self.margin.left + self.margin.right);
-
-        if total_height > self.height || max_width > width_less_margin {
-            let item_height_scale = self.height / total_items_height
-                - (self.gap * (items.len() as f32 - 1.0) / total_height);
-            let item_width_scale = width_less_margin / max_width;
-            let final_scale = item_height_scale.min(item_width_scale);
-            item_dimensions.values_mut().for_each(|size| {
-                *size *= final_scale;
-                size.x = size.x.floor();
-                size.y = size.y.floor();
-            });
-        }
 
         let total_scaled_height =
             item_dimensions.values().map(|dim| dim.y).sum::<f32>() + total_gap;
@@ -623,11 +649,29 @@ impl StackLayout {
                     .iter()
                     .map(|(id, size)| {
                         let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        let fitted_rect = rect.fit_and_center_within(Rect::from_min_size(
+                        let target_rect = Rect::from_min_size(
                             Pos2::new(0.0, y_offset),
                             Vec2::new(width_less_margin, cell_size),
-                        ));
+                        );
+                        let fitted_rect = rect.fit_and_center_within(target_rect);
                         y_offset += cell_size + self.gap;
+                        (*id, fitted_rect)
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::CenterWeightedGrid { cell_height } => {
+                let total_item_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
+                let mut y_offset = (height_less_margin - total_item_height) / 2.0;
+                item_dimensions
+                    .iter()
+                    .map(|(id, size)| {
+                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
+                        let target_rect = Rect::from_min_size(
+                            Pos2::new(0.0, y_offset),
+                            Vec2::new(width_less_margin, cell_height),
+                        );
+                        let fitted_rect = rect.fit_and_center_within(target_rect);
+                        y_offset += cell_height + self.gap;
                         (*id, fitted_rect)
                     })
                     .collect()
@@ -669,30 +713,17 @@ impl StackLayout {
     }
 
     fn layout_horizontal(&self, items: &[StackLayoutItem]) -> IndexMap<usize, Rect> {
-        let mut item_dimensions = self.calculate_horizontal_item_dimensions(items);
-        let total_items_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
+        let item_dimensions = StackLayout::calculate_horizontal_item_dimensions(
+            self.width,
+            self.height,
+            self.gap,
+            self.margin,
+            items,
+        );
+
         let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
-        let total_width = total_items_width + total_gap;
-        let max_height = item_dimensions
-            .values()
-            .map(|dim| dim.y)
-            .fold(0.0, f32::max);
         let width_less_margin = self.width - (self.margin.left + self.margin.right);
         let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
-
-        if total_width > width_less_margin || max_height > height_less_margin {
-            let item_width_scale = width_less_margin / total_items_width
-                - (self.gap * (items.len() as f32 - 1.0) / total_width);
-            let item_height_scale = height_less_margin / max_height;
-            let final_scale = item_width_scale.min(item_height_scale);
-
-            item_dimensions.values_mut().for_each(|size| {
-                *size *= final_scale;
-                size.x = size.x.floor();
-                size.y = size.y.floor();
-            });
-        }
-
         let total_scaled_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>() + total_gap;
 
         let top_left_rects: IndexMap<usize, Rect> = {
@@ -766,6 +797,9 @@ impl StackLayout {
                     })
                     .collect()
             }
+            StackLayoutDistribution::CenterWeightedGrid { cell_height } => {
+                todo!()
+            }
         };
 
         let aligned = match self.alignment {
@@ -801,31 +835,86 @@ impl StackLayout {
     }
 
     fn calculate_horizontal_item_dimensions(
-        &self,
+        width: f32,
+        height: f32,
+        gap: f32,
+        margin: Margin,
         items: &[StackLayoutItem],
     ) -> IndexMap<usize, Vec2> {
-        items
+        let mut item_dimensions: IndexMap<usize, Vec2> = items
             .iter()
             .map(|item: &StackLayoutItem| {
-                let height: f32 = self.height - (self.margin.top + self.margin.bottom);
+                let height: f32 = height - (margin.top + margin.bottom);
                 let width = height * item.aspect_ratio;
                 (item.id, Vec2::new(width, height))
             })
-            .collect()
+            .collect();
+
+        let total_items_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
+        let total_gap: f32 = gap * (items.len() as f32 - 1.0);
+        let total_width = total_items_width + total_gap;
+        let max_height = item_dimensions
+            .values()
+            .map(|dim| dim.y)
+            .fold(0.0, f32::max);
+        let width_less_margin = width - (margin.left + margin.right);
+        let height_less_margin = height - (margin.top + margin.bottom);
+
+        if total_width > width_less_margin || max_height > height_less_margin {
+            let item_width_scale = width_less_margin / total_items_width
+                - (gap * (items.len() as f32 - 1.0) / total_width);
+            let item_height_scale = height_less_margin / max_height;
+            let final_scale = item_width_scale.min(item_height_scale);
+
+            item_dimensions.values_mut().for_each(|size| {
+                *size *= final_scale;
+                size.x = size.x.floor();
+                size.y = size.y.floor();
+            });
+        }
+
+        item_dimensions
     }
 
-    fn calculate_vertical_item_dimensions(
-        &self,
+    pub fn calculate_vertical_item_dimensions(
+        width: f32,
+        height: f32,
+        gap: f32,
+        margin: Margin,
         items: &[StackLayoutItem],
     ) -> IndexMap<usize, Vec2> {
-        items
+        let mut item_dimensions: IndexMap<usize, Vec2> = items
             .iter()
             .map(|item: &StackLayoutItem| {
-                let width: f32 = self.width - (self.margin.left + self.margin.right);
+                let width: f32 = width - (margin.left + margin.right);
                 let height = width / item.aspect_ratio;
                 (item.id, Vec2::new(width, height))
             })
-            .collect()
+            .collect();
+
+        let total_items_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
+        let total_gap: f32 = gap * (items.len() as f32 - 1.0);
+        let total_height = total_items_height + total_gap;
+        let max_width = item_dimensions
+            .values()
+            .map(|dim| dim.x)
+            .fold(0.0, f32::max);
+
+        let width_less_margin = width - (margin.left + margin.right);
+
+        if total_height > height || max_width > width_less_margin {
+            let item_height_scale =
+                height / total_items_height - (gap * (items.len() as f32 - 1.0) / total_height);
+            let item_width_scale = width_less_margin / max_width;
+            let final_scale = item_height_scale.min(item_width_scale);
+            item_dimensions.values_mut().for_each(|size| {
+                *size *= final_scale;
+                size.x = size.x.floor();
+                size.y = size.y.floor();
+            });
+        }
+
+        item_dimensions
     }
 }
 
