@@ -1,7 +1,7 @@
 use std::{collections::HashMap, usize};
 
 use eframe::egui::{self};
-use egui::{Pos2, Rect, Sense, Vec2};
+use egui::{Pos2, Rect, Sense, Slider, Vec2};
 
 use egui_extras::Column;
 use exif::In;
@@ -9,7 +9,8 @@ use indexmap::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::{
-    model::page::Page,
+    history, main,
+    model::page::{self, Page},
     photo,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::{EguiUiExt, RectExt},
@@ -33,28 +34,27 @@ enum QuickLayoutFillMode {
     Margin(f32),
 }
 
-#[derive(Debug, PartialEq)]
-pub struct QuickLayoutState<'a> {
-    canvas_state: &'a mut CanvasState,
-    history_manager: &'a mut CanvasHistoryManager,
+#[derive(Debug, PartialEq, Clone)]
+pub struct QuickLayoutState {
+    gap: f32,
+    margin: f32,
+    last_layout: Option<Layout>,
 }
 
-impl<'a> QuickLayoutState<'a> {
-    pub fn new(
-        canvas_state: &'a mut CanvasState,
-        history_manager: &'a mut CanvasHistoryManager,
-    ) -> QuickLayoutState<'a> {
+impl<'a> QuickLayoutState {
+    pub fn new() -> QuickLayoutState {
         QuickLayoutState {
-            canvas_state,
-            history_manager,
+            gap: 50.0,
+            margin: 100.0,
+            last_layout: None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Layout {
-    GridLayout { n: usize, padding: f32 },
-    CenteredWeightedGridLayout { n: usize, padding: f32 },
+    GridLayout,
+    CenteredWeightedGridLayout,
     HighlightLayout { padding: f32 },
     VerticalStackLayout,
     HorizontalStackLayout,
@@ -62,45 +62,40 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub fn apply(&self, canvas_state: &mut CanvasState) {
+    pub fn apply(&self, canvas_state: &mut CanvasState, gap: f32, margin: f32) {
         let page_size = canvas_state.page.value.size_pixels();
 
         let regions: IndexMap<usize, Rect> = match self {
-            Layout::GridLayout { n, padding } => {
-                let grid_size = (*n as f32).sqrt().ceil() as usize;
-                let column_size = page_size.x / grid_size as f32;
-
+            Layout::GridLayout => {
                 let mut stack_items: Vec<StackLayoutItem> = canvas_state.into();
 
-                let mut fake_id = usize::MAX;
-                while stack_items.len() % grid_size != 0 {
-                    stack_items.push(StackLayoutItem {
-                        aspect_ratio: 1.0,
-                        id: fake_id,
-                    });
-                    fake_id -= 1;
-                }
+                let grid_size = (stack_items.len() as f32).sqrt().ceil() as usize;
+                let column_size = page_size.x / grid_size as f32;
+
+                // let mut fake_id = usize::MAX;
+                // while stack_items.len() % grid_size != 0 {
+                //     stack_items.push(StackLayoutItem {
+                //         aspect_ratio: 1.0,
+                //         id: fake_id,
+                //     });
+                //     fake_id -= 1;
+                // }
 
                 let column_items = stack_items.chunks(grid_size).collect::<Vec<_>>();
 
-                (0..grid_size)
-                    .map(|column| {
-                        // let stack_items = stack_items
-                        //     .iter()
-                        //     .skip(column)
-                        //     .step_by(grid_size)
-                        //     .map(|item| item.clone())
-                        //     .collect::<Vec<_>>();
-
+                column_items
+                    .iter()
+                    .enumerate()
+                    .map(|(column, items)| {
                         StackLayout {
                             width: column_size,
                             height: page_size.y,
-                            gap: 50.0,
+                            gap: gap,
                             margin: Margin {
-                                top: 50.0,
-                                right: 50.0,
-                                bottom: 50.0,
-                                left: 50.0,
+                                top: margin,
+                                right: if column < grid_size - 1 { gap } else { margin },
+                                bottom: margin,
+                                left: if column == 0 { margin } else { 0.0 },
                             },
                             direction: StackLayoutDirection::Vertical,
                             alignment: StackCrossAxisAlignment::Center,
@@ -108,25 +103,25 @@ impl Layout {
                             x: column as f32 * column_size,
                             y: 0.0,
                         }
-                        .layout(column_items[column])
+                        .layout(items)
                     })
                     .flatten()
                     .collect::<IndexMap<usize, Rect>>()
             }
-            Layout::CenteredWeightedGridLayout { n, padding } => {
-                let grid_size = (*n as f32).sqrt().ceil() as usize;
-                let column_size = page_size.x / grid_size as f32;
-
+            Layout::CenteredWeightedGridLayout => {
                 let mut stack_items: Vec<StackLayoutItem> = canvas_state.into();
 
-                let mut fake_id = usize::MAX;
-                while stack_items.len() % grid_size != 0 {
-                    stack_items.push(StackLayoutItem {
-                        aspect_ratio: 1.0,
-                        id: fake_id,
-                    });
-                    fake_id -= 1;
-                }
+                let grid_size = (stack_items.len() as f32).sqrt().ceil() as usize;
+                let column_size = page_size.x / grid_size as f32;
+
+                // let mut fake_id = usize::MAX;
+                // while stack_items.len() % grid_size != 0 {
+                //     stack_items.push(StackLayoutItem {
+                //         aspect_ratio: 1.0,
+                //         id: fake_id,
+                //     });
+                //     fake_id -= 1;
+                // }
 
                 let column_items = stack_items.chunks(grid_size);
                 let item_dimensions: Vec<IndexMap<usize, Vec2>> = column_items
@@ -142,19 +137,27 @@ impl Layout {
                     })
                     .collect();
 
-                let max_cell_height = item_dimensions
-                    .iter()
-                    .map(|column: &IndexMap<usize, Vec2>| {
-                        column.values().map(|dim| dim.y).fold(0.0, f32::max)
-                    })
-                    .fold(0.0, f32::max);
+                let main_axis_sizes: Vec<f32> = item_dimensions.iter().enumerate().fold(
+                    Vec::<f32>::new(),
+                    |mut acc: Vec<f32>, (idx, column)| {
+                        println!("Column Sizes [{}]: {:?}", { idx }, column);
+                        for (col_idx, size) in column.values().enumerate() {
+                            if let Some(existing_size) = acc.get_mut(col_idx) {
+                                *existing_size = existing_size.min(size.y);
+                            } else {
+                                acc.push(size.y);
+                            }
+                        }
+                        acc
+                    },
+                );
 
                 column_items
                     .enumerate()
                     .map(|(index, items)| {
                         StackLayout {
                             width: column_size,
-                            height: max_cell_height,
+                            height: page_size.y,
                             gap: 50.0,
                             margin: Margin {
                                 top: 50.0,
@@ -163,9 +166,9 @@ impl Layout {
                                 left: 50.0,
                             },
                             direction: StackLayoutDirection::Vertical,
-                            alignment: StackCrossAxisAlignment::Center,
+                            alignment: StackCrossAxisAlignment::Start,
                             distribution: StackLayoutDistribution::CenterWeightedGrid {
-                                cell_height: max_cell_height,
+                                main_axis_sizes: main_axis_sizes.clone(),
                             },
                             x: index as f32 * column_size,
                             y: 0.0,
@@ -228,12 +231,12 @@ impl Layout {
                 let stack_layout = StackLayout {
                     width: page_size.x,
                     height: page_size.y,
-                    gap: 50.0,
+                    gap: gap,
                     margin: Margin {
-                        top: 100.0,
-                        right: 100.0,
-                        bottom: 100.0,
-                        left: 100.0,
+                        top: margin,
+                        right: margin,
+                        bottom: margin,
+                        left: margin,
                     },
                     direction: StackLayoutDirection::Vertical,
                     alignment: StackCrossAxisAlignment::Center,
@@ -249,12 +252,12 @@ impl Layout {
                 let stack_layout = StackLayout {
                     width: page_size.x,
                     height: page_size.y,
-                    gap: 50.0,
+                    gap: gap,
                     margin: Margin {
-                        top: 100.0,
-                        right: 100.0,
-                        bottom: 100.0,
-                        left: 100.0,
+                        top: margin,
+                        right: margin,
+                        bottom: margin,
+                        left: margin,
                     },
                     direction: StackLayoutDirection::Horizontal,
                     alignment: StackCrossAxisAlignment::Center,
@@ -304,15 +307,21 @@ impl Layout {
 
 #[derive(PartialEq)]
 pub struct QuickLayout<'a> {
-    pub state: &'a mut QuickLayoutState<'a>,
-    last_layout: Option<Layout>,
+    pub state: &'a mut QuickLayoutState,
+    pub canvas_state: &'a mut CanvasState,
+    pub history_manager: &'a mut CanvasHistoryManager,
 }
 
 impl<'a> QuickLayout<'a> {
-    pub fn new(state: &'a mut QuickLayoutState<'a>) -> QuickLayout<'a> {
+    pub fn new(
+        state: &'a mut QuickLayoutState,
+        canvas_state: &'a mut CanvasState,
+        history_manager: &'a mut CanvasHistoryManager,
+    ) -> QuickLayout<'a> {
         QuickLayout {
             state,
-            last_layout: None,
+            canvas_state,
+            history_manager,
         }
     }
 
@@ -347,59 +356,83 @@ impl<'a> QuickLayout<'a> {
 
         let mut selected_layout: Option<Layout> = None;
 
-        egui_extras::TableBuilder::new(ui)
-            .min_scrolled_height(available_height)
-            .columns(Column::exact(column_width), num_columns)
-            .column(Column::exact(spacer_width))
-            .body(|body| {
-                body.rows(row_height, num_rows, |mut row| {
-                    let offest = row.index() * num_columns;
-                    for i in 0..num_columns {
-                        if offest + i >= num_rows {
-                            break;
-                        }
+        ui.vertical(|ui| {
+            let mut new_gap = self.state.gap;
+            let mut new_margin = self.state.margin;
 
-                        let _index = offest + i;
-                        let layout = available_layouts.get(offest + i).unwrap();
-
-                        let mut canvas_state = self.state.canvas_state.clone_with_new_widget_ids();
-
-                        layout.apply(&mut canvas_state);
-
-                        row.col(|ui| {
-                            let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
-                            Canvas::new(
-                                &mut canvas_state,
-                                page_rect,
-                                &mut CanvasHistoryManager::preview(),
-                            )
-                            .show_preview(ui, page_rect);
-
-                            let click_response = ui.allocate_rect(page_rect, Sense::click());
-
-                            if click_response.clicked() {
-                                selected_layout = Some(layout.clone());
-                            }
-                        });
-                    }
-
-                    row.col(|ui| {
-                        ui.add(Spacer::new(spacer_width, row_height));
-                    });
-                })
+            ui.horizontal(|ui| {
+                ui.label("Gap:");
+                ui.add(Slider::new(&mut new_gap, 0.0..=100.0));
             });
 
+            ui.horizontal(|ui| {
+                ui.label("Margin:");
+                ui.add(Slider::new(&mut new_margin, 0.0..=100.0));
+            });
+
+            if let Some(last_layout) = self.state.last_layout {
+                if new_gap != self.state.gap || new_margin != self.state.margin {
+                    last_layout.apply(self.canvas_state, new_gap, new_margin);
+                }
+            }
+
+            self.state.gap = new_gap;
+            self.state.margin = new_margin;
+
+            egui_extras::TableBuilder::new(ui)
+                .min_scrolled_height(available_height)
+                .columns(Column::exact(column_width), num_columns)
+                .column(Column::exact(spacer_width))
+                .body(|body| {
+                    body.rows(row_height, num_rows, |mut row| {
+                        let offest = row.index() * num_columns;
+                        for i in 0..num_columns {
+                            if offest + i >= num_rows {
+                                break;
+                            }
+
+                            let _index = offest + i;
+                            let layout = available_layouts.get(offest + i).unwrap();
+
+                            let mut canvas_state = self.canvas_state.clone_with_new_widget_ids();
+
+                            layout.apply(&mut canvas_state, self.state.gap, self.state.margin);
+
+                            row.col(|ui| {
+                                let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
+                                Canvas::new(
+                                    &mut canvas_state,
+                                    page_rect,
+                                    &mut CanvasHistoryManager::preview(),
+                                )
+                                .show_preview(ui, page_rect);
+
+                                let click_response = ui.allocate_rect(page_rect, Sense::click());
+
+                                if click_response.clicked() {
+                                    selected_layout = Some(layout.clone());
+                                }
+                            });
+                        }
+
+                        row.col(|ui| {
+                            ui.add(Spacer::new(spacer_width, row_height));
+                        });
+                    })
+                });
+        });
+
         if let Some(selected_layout) = selected_layout {
-            selected_layout.apply(self.state.canvas_state);
-            self.state.canvas_state.last_quick_layout = Some(selected_layout);
-            self.state
-                .history_manager
-                .save_history(CanvasHistoryKind::QuickLayout, self.state.canvas_state);
+            selected_layout.apply(self.canvas_state, self.state.gap, self.state.margin);
+            self.canvas_state.last_quick_layout = Some(selected_layout);
+            self.state.last_layout = Some(selected_layout);
+            self.history_manager
+                .save_history(CanvasHistoryKind::QuickLayout, self.canvas_state);
         }
     }
 
     fn available_layouts(&self) -> Vec<Layout> {
-        let n = self.state.canvas_state.quick_layout_order.len();
+        let n = self.canvas_state.quick_layout_order.len();
 
         if n == 0 {
             return vec![];
@@ -431,8 +464,8 @@ impl<'a> QuickLayout<'a> {
             // layouts.push(Layout::HorizontalStackLayout);
             // layouts.push(Layout::ZigzagLayout);
 
-            layouts.push(Layout::GridLayout { n, padding: 0.0 });
-            layouts.push(Layout::CenteredWeightedGridLayout { n, padding: 0.0 });
+            layouts.push(Layout::GridLayout);
+            layouts.push(Layout::CenteredWeightedGridLayout);
         }
 
         layouts.push(Layout::VerticalStackLayout);
@@ -519,7 +552,7 @@ pub enum StackLayoutDistribution {
     End,
     EqualSpacing,
     Grid,
-    CenterWeightedGrid { cell_height: f32 },
+    CenterWeightedGrid { main_axis_sizes: Vec<f32> },
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -595,7 +628,7 @@ impl StackLayout {
                 .collect()
         };
 
-        let distributed: IndexMap<usize, Rect> = match self.distribution {
+        let distributed: IndexMap<usize, Rect> = match &self.distribution {
             StackLayoutDistribution::Start => top_left_rects,
             StackLayoutDistribution::Center => {
                 let height_diff = height_less_margin - total_scaled_height;
@@ -659,19 +692,20 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::CenterWeightedGrid { cell_height } => {
-                let total_item_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
-                let mut y_offset = (height_less_margin - total_item_height) / 2.0;
+            StackLayoutDistribution::CenterWeightedGrid { main_axis_sizes } => {
+                let total_item_height = main_axis_sizes.iter().sum::<f32>();
+                let mut y_offset = 0.0; //(height_less_margin - total_item_height) / 2.0;
                 item_dimensions
                     .iter()
-                    .map(|(id, size)| {
+                    .enumerate()
+                    .map(|(idx, (id, size))| {
                         let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
                         let target_rect = Rect::from_min_size(
                             Pos2::new(0.0, y_offset),
-                            Vec2::new(width_less_margin, cell_height),
+                            Vec2::new(width_less_margin, main_axis_sizes[idx]),
                         );
                         let fitted_rect = rect.fit_and_center_within(target_rect);
-                        y_offset += cell_height + self.gap;
+                        y_offset += main_axis_sizes[idx] + self.gap;
                         (*id, fitted_rect)
                     })
                     .collect()
@@ -738,7 +772,7 @@ impl StackLayout {
                 .collect()
         };
 
-        let distributed: IndexMap<usize, Rect> = match self.distribution {
+        let distributed: IndexMap<usize, Rect> = match &self.distribution {
             StackLayoutDistribution::Start => top_left_rects,
             StackLayoutDistribution::Center => {
                 let width_diff = (width_less_margin - total_scaled_width) / 2.0;
@@ -797,7 +831,9 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::CenterWeightedGrid { cell_height } => {
+            StackLayoutDistribution::CenterWeightedGrid {
+                main_axis_sizes: cell_height,
+            } => {
                 todo!()
             }
         };

@@ -1518,7 +1518,7 @@ impl<'a> Canvas<'a> {
                                     .quick_layout_order
                                     .swap(first_id_index, second_id_index);
 
-                                layout.apply(&mut self.state);
+                                layout.apply(&mut self.state, 0.0, 0.0);
                             }
                         }
                         ActionBarAction::Crop(layer_id) => {

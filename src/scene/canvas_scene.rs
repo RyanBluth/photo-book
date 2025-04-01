@@ -17,7 +17,7 @@ use crate::{
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::CanvasInfo,
-            quick_layout::{QuickLayout, QuickLayoutState},
+            quick_layout::{self, QuickLayout, QuickLayoutState},
         },
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         pages::{Pages, PagesResponse, PagesState},
@@ -39,6 +39,7 @@ pub struct CanvasSceneState {
     history_manager: CanvasHistoryManager,
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,
+    quick_layout_state: QuickLayoutState,
 }
 
 impl CanvasSceneState {
@@ -52,6 +53,7 @@ impl CanvasSceneState {
             pages_state: PagesState::new(indexmap! { page_id => initial_state }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
+            quick_layout_state: QuickLayoutState::new(),
         }
     }
 
@@ -64,6 +66,7 @@ impl CanvasSceneState {
             pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
+            quick_layout_state: QuickLayoutState::new(),
         }
     }
 
@@ -223,10 +226,8 @@ impl Scene for CanvasScene {
                 if let LayerContent::Photo(photo) = &mut layer.content {
                     photo.crop = crop;
 
-                    let rotated_crop = crop
-                        .rotate_bb_around_center(
-                            photo.photo.metadata.rotation().radians(),
-                        );
+                    let rotated_crop =
+                        crop.rotate_bb_around_center(photo.photo.metadata.rotation().radians());
 
                     let photo_rect: Rect = Rect::from_center_size(
                         layer.transform_state.rect.center(),
@@ -407,8 +408,10 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
+                let mut quick_layout_state = self.scene_state.quick_layout_state.clone();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
-                QuickLayout::new(&mut QuickLayoutState::new(page, history)).show(ui);
+                QuickLayout::new(&mut quick_layout_state, page, history).show(ui);
+                self.scene_state.quick_layout_state = quick_layout_state;
             }
         }
 
