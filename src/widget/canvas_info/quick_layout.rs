@@ -577,6 +577,7 @@ impl StackLayout {
             StackLayoutDistribution::Grid => {
                 let cell_size = (height_less_margin - total_gap) / items.len() as f32;
                 let mut y_offset = 0.0;
+
                 item_dimensions
                     .iter()
                     .map(|(id, size)| {
@@ -742,7 +743,8 @@ impl StackLayout {
             StackCrossAxisAlignment::Center => distributed
                 .iter()
                 .map(|(id, rect)| {
-                    let y = (self.height - rect.height()) / 2.0;
+                    let y: f32 = (self.height - self.margin.top - self.margin.bottom) / 2.0
+                        - rect.height() / 2.0;
                     let rect = Rect::from_min_size(Pos2::new(rect.min.x, y), rect.size());
                     (*id, rect)
                 })
@@ -950,10 +952,10 @@ impl GridLayout {
                             self.height,
                             self.gap,
                             Margin {
-                                top: 0.0,
+                                top: self.margin.top,
                                 right: 0.0,
-                                bottom: 0.0,
-                                left: 0.0,
+                                bottom: self.margin.bottom,
+                                left: self.gap,
                             },
                             items,
                         )
