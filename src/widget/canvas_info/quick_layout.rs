@@ -139,7 +139,7 @@ impl Layout {
                     },
                     direction: StackLayoutDirection::Vertical,
                     alignment: StackCrossAxisAlignment::Center,
-                    distribution: StackLayoutDistribution::Grid,
+                    distribution: StackLayoutDistribution::Center,
                     x: 0.0,
                     y: 0.0,
                 };
@@ -160,7 +160,7 @@ impl Layout {
                     },
                     direction: StackLayoutDirection::Horizontal,
                     alignment: StackCrossAxisAlignment::Center,
-                    distribution: StackLayoutDistribution::Grid,
+                    distribution: StackLayoutDistribution::Center,
                     x: 0.0,
                     y: 0.0,
                 };
@@ -508,6 +508,7 @@ impl StackLayout {
             self.margin,
             items,
         );
+
         let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
         let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
         let width_less_margin = self.width - (self.margin.left + self.margin.right);
@@ -838,10 +839,11 @@ impl StackLayout {
             .fold(0.0, f32::max);
 
         let width_less_margin = width - (margin.left + margin.right);
+        let height_less_margin = height - (margin.top + margin.bottom);
 
         if total_height > height || max_width > width_less_margin {
             let item_height_scale =
-                height / total_items_height - (gap * (items.len() as f32 - 1.0) / total_height);
+                height_less_margin / total_items_height - (gap * (items.len() as f32 - 1.0) / total_height);
             let item_width_scale = width_less_margin / max_width;
             let final_scale = item_height_scale.min(item_width_scale);
             item_dimensions.values_mut().for_each(|size| {
@@ -911,7 +913,12 @@ impl GridLayout {
         let column_size =
             (self.width - self.margin.left - (self.margin.right - self.gap)) / grid_size as f32;
 
-        let column_items = items.chunks(grid_size).collect::<Vec<_>>();
+        let column_items = items
+            .chunks(grid_size)
+            .filter(|items| !items.is_empty())
+            .collect::<Vec<_>>();
+
+        let grid_size = column_items.len();
 
         match self.distribution {
             GridDistribution::Equal => column_items
@@ -1009,7 +1016,7 @@ impl GridLayout {
                                 left: 0.0,
                             },
                             direction: StackLayoutDirection::Vertical,
-                            alignment: StackCrossAxisAlignment::Center, // Center horizontally within column
+                            alignment: StackCrossAxisAlignment::Center,
                             distribution: StackLayoutDistribution::CenterWeightedGrid {
                                 main_axis_sizes: main_axis_sizes.clone(),
                             },
