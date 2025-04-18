@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use egui::{Key, Rect, Ui, Vec2};
+use egui::{Id, Key, Rect, Ui, Vec2};
 use egui_tiles::UiResponse;
 use indexmap::{indexmap, IndexMap};
 
@@ -8,10 +8,10 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
-    id::{next_page_id, LayerId, PageId},
+    id::{next_layer_id, next_page_id, LayerId, PageId},
     model::edit_state::EditablePage,
     scene::crop_scene::CropScene,
-    utils::RectExt,
+    utils::{IdExt, RectExt},
     widget::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         canvas_info::{
@@ -40,6 +40,7 @@ pub struct CanvasSceneState {
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,
     quick_layout_state: QuickLayoutState,
+    pub clipboard: Option<Vec<Layer>>,
 }
 
 impl CanvasSceneState {
@@ -54,6 +55,7 @@ impl CanvasSceneState {
             templates_state: TemplatesState::new(),
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
+            clipboard: None,
         }
     }
 
@@ -67,6 +69,7 @@ impl CanvasSceneState {
             templates_state: TemplatesState::new(),
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
+            clipboard: None,
         }
     }
 
@@ -319,6 +322,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
+                // Handle global copy/paste keyboard shortcuts here
+                self.handle_keys(ui);
+
                 let rect = ui.max_rect();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
 
@@ -427,6 +433,77 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Templates => "Templates".into(),
             CanvasScenePane::QuickLayout => "Quick Layout".into(),
         }
+    }
+}
+
+impl<'a> ViewerTreeBehavior<'a> {
+    fn handle_keys(&mut self, ui: &mut Ui) {
+        ui.input(|input| {
+            if input.key_pressed(Key::C) && input.modifiers.shift {
+                let selected_page_id = self.scene_state.pages_state.selected_page;
+                let selected_layers = self
+                    .scene_state
+                    .pages_state
+                    .pages
+                    .get(&selected_page_id)
+                    .unwrap()
+                    .layers
+                    .values()
+                    .filter(|layer| layer.selected)
+                    .cloned()
+                    .collect::<Vec<Layer>>();
+
+                if !selected_layers.is_empty() {
+                    self.scene_state.clipboard = Some(selected_layers);
+                }
+            }
+
+            if input.key_pressed(Key::V) && input.modifiers.shift {
+                let clipboard_content = self.scene_state.clipboard.clone();
+
+                if let Some(clipboard_layers) = clipboard_content {
+                    let offset = Vec2::new(20.0, 20.0);
+                    let page_id = self.scene_state.pages_state.selected_page;
+                    let page = self
+                        .scene_state
+                        .pages_state
+                        .pages
+                        .get_mut(&page_id)
+                        .unwrap();
+
+                    for layer in clipboard_layers {
+                        let mut new_layer = layer.clone();
+                        new_layer.id = next_layer_id();
+                        new_layer.selected = true;
+                        new_layer.transform_state.id = Id::random();
+
+                        // Offset the pasted layer slightly so it's visible
+                        new_layer.transform_state.rect =
+                            new_layer.transform_state.rect.translate(offset);
+
+                        for layer in page.layers.values_mut() {
+                            layer.selected = false;
+                        }
+
+                        page.layers.insert(new_layer.id, new_layer.clone());
+                        page.quick_layout_order.push(new_layer.id);
+                    }
+
+                    page.update_quick_layout_order();
+
+                    let page_snapshot = self
+                        .scene_state
+                        .pages_state
+                        .pages
+                        .get(&page_id)
+                        .unwrap()
+                        .clone();
+                    self.scene_state
+                        .history_manager
+                        .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
+                }
+            }
+        });
     }
 }
 

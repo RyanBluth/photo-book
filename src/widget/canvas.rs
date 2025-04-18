@@ -1,4 +1,3 @@
-
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
@@ -13,7 +12,7 @@ use crate::{
     dependencies::{Dependency, SingletonFor},
     id::{next_layer_id, LayerId},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
-    photo::{Photo},
+    photo::Photo,
     photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
