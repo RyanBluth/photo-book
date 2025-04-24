@@ -3,7 +3,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Id, Layout, RichText, Stroke, StrokeKind, UiBuilder};
+use egui::{Align, Align2, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder};
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
@@ -71,6 +71,7 @@ pub struct CanvasState {
     pub quick_layout_order: Vec<LayerId>,
     pub last_quick_layout: Option<quick_layout::Layout>,
     pub canvas_id: egui::Id,
+    pub text_edit_mode: Option<LayerId>,
     computed_initial_zoom: bool,
 }
 
@@ -94,6 +95,7 @@ impl CanvasState {
             quick_layout_order: Vec::new(),
             last_quick_layout: None,
             canvas_id: Id::random(),
+            text_edit_mode: None,
             computed_initial_zoom: false,
         }
     }
@@ -114,6 +116,7 @@ impl CanvasState {
             quick_layout_order: quick_layout_order,
             last_quick_layout: None,
             canvas_id: Id::random(),
+            text_edit_mode: None,
             computed_initial_zoom: false,
         }
     }
@@ -171,6 +174,7 @@ impl CanvasState {
             quick_layout_order: vec![layer.id],
             last_quick_layout: None,
             canvas_id: Id::random(),
+            text_edit_mode: None,
             computed_initial_zoom: false,
         }
     }
@@ -263,6 +267,7 @@ impl CanvasState {
             quick_layout_order: ids,
             last_quick_layout: None,
             canvas_id: Id::random(),
+            text_edit_mode: None,
             computed_initial_zoom: false,
         }
     }
@@ -316,6 +321,9 @@ impl CanvasState {
             .retain(|id| self.layers.contains_key(id));
 
         for layer in &self.layers {
+            if !layer.1.content.is_photo() {
+                continue;
+            }
             if !self.quick_layout_order.contains(&layer.0) {
                 self.quick_layout_order.push(*layer.0);
             }
@@ -928,29 +936,74 @@ impl<'a> Canvas<'a> {
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
 
+                // Check if this layer is being edited
+                let is_editing = self.state.text_edit_mode == Some(*layer_id);
+
+                // Make a mutable copy of the text content that we can modify
+                let mut text_content = text.clone();
+
                 let transform_response: TransformableWidgetResponse<()> =
                     TransformableWidget::new(&mut transform_state).show(
                         ui,
                         available_rect,
                         self.state.zoom,
-                        active && !is_preview,
+                        active && !is_preview && !is_editing, // Disable transform controls when editing
                         true,
                         |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
-                            Self::draw_text(
-                                ui,
-                                &text.text,
-                                &text.font_id,
-                                transformed_rect,
-                                text.font_size * self.state.zoom,
-                                text.color,
-                                text.horizontal_alignment,
-                                text.vertical_alignment,
-                            );
+                            if is_editing {
+                                Self::draw_editing_text(
+                                    ui,
+                                    &mut text_content.text,
+                                    &text_content.font_id,
+                                    transformed_rect,
+                                    text_content.font_size * self.state.zoom,
+                                    text_content.color,
+                                    text_content.horizontal_alignment,
+                                    text_content.vertical_alignment,
+                                    Some(layer.id),
+                                );
+                            } else {
+                                Self::draw_text(
+                                    ui,
+                                    &mut text_content.text,
+                                    &text_content.font_id,
+                                    transformed_rect,
+                                    text_content.font_size * self.state.zoom,
+                                    text_content.color,
+                                    text_content.horizontal_alignment,
+                                    text_content.vertical_alignment,
+                                );
+                            }
                         },
                     );
 
+                // Double-click to enter edit mode
+                if transform_response.double_clicked && !is_editing {
+                    self.state.text_edit_mode = Some(*layer_id);
+                }
+
+                // Check for exiting edit mode
+                if is_editing {
+                    ui.ctx().data(|data| {
+                        // Check if we need to exit edit mode
+                        if let Some(exit_layer_id) =
+                            data.get_temp::<LayerId>(Id::new("exit_text_edit_mode"))
+                        {
+                            if exit_layer_id == *layer_id {
+                                self.state.text_edit_mode = None;
+                                self.history_manager
+                                    .save_history(CanvasHistoryKind::EditText, self.state);
+                            }
+                        }
+                    });
+                }
+
                 layer.transform_state = transform_state;
-                self.state.layers.insert(*layer_id, layer.clone());
+                let mut updated_layer = layer.clone();
+                if let LayerContent::Text(text) = &mut updated_layer.content {
+                    text.text = text_content.text;
+                }
+                self.state.layers.insert(*layer_id, updated_layer);
 
                 Some(transform_response)
             }
@@ -1090,6 +1143,7 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
+                    double_clicked: response.double_clicked(),
                 })
             }
             LayerContent::TemplateText { region, text } => {
@@ -1100,25 +1154,77 @@ impl<'a> Canvas<'a> {
                         + region.relative_size * available_rect.size(),
                 );
 
+                // Check if this layer is being edited
+                let is_editing = self.state.text_edit_mode == Some(*layer_id);
+
+                // Create a mutable copy of the text content to work with
+                let mut text_content = text.clone();
+
                 let response = ui.allocate_rect(
                     rect,
-                    if is_preview {
+                    if is_preview || is_editing {
                         Sense::focusable_noninteractive()
                     } else {
                         Sense::click()
                     },
                 );
 
-                Self::draw_text(
-                    ui,
-                    &text.text,
-                    &text.font_id,
-                    rect,
-                    text.font_size * self.state.zoom,
-                    text.color,
-                    text.horizontal_alignment,
-                    text.vertical_alignment,
-                );
+                if is_editing {
+                    Self::draw_editing_text(
+                        ui,
+                        &mut text_content.text,
+                        &text_content.font_id,
+                        rect,
+                        text_content.font_size * self.state.zoom,
+                        text_content.color,
+                        text_content.horizontal_alignment,
+                        text_content.vertical_alignment,
+                        Some(layer.id),
+                    );
+                } else {
+                    Self::draw_text(
+                        ui,
+                        &mut text_content.text,
+                        &text_content.font_id,
+                        rect,
+                        text_content.font_size * self.state.zoom,
+                        text_content.color,
+                        text_content.horizontal_alignment,
+                        text_content.vertical_alignment,
+                    );
+                }
+
+                // Update the layer content if the text has changed
+                if text.text != text_content.text {
+                    let mut updated_layer = layer.clone();
+                    if let LayerContent::TemplateText { region: _, text } =
+                        &mut updated_layer.content
+                    {
+                        text.text = text_content.text;
+                    }
+                    self.state.layers.insert(*layer_id, updated_layer);
+                }
+
+                // Double-click to enter edit mode
+                if response.double_clicked() && !is_editing {
+                    self.state.text_edit_mode = Some(*layer_id);
+                }
+
+                // Check for exiting edit mode
+                if is_editing {
+                    ui.ctx().data(|data| {
+                        // Check if we need to exit edit mode
+                        if let Some(exit_layer_id) =
+                            data.get_temp::<LayerId>(Id::new("exit_text_edit_mode"))
+                        {
+                            if exit_layer_id == *layer_id {
+                                self.state.text_edit_mode = None;
+                                self.history_manager
+                                    .save_history(CanvasHistoryKind::EditText, self.state);
+                            }
+                        }
+                    });
+                }
 
                 if layer.selected {
                     ui.painter().rect_stroke(
@@ -1140,6 +1246,7 @@ impl<'a> Canvas<'a> {
                     began_resizing: false,
                     began_rotating: false,
                     clicked: response.clicked(),
+                    double_clicked: response.double_clicked(),
                 })
             }
         };
@@ -1183,9 +1290,73 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    fn draw_editing_text(
+        ui: &mut Ui,
+        text: &mut String,
+        font_id: &FontId,
+        rect: Rect,
+        font_size: f32,
+        color: Color32,
+        horizontal_alignment: TextHorizontalAlignment,
+        vertical_alignment: TextVerticalAlignment,
+        layer_id: Option<LayerId>,
+    ) {
+        let horizontal_alignment = match horizontal_alignment {
+            TextHorizontalAlignment::Left => Align::Min,
+            TextHorizontalAlignment::Center => Align::Center,
+            TextHorizontalAlignment::Right => Align::Max,
+        };
+
+        let vertical_alignment = match vertical_alignment {
+            TextVerticalAlignment::Top => Align::Min,
+            TextVerticalAlignment::Center => Align::Center,
+            TextVerticalAlignment::Bottom => Align::Max,
+        };
+
+        let layout = Layout {
+            main_dir: egui::Direction::TopDown,
+            main_wrap: true,
+            main_align: vertical_alignment,
+            main_justify: true,
+            cross_align: horizontal_alignment,
+            cross_justify: false,
+        };
+
+        ui.allocate_new_ui(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
+            ui.style_mut().interaction.selectable_labels = false;
+
+            let frame = egui::Frame::new()
+                .inner_margin(Margin::ZERO)
+                .outer_margin(Margin::ZERO);
+
+            frame.show(ui, |ui| {
+                // Configure the text edit using the current text's properties
+                let text_edit = egui::TextEdit::multiline(text)
+                    .id("text-edit".into())
+                    .font(FontId::new(font_size, font_id.family.clone()))
+                    .text_color(color)
+                    .min_size(rect.size())
+                    .desired_width(rect.width())
+                    .lock_focus(true)
+                    .background_color(Color32::TRANSPARENT)
+                    .horizontal_align(horizontal_alignment)
+                    .vertical_align(vertical_alignment);
+
+                let response = ui.add(text_edit);
+
+                // If user presses Enter or clicks outside, exit edit mode
+                if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    ui.ctx().data_mut(|data| {
+                        data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
+                    });
+                }
+            });
+        });
+    }
+
     fn draw_text(
         ui: &mut Ui,
-        text: &str,
+        text: &mut String,
         font_id: &FontId,
         rect: Rect,
         font_size: f32,
@@ -1193,56 +1364,35 @@ impl<'a> Canvas<'a> {
         horizontal_alignment: TextHorizontalAlignment,
         vertical_alignment: TextVerticalAlignment,
     ) {
-        ui.allocate_ui_at_rect(rect, |ui| {
+        let horizontal_alignment = match horizontal_alignment {
+            TextHorizontalAlignment::Left => Align::Min,
+            TextHorizontalAlignment::Center => Align::Center,
+            TextHorizontalAlignment::Right => Align::Max,
+        };
+
+        let vertical_alignment = match vertical_alignment {
+            TextVerticalAlignment::Top => Align::Min,
+            TextVerticalAlignment::Center => Align::Center,
+            TextVerticalAlignment::Bottom => Align::Max,
+        };
+
+        let layout = Layout {
+            main_dir: egui::Direction::TopDown,
+            main_wrap: true,
+            main_align: vertical_alignment,
+            main_justify: true,
+            cross_align: horizontal_alignment,
+            cross_justify: false,
+        };
+
+        ui.allocate_new_ui(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
             ui.style_mut().interaction.selectable_labels = false;
-
-            let layout = Layout {
-                main_dir: egui::Direction::TopDown,
-                main_wrap: true,
-                main_align: match vertical_alignment {
-                    TextVerticalAlignment::Top => Align::Min,
-                    TextVerticalAlignment::Center => Align::Center,
-                    TextVerticalAlignment::Bottom => Align::Max,
-                },
-                main_justify: true,
-                cross_align: match horizontal_alignment {
-                    TextHorizontalAlignment::Left => Align::Min,
-                    TextHorizontalAlignment::Center => Align::Center,
-                    TextHorizontalAlignment::Right => Align::Max,
-                },
-                cross_justify: false,
-            };
-
-            ui.with_layout(layout, |ui| {
-                ui.label(
-                    RichText::new(text)
-                        .color(color)
-                        .family(font_id.family.clone())
-                        .size(font_size),
-                )
-            });
-
-            // TODO: It seems like there isn't a way to rotate when drawing text with ui.label
-            // The following sort of works but it makes laying out t vhe text more difficult because we can't use eguis layout system
-
-            // let painter = ui.painter();
-
-            // let galley: std::sync::Arc<egui::Galley> = painter.layout(
-            //     text.to_string(),
-            //     FontId {
-            //         size: font_size,
-            //         family: font_id.family.clone(),
-            //     },
-            //     color,
-            //     rect.width(),
-            // );
-
-            // let text_pos = rect.left_center();
-
-            // let text_shape =
-            //     TextShape::new(text_pos, galley.clone(), Color32::BLACK).with_angle(angle);
-
-            // painter.add(text_shape);
+            ui.label(
+                RichText::new(text.as_str())
+                    .color(color)
+                    .family(font_id.family.clone())
+                    .size(font_size),
+            );
         });
     }
 
@@ -1253,9 +1403,13 @@ impl<'a> Canvas<'a> {
                 return Some(CanvasResponse::Exit);
             }
 
-            // Clear the selected photo
+            // Clear the selected photo or exit text edit mode
             if input.key_pressed(egui::Key::Escape) {
-                self.deselect_all_photos();
+                if self.state.text_edit_mode.is_some() {
+                    self.state.text_edit_mode = None;
+                } else {
+                    self.deselect_all_photos();
+                }
             }
 
             // Delete the selected photo

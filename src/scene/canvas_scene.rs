@@ -322,7 +322,6 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                // Handle global copy/paste keyboard shortcuts here
                 self.handle_keys(ui);
 
                 let rect = ui.max_rect();
@@ -515,6 +514,7 @@ pub enum CanvasHistoryKind {
     Select,
     Page, // TODO Add specific cases for things within the page settings
     AddText,
+    EditText,
     SelectLayer,
     DeselectLayer,
     QuickLayout,
@@ -529,6 +529,7 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::Select => write!(f, "Select"),
             CanvasHistoryKind::Page => write!(f, "Page"),
             CanvasHistoryKind::AddText => write!(f, "Add Text"),
+            CanvasHistoryKind::EditText => write!(f, "Edit Text"),
             CanvasHistoryKind::SelectLayer => write!(f, "Select Layer"),
             CanvasHistoryKind::DeselectLayer => write!(f, "Deselect Layer"),
             CanvasHistoryKind::QuickLayout => write!(f, "Quick Layout"),

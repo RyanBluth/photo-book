@@ -842,8 +842,8 @@ impl StackLayout {
         let height_less_margin = height - (margin.top + margin.bottom);
 
         if total_height > height || max_width > width_less_margin {
-            let item_height_scale =
-                height_less_margin / total_items_height - (gap * (items.len() as f32 - 1.0) / total_height);
+            let item_height_scale = height_less_margin / total_items_height
+                - (gap * (items.len() as f32 - 1.0) / total_height);
             let item_width_scale = width_less_margin / max_width;
             let final_scale = item_height_scale.min(item_width_scale);
             item_dimensions.values_mut().for_each(|size| {
@@ -865,8 +865,12 @@ impl From<&mut CanvasState> for Vec<StackLayoutItem> {
             .filter_map(|layer_id| {
                 let layer = state.layers.get(layer_id).unwrap();
                 if let LayerContent::Photo(photo) = &layer.content {
+                    let cropped_width =
+                        photo.photo.metadata.rotated_width() as f32 * photo.crop.width();
+                    let cropped_height =
+                        photo.photo.metadata.rotated_height() as f32 * photo.crop.height();
                     Some(StackLayoutItem {
-                        aspect_ratio: photo.photo.aspect_ratio(),
+                        aspect_ratio: cropped_width / cropped_height,
                         id: *layer_id,
                     })
                 } else {

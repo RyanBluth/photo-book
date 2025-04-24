@@ -107,6 +107,7 @@ pub struct TransformableWidgetResponse<Inner> {
     pub ended_rotating: bool,
     pub mouse_down: bool,
     pub clicked: bool,
+    pub double_clicked: bool,
 }
 
 impl<'a> TransformableWidget<'a> {
@@ -463,17 +464,6 @@ impl<'a> TransformableWidget<'a> {
                 } else {
                     self.state.is_moving = false;
                 }
-
-                if interact_response.double_clicked() {
-                    match self.state.handle_mode {
-                        TransformHandleMode::Resize(_) => {
-                            self.state.handle_mode = TransformHandleMode::Rotate
-                        }
-                        TransformHandleMode::Rotate => {
-                            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free)
-                        }
-                    }
-                }
             } else {
                 self.state.is_moving = false;
             }
@@ -508,6 +498,7 @@ impl<'a> TransformableWidget<'a> {
                 && matches!(initial_mode, TransformHandleMode::Rotate),
             mouse_down: interact_response.is_pointer_button_down_on(),
             clicked: interact_response.clicked(),
+            double_clicked: interact_response.double_clicked(),
         }
     }
 
