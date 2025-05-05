@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+re_ui = "0.23.1"
 egui = { version = "0.31", features = ["persistence"] }
 eframe = { version = "0.31", features = ["glow"] }
 egui_extras = { version = "0.31", features = ["default", "all_loaders"] }
@@ -22,7 +23,7 @@ kamadak-exif = "0.6.1"
 imagesize = "0.13.0"
 backtrace = "0.3"
 open = "5.0.0"
-strum = "0.26.3"
+strum = { version = "0.26.3", features = ["derive"] }
 strum_macros = "0.26.4"
 chrono = { version = "0.4.31", features = ["serde"] }
 indexmap = { version = "2.1.0", features = ["serde"] }

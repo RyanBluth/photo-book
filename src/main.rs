@@ -9,8 +9,10 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
     egui::{self, ViewportBuilder, Widget},
+    egui_wgpu::{winit, SurfaceErrorAction, WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew},
+    wgpu,
     // egui_wgpu::{WgpuConfiguration, WgpuSetup},
-    //wgpu,
+    // wgpu,
 };
 
 use font_manager::FontManager;
@@ -80,32 +82,32 @@ async fn main() -> anyhow::Result<()> {
             .with_maximize_button(true)
             .with_inner_size((3000.0, 2000.0)),
         hardware_acceleration: eframe::HardwareAcceleration::Required,
-        // wgpu_options: WgpuConfiguration {
-        //     wgpu_setup: WgpuSetup::CreateNew {
-        //         supported_backends: wgpu::util::backend_bits_from_env()
-        //             .unwrap_or(wgpu::Backends::PRIMARY | wgpu::Backends::GL),
-        //         power_preference: wgpu::PowerPreference::HighPerformance,
-        //         device_descriptor: Arc::new(|adapter| {
-        //             let base_limits: wgpu::Limits =
-        //                 if adapter.get_info().backend == wgpu::Backend::Gl {
-        //                     wgpu::Limits::downlevel_webgl2_defaults()
-        //                 } else {
-        //                     wgpu::Limits::default()
-        //                 };
+        renderer: eframe::Renderer::Glow,
+        wgpu_options: WgpuConfiguration {
+            wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                device_descriptor: Arc::new(|adapter| {
+                    let base_limits: wgpu::Limits =
+                        if adapter.get_info().backend == wgpu::Backend::Gl {
+                            wgpu::Limits::downlevel_webgl2_defaults()
+                        } else {
+                            wgpu::Limits::default()
+                        };
 
-        //             wgpu::DeviceDescriptor {
-        //                 label: Some("egui wgpu device"),
-        //                 required_features: wgpu::Features::default(),
-        //                 required_limits: wgpu::Limits {
-        //                     max_texture_dimension_2d: base_limits.max_texture_dimension_2d, // TODO: Can we look up the max size?
-        //                     ..base_limits
-        //                 },
-        //                 memory_hints: wgpu::MemoryHints::default(),
-        //             }
-        //         }),
-        //     },
-        //     ..Default::default()
-        // },
+                    wgpu::DeviceDescriptor {
+                        label: Some("egui wgpu device"),
+                        required_features: wgpu::Features::default(),
+                        required_limits: wgpu::Limits {
+                            max_texture_dimension_2d: 16384, // TODO: Can we look up the max size?
+                            ..base_limits
+                        },
+                        memory_hints: wgpu::MemoryHints::default(),
+                    }
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
         ..Default::default()
     };
 
@@ -114,7 +116,10 @@ async fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
-        Box::new(|_cc| Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log)))),
+        Box::new(|cc| {
+            re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
+            Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log)))
+        }),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
 }
