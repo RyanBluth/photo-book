@@ -17,7 +17,7 @@ use crate::{
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::CanvasInfo,
-            quick_layout::{self, QuickLayout, QuickLayoutState},
+            quick_layout::{QuickLayout, QuickLayoutState},
         },
         image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
         pages::{Pages, PagesResponse, PagesState},

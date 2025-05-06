@@ -9,7 +9,7 @@ use cursor_manager::CursorManager;
 use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
 use eframe::{
     egui::{self, ViewportBuilder, Widget},
-    egui_wgpu::{winit, SurfaceErrorAction, WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew},
+    egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew},
     wgpu,
     // egui_wgpu::{WgpuConfiguration, WgpuSetup},
     // wgpu,
@@ -53,6 +53,7 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
+mod layout;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

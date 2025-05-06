@@ -9,7 +9,6 @@ use crate::{
     },
 };
 use egui::{Id, Pos2, Rect, Vec2};
-use printpdf::scale;
 
 use super::{Scene, ScenePopResponse, SceneResponse};
 

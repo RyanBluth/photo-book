@@ -3,7 +3,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
 };
-use egui::{Align, Align2, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder};
+use egui::{Align, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder};
 use indexmap::{indexmap, IndexMap};
 
 use crate::{
