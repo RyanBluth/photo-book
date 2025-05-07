@@ -23,16 +23,18 @@ pub struct GridLayout {
     gap: f32,
     margin: Margin,
     distribution: GridDistribution,
+    direction: StackLayoutDirection,
 }
 
 impl GridLayout {
-    pub fn new(width: f32, height: f32, gap: f32, margin: f32) -> Self {
+    pub fn new(width: f32, height: f32, gap: f32, margin: f32, direction: StackLayoutDirection) -> Self {
         Self {
             width,
             height,
             gap,
             margin: Margin::all(margin),
             distribution: GridDistribution::Equal,
+            direction,
         }
     }
 
@@ -41,125 +43,215 @@ impl GridLayout {
         self
     }
 
+    pub fn with_direction(mut self, direction: StackLayoutDirection) -> Self {
+        self.direction = direction;
+        self
+    }
+
     pub fn layout(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
-        let grid_size = (items.len() as f32).sqrt().ceil() as usize;
-        let column_size =
-            (self.width - self.margin.left - (self.margin.right - self.gap)) / grid_size as f32;
+        if items.is_empty() {
+            return IndexMap::new();
+        }
 
-        let column_items = items
-            .chunks(grid_size)
-            .filter(|items| !items.is_empty())
-            .collect::<Vec<_>>();
+        match self.direction {
+            StackLayoutDirection::Vertical => {
+                let num_rows_target_per_column = (items.len() as f32).sqrt().ceil().max(1.0) as usize;
+                let columns_definitions: Vec<&[LayoutItem]> = items
+                    .chunks(num_rows_target_per_column)
+                    .filter(|chunk| !chunk.is_empty())
+                    .collect::<Vec<_>>();
+                
+                if columns_definitions.is_empty() { return IndexMap::new(); } // Should not happen if items not empty
+                let num_columns = columns_definitions.len();
 
-        let grid_size = column_items.len();
+                let total_gaps_width = self.gap * (num_columns.saturating_sub(1) as f32);
+                let available_width_for_columns = self.width - self.margin.left - self.margin.right - total_gaps_width;
+                let column_width = (available_width_for_columns / num_columns as f32).max(0.0);
+                let stack_height = self.height - self.margin.top - self.margin.bottom;
 
-        match self.distribution {
-            GridDistribution::Equal => column_items
-                .iter()
-                .enumerate()
-                .map(|(column, items)| {
-                    StackLayout {
-                        width: column_size,
-                        height: self.height,
-                        gap: self.gap,
-                        margin: Margin {
-                            top: self.margin.top,
-                            right: if column != items.len() - 1 {
-                                self.gap
-                            } else {
-                                0.0
-                            },
-                            bottom: self.margin.bottom,
-                            left: 0.0,
-                        },
-                        direction: StackLayoutDirection::Vertical,
-                        alignment: StackCrossAxisAlignment::Center,
-                        distribution: StackLayoutDistribution::Grid,
-                        x: column as f32 * column_size + self.margin.left,
-                        y: 0.0,
-                    }
-                    .layout(items)
-                })
-                .flatten()
-                .collect::<IndexMap<usize, Rect>>(),
-            GridDistribution::CenterWeighted => {
-                // Calculate item dimensions for each column
-                let item_dimensions: Vec<IndexMap<usize, Vec2>> = column_items
-                    .iter()
-                    .map(|items| {
-                        StackLayout::calculate_vertical_item_dimensions(
-                            column_size,
-                            self.height,
-                            self.gap,
-                            Margin {
-                                top: self.margin.top,
-                                right: 0.0,
-                                bottom: self.margin.bottom,
-                                left: self.gap,
-                            },
-                            items,
-                        )
-                    })
-                    .collect();
+                match self.distribution {
+                    GridDistribution::Equal => columns_definitions
+                        .iter()
+                        .enumerate()
+                        .map(|(col_idx, column_items_slice)| {
+                            StackLayout {
+                                width: column_width,
+                                height: stack_height,
+                                gap: self.gap,
+                                margin: Margin::none(),
+                                direction: StackLayoutDirection::Vertical,
+                                alignment: StackCrossAxisAlignment::Center,
+                                distribution: StackLayoutDistribution::Grid,
+                                x: self.margin.left + col_idx as f32 * (column_width + self.gap),
+                                y: self.margin.top,
+                            }
+                            .layout(column_items_slice)
+                        })
+                        .flatten()
+                        .collect::<IndexMap<usize, Rect>>(),
+                    GridDistribution::CenterWeighted => {
+                        let item_dimensions_per_column: Vec<IndexMap<usize, Vec2>> = columns_definitions
+                            .iter()
+                            .map(|column_items_slice| {
+                                StackLayout::calculate_vertical_item_dimensions(
+                                    column_width,
+                                    stack_height,
+                                    self.gap,
+                                    Margin::none(), 
+                                    column_items_slice,
+                                )
+                            })
+                            .collect();
 
-                // Find minimum heights for each row across all columns
-                let main_axis_sizes: Vec<f32> = item_dimensions.iter().enumerate().fold(
-                    Vec::<f32>::new(),
-                    |mut acc: Vec<f32>, (idx, column)| {
-                        for (col_idx, size) in column.values().enumerate() {
-                            if let Some(existing_size) = acc.get_mut(col_idx) {
-                                *existing_size = existing_size.min(size.y);
-                            } else {
-                                acc.push(size.y);
+                        let mut common_row_heights: Vec<f32> = Vec::new();
+                        if !columns_definitions.is_empty() {
+                            let max_rows = item_dimensions_per_column.iter().map(|dim_map| dim_map.len()).max().unwrap_or(0);
+                            if max_rows > 0 {
+                                common_row_heights = vec![f32::MAX; max_rows];
+                                for dim_map in &item_dimensions_per_column {
+                                    for (row_idx, size) in dim_map.values().enumerate() {
+                                        if row_idx < common_row_heights.len() {
+                                            common_row_heights[row_idx] = common_row_heights[row_idx].min(size.y);
+                                        }
+                                    }
+                                }
+                                common_row_heights.retain(|&h| h != f32::MAX && h > 0.0);
                             }
                         }
-                        acc
-                    },
-                );
 
-                // Calculate total height needed for all rows + gaps
-                let total_height = main_axis_sizes.iter().sum::<f32>()
-                    + (main_axis_sizes.len().saturating_sub(1)) as f32 * self.gap;
+                        let total_rows_content_height = common_row_heights.iter().sum::<f32>();
+                        let total_rows_gaps_height = (common_row_heights.len().saturating_sub(1)) as f32 * self.gap;
+                        let total_grid_block_height = total_rows_content_height + total_rows_gaps_height;
 
-                // Calculate vertical offset to center the grid
-                let vertical_offset =
-                    (self.height - (self.margin.top + self.margin.bottom) - total_height) / 2.0;
-                let vertical_offset = vertical_offset.max(0.0);
+                        let vertical_offset_for_grid_block =
+                            ((stack_height) - total_grid_block_height).max(0.0) / 2.0;
+                        
+                        columns_definitions
+                            .iter()
+                            .enumerate()
+                            .map(|(col_idx, column_items_slice)| {
+                                StackLayout {
+                                    width: column_width,
+                                    height: stack_height, 
+                                    gap: self.gap,
+                                    margin: Margin::none(),
+                                    direction: StackLayoutDirection::Vertical,
+                                    alignment: StackCrossAxisAlignment::Center,
+                                    distribution: StackLayoutDistribution::CenterWeightedGrid {
+                                        main_axis_sizes: common_row_heights.clone(),
+                                    },
+                                    x: self.margin.left + col_idx as f32 * (column_width + self.gap),
+                                    y: self.margin.top + vertical_offset_for_grid_block,
+                                }
+                                .layout(column_items_slice)
+                            })
+                            .flatten()
+                            .collect::<IndexMap<usize, Rect>>()
+                    }
+                }
+            }
+            StackLayoutDirection::Horizontal => {
+                let num_cols_target_per_row = (items.len() as f32).sqrt().ceil().max(1.0) as usize;
+                let num_rows = (items.len() as f32 / num_cols_target_per_row as f32).ceil().max(1.0) as usize;
 
-                let total_width = column_size * grid_size as f32
-                    + self.gap * (grid_size - 1) as f32
-                    + self.margin.left
-                    + self.margin.right;
+                let mut temp_rows_storage: Vec<Vec<LayoutItem>> = vec![Vec::new(); num_rows];
+                for (idx, item_ref) in items.iter().enumerate() {
+                    temp_rows_storage[idx % num_rows].push(item_ref.clone());
+                }
+                
+                let rows_as_vecs_of_items: Vec<Vec<LayoutItem>> = temp_rows_storage
+                    .into_iter()
+                    .filter(|r_vec| !r_vec.is_empty())
+                    .collect();
 
-                let horizontal_offset = (self.width - total_width) / 2.0;
-                let horizontal_offset = horizontal_offset.max(0.0);
+                if rows_as_vecs_of_items.is_empty() { return IndexMap::new(); } 
+                let actual_num_rows = rows_as_vecs_of_items.len();
 
-                column_items
-                    .iter()
-                    .enumerate()
-                    .map(|(index, items)| {
-                        StackLayout {
-                            width: column_size,
-                            height: self.height,
-                            gap: self.gap,
-                            margin: Margin {
-                                top: self.margin.top + vertical_offset,
-                                right: self.gap,
-                                bottom: self.margin.bottom,
-                                left: 0.0,
-                            },
-                            direction: StackLayoutDirection::Vertical,
-                            alignment: StackCrossAxisAlignment::Center,
-                            distribution: StackLayoutDistribution::CenterWeightedGrid {
-                                main_axis_sizes: main_axis_sizes.clone(),
-                            },
-                            x: index as f32 * column_size + horizontal_offset + self.margin.left,
-                            y: 0.0,
+                let total_gaps_height = self.gap * (actual_num_rows.saturating_sub(1) as f32);
+                let available_height_for_rows = self.height - self.margin.top - self.margin.bottom - total_gaps_height;
+                let row_height = (available_height_for_rows / actual_num_rows as f32).max(0.0);
+                let stack_width = self.width - self.margin.left - self.margin.right;
+
+                match self.distribution {
+                    GridDistribution::Equal => rows_as_vecs_of_items
+                        .iter()
+                        .enumerate()
+                        .map(|(row_idx, current_row_vec_ref)| {
+                            StackLayout {
+                                width: stack_width,
+                                height: row_height,
+                                gap: self.gap,
+                                margin: Margin::none(),
+                                direction: StackLayoutDirection::Horizontal,
+                                alignment: StackCrossAxisAlignment::Center, 
+                                distribution: StackLayoutDistribution::Grid,
+                                x: self.margin.left,
+                                y: self.margin.top + row_idx as f32 * (row_height + self.gap),
+                            }
+                            .layout(current_row_vec_ref.as_slice())
+                        })
+                        .flatten()
+                        .collect::<IndexMap<usize, Rect>>(),
+                    GridDistribution::CenterWeighted => {
+                        let item_dimensions_per_row: Vec<IndexMap<usize, Vec2>> = rows_as_vecs_of_items
+                            .iter()
+                            .map(|current_row_vec_ref| {
+                                StackLayout::calculate_horizontal_item_dimensions(
+                                    stack_width,
+                                    row_height, 
+                                    self.gap,
+                                    Margin::none(),
+                                    current_row_vec_ref.as_slice(),
+                                )
+                            })
+                            .collect();
+
+                        let mut common_column_widths: Vec<f32> = Vec::new();
+                        if !rows_as_vecs_of_items.is_empty() {
+                            let max_columns = item_dimensions_per_row.iter().map(|dim_map| dim_map.len()).max().unwrap_or(0);
+                            if max_columns > 0 {
+                                common_column_widths = vec![f32::MAX; max_columns];
+                                for dim_map in &item_dimensions_per_row {
+                                    for (col_idx, size) in dim_map.values().enumerate() {
+                                        if col_idx < common_column_widths.len() {
+                                            common_column_widths[col_idx] = common_column_widths[col_idx].min(size.x);
+                                        }
+                                    }
+                                }
+                                common_column_widths.retain(|&w| w != f32::MAX && w > 0.0);
+                            }
                         }
-                        .layout(items)
-                    })
-                    .flatten()
-                    .collect::<IndexMap<usize, Rect>>()
+
+                        let total_cols_content_width = common_column_widths.iter().sum::<f32>();
+                        let total_cols_gaps_width = (common_column_widths.len().saturating_sub(1)) as f32 * self.gap;
+                        let total_grid_block_width = total_cols_content_width + total_cols_gaps_width;
+
+                        let horizontal_offset_for_grid_block =
+                            ((stack_width) - total_grid_block_width).max(0.0) / 2.0;
+
+                        rows_as_vecs_of_items
+                            .iter()
+                            .enumerate()
+                            .map(|(row_idx, current_row_vec_ref)| {
+                                StackLayout {
+                                    width: stack_width,
+                                    height: row_height,
+                                    gap: self.gap,
+                                    margin: Margin::none(),
+                                    direction: StackLayoutDirection::Horizontal,
+                                    alignment: StackCrossAxisAlignment::Center,
+                                    distribution: StackLayoutDistribution::CenterWeightedGrid {
+                                        main_axis_sizes: common_column_widths.clone(),
+                                    },
+                                    x: self.margin.left + horizontal_offset_for_grid_block,
+                                    y: self.margin.top + row_idx as f32 * (row_height + self.gap),
+                                }
+                                .layout(current_row_vec_ref.as_slice())
+                            })
+                            .flatten()
+                            .collect::<IndexMap<usize, Rect>>()
+                    }
+                }
             }
         }
     }

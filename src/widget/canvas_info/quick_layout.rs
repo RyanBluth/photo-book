@@ -53,10 +53,8 @@ impl<'a> QuickLayoutState {
 pub enum Layout {
     GridLayout,
     CenteredWeightedGridLayout,
-    HighlightLayout { padding: f32 },
     VerticalStackLayout,
     HorizontalStackLayout,
-    ZigzagLayout,
 }
 
 impl Layout {
@@ -74,55 +72,6 @@ impl Layout {
                 let grid_layout = GridLayout::new(page_size.x, page_size.y, gap, margin)
                     .with_distribution(GridDistribution::CenterWeighted);
                 grid_layout.layout(&stack_items)
-            }
-            Layout::HighlightLayout { padding } => {
-                let n = canvas_state.quick_layout_order.len();
-                let mut regions = IndexMap::new();
-                let highlight_layer_index = 0;
-
-                let highlight_region = QuickLayoutRegion {
-                    id: canvas_state.quick_layout_order[highlight_layer_index],
-                    absolute_rect: QuickLayout::fractional_rect_for_layer_in_page(
-                        canvas_state
-                            .layers
-                            .get(&canvas_state.quick_layout_order[highlight_layer_index])
-                            .unwrap(),
-                        &canvas_state.page.value,
-                        Rect::from_min_size(Pos2::ZERO, Vec2::new(0.6, 1.0)),
-                        QuickLayoutFillMode::Margin(*padding),
-                    ),
-                };
-
-                let highlight_rect = highlight_region.absolute_rect;
-
-                let min_y = highlight_rect.min.y / &canvas_state.page.value.size_pixels().y;
-                let max_y = highlight_rect.max.y / &canvas_state.page.value.size_pixels().y;
-
-                let photo_height = (max_y - min_y) / (n - 1) as f32;
-                let mut non_highlight_count = 0;
-
-                for (i, layer_id) in canvas_state.quick_layout_order.iter().enumerate() {
-                    if i == highlight_layer_index {
-                        regions.insert(*layer_id, highlight_region.absolute_rect);
-                        continue;
-                    }
-                    regions.insert(
-                        *layer_id,
-                        QuickLayout::fractional_rect_for_layer_in_page(
-                            canvas_state.layers.get(layer_id).unwrap(),
-                            &canvas_state.page.value,
-                            Rect::from_min_size(
-                                Pos2::new(0.6, min_y + non_highlight_count as f32 * photo_height),
-                                Vec2::new(0.4, photo_height),
-                            ),
-                            QuickLayoutFillMode::Margin(*padding),
-                        ),
-                    );
-
-                    non_highlight_count += 1;
-                }
-
-                regions
             }
             Layout::VerticalStackLayout => {
                 let stack_layout = StackLayout {
@@ -165,29 +114,6 @@ impl Layout {
 
                 let items: Vec<LayoutItem> = canvas_state.into();
                 stack_layout.layout(&items)
-            }
-            Layout::ZigzagLayout => {
-                let size = 0.3;
-                let x_positions = [0.1, 0.6];
-                canvas_state
-                    .quick_layout_order
-                    .iter()
-                    .enumerate()
-                    .map(|(i, layer_id)| {
-                        let layer = canvas_state.layers.get(layer_id).unwrap();
-                        let x = x_positions[i % 2];
-                        let y = 0.1 + 0.2 * i as f32;
-                        (
-                            *layer_id,
-                            QuickLayout::fractional_rect_for_layer_in_page(
-                                layer,
-                                &canvas_state.page.value,
-                                Rect::from_min_size(Pos2::new(x, y), Vec2::new(size, size)),
-                                QuickLayoutFillMode::Fill,
-                            ),
-                        )
-                    })
-                    .collect::<IndexMap<usize, Rect>>()
             }
         };
 
@@ -346,63 +272,6 @@ impl<'a> QuickLayout<'a> {
         layouts.push(Layout::HorizontalStackLayout);
 
         layouts
-    }
-
-    fn fractional_rect_for_layer_in_page(
-        layer: &Layer,
-        page: &Page,
-        max_rect_percentage: Rect,
-        margin_option: QuickLayoutFillMode,
-    ) -> Rect {
-        let page_size = page.size_pixels();
-        let max_rect = Rect::from_min_size(
-            egui::Pos2::new(
-                max_rect_percentage.min.x * page_size.x,
-                max_rect_percentage.min.y * page_size.y,
-            ),
-            egui::Vec2::new(
-                max_rect_percentage.width() * page_size.x,
-                max_rect_percentage.height() * page_size.y,
-            ),
-        );
-
-        let layer_rect = layer.transform_state.rect;
-
-        let layer_aspect_ratio = layer_rect.width() / layer_rect.height();
-
-        let (max_width, max_height) = match margin_option {
-            QuickLayoutFillMode::Fill => (max_rect.width(), max_rect.height()),
-            QuickLayoutFillMode::Margin(margin_percentage) => (
-                max_rect.width() * (1.0 - margin_percentage),
-                max_rect.height() * (1.0 - margin_percentage),
-            ),
-        };
-
-        let (new_width, new_height) = if layer_aspect_ratio > 1.0 {
-            let width = max_width;
-            let height = width / layer_aspect_ratio;
-            if height <= max_height {
-                (width, height)
-            } else {
-                (max_height * layer_aspect_ratio, max_height)
-            }
-        } else {
-            let height = max_height;
-            let width = height * layer_aspect_ratio;
-            if width <= max_width {
-                (width, height)
-            } else {
-                (max_width, max_width / layer_aspect_ratio)
-            }
-        };
-
-        let x = max_rect.min.x + (max_rect.width() - new_width) / 2.0;
-        let y = max_rect.min.y + (max_rect.height() - new_height) / 2.0;
-
-        Rect::from_min_size(
-            egui::Pos2::new(x, y),
-            egui::Vec2::new(new_width, new_height),
-        )
     }
 }
 

@@ -287,9 +287,23 @@ impl StackLayout {
                     .collect()
             }
             StackLayoutDistribution::CenterWeightedGrid {
-                main_axis_sizes: cell_height,
+                main_axis_sizes,
             } => {
-                todo!()
+                let mut x_offset = 0.0;
+                item_dimensions
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, (id, size))| {
+                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
+                        let target_rect = Rect::from_min_size(
+                            Pos2::new(x_offset, 0.0),
+                            Vec2::new(main_axis_sizes[idx], height_less_margin),
+                        );
+                        let fitted_rect = rect.fit_and_center_within(target_rect);
+                        x_offset += main_axis_sizes[idx] + self.gap;
+                        (*id, fitted_rect)
+                    })
+                    .collect()
             }
         };
 
@@ -326,7 +340,7 @@ impl StackLayout {
             .collect()
     }
 
-    fn calculate_horizontal_item_dimensions(
+    pub fn calculate_horizontal_item_dimensions(
         width: f32,
         height: f32,
         gap: f32,
