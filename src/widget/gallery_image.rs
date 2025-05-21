@@ -2,7 +2,7 @@ use eframe::{
     egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::{Color32, Vec2},
 };
-use egui::{Spinner, Stroke, StrokeKind};
+use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
 use crate::{
@@ -54,7 +54,7 @@ impl Widget for GalleryImage {
 
                 let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
-                ui.allocate_ui_at_rect(rect, |ui| {
+                ui.allocate_new_ui(UiBuilder::new().max_rect(rect), |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
                     ui.painter()
@@ -65,7 +65,7 @@ impl Widget for GalleryImage {
                             ui.max_rect(),
                             4.0,
                             Stroke::new(3.0, theme::color::FOCUSED),
-                            StrokeKind::Outside,
+                            StrokeKind::Inside,
                         );
                     }
 

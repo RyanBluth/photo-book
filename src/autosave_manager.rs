@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use log::{error, info};
+use savefile_derive::Savefile;
 
 use crate::{
     dependencies::{Dependency, SingletonFor},
     photo_manager::PhotoManager,
-    project::v1::{Project, ProjectError},
+    project::{Project, ProjectError, PROJECT_VERSION},
     scene::organize_edit_scene::OrganizeEditScene,
     session::Session,
 };
@@ -20,9 +21,12 @@ pub enum AutoSaveManagerError {
 
     #[error("Save task already in progress")]
     SaveTaskInProgress,
+
+    #[error("Savefile error: {0}")]
+    SavefileError(#[from] savefile::SavefileError),
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Savefile)]
 pub struct AutoSave {
     // The active project when the auto save was created
     active_project: Option<PathBuf>,
@@ -44,18 +48,11 @@ impl AutoSaveManager {
 
     pub fn load_auto_save() -> Option<OrganizeEditScene> {
         let path = auto_save_path()?;
-        let data = match std::fs::read_to_string(path) {
-            Ok(data) => data,
-            Err(err) => {
-                error!("Error loading auto save: {:?}", err);
-                return None;
-            }
-        };
 
-        let auto_save: AutoSave = match serde_json::from_str(&data) {
-            Ok(save) => save,
-            Err(err) => {
-                error!("Error loading auto save: {:?}", err);
+        let auto_save: AutoSave = match savefile::load_file::<AutoSave, _>(path, PROJECT_VERSION) {
+            Ok(auto_save) => auto_save,
+            Err(e) => {
+                error!("Error loading auto save: {:?}", e);
                 return None;
             }
         };
@@ -120,20 +117,12 @@ fn create_save_task(root_scene: OrganizeEditScene, path: PathBuf) -> tokio::task
                 project: Project::new(&root_scene, &photo_manager),
             });
 
-        let data = match serde_json::to_string_pretty(&auto_save) {
-            Ok(data) => data,
-            Err(err) => {
-                error!("Error saving auto save: {:?}", err);
-                return;
-            }
-        };
-
-        if let Err(e) = std::fs::write(path, data) {
+        if let Err(e) = savefile::save_file_compressed(path, PROJECT_VERSION, &auto_save) {
             error!("Error saving auto save: {:?}", e);
         }
     })
 }
 
 fn auto_save_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|cache_dir| cache_dir.join("auto_save.json"))
+    dirs::cache_dir().map(|cache_dir| cache_dir.join("auto_save.rpb"))
 }

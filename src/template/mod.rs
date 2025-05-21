@@ -1,5 +1,7 @@
 use egui::{Pos2, Vec2};
 use once_cell::sync::Lazy;
+use savefile_derive::Savefile;
+use serde::{Serialize, Deserialize};
 
 use crate::model::page::Page;
 
@@ -8,7 +10,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Single
         Template {
             name: "12x8 Single".to_string(),
-            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
+            page: Page::with_size_inches(12.0, 8.0),
             regions: vec![TemplateRegion {
                 relative_position: Pos2::new(0.0, 0.0),
                 relative_size: Vec2::new(1.0, 1.0),
@@ -18,7 +20,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Split
         Template {
             name: "12x8 Split".to_string(),
-            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
+            page: Page::with_size_inches(12.0, 8.0),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.05, 0.05),
@@ -46,7 +48,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Double
         Template {
             name: "12x8 Double".to_string(),
-            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
+            page: Page::with_size_inches(12.0, 8.0),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.0, 0.0),
@@ -63,7 +65,7 @@ pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
         // 12x8 Triple
         Template {
             name: "12x8 Triple".to_string(),
-            page: Page::with_size_inches(Vec2::new(12.0, 8.0)),
+            page: Page::with_size_inches(12.0, 8.0),
             regions: vec![
                 TemplateRegion {
                     relative_position: Pos2::new(0.0, 0.0),
@@ -99,7 +101,7 @@ pub struct TemplateRegion {
     pub kind: TemplateRegionKind,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Savefile, Serialize, Deserialize)]
 pub enum TemplateRegionKind {
     Image,
     Text { sample_text: String, font_size: f32 },

@@ -987,7 +987,7 @@ impl<'a> Canvas<'a> {
                     ui.ctx().data(|data| {
                         // Check if we need to exit edit mode
                         if let Some(exit_layer_id) =
-                            data.get_temp::<LayerId>(Id::new("exit_text_edit_mode"))
+                            data.get_temp::<LayerId>(Id::new(format!("exit_text_edit_mode_{}", layer.id)))
                         {
                             if exit_layer_id == *layer_id {
                                 self.state.text_edit_mode = None;

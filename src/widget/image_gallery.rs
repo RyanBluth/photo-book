@@ -38,16 +38,41 @@ pub struct ImageGallery<'a> {
     state: &'a mut ImageGalleryState,
 }
 
-pub enum ImageGalleryResponse {
-    SelectPhotoPrimaryAction(Photo),
-    SelectPhotoSecondaryAction(Photo),
+#[derive(Debug, Clone)]
+pub struct ImageGalleryResponse {
+    /// A photo that was double-clicked (primary action)
+    pub primary_action_photo: Option<Photo>,
+    /// A photo that was right-clicked (secondary action)
+    pub secondary_action_photo: Option<Photo>,
+    /// A photo that was newly selected this frame
+    pub selected_photo: Option<Photo>,
+    /// Flag indicating if the selection was cleared this frame (e.g., by Escape key)
+    pub selection_cleared: bool,
 }
 
 impl<'a> ImageGallery<'a> {
-    pub fn show(ui: &mut Ui, state: &'a mut ImageGalleryState) -> Option<ImageGalleryResponse> {
-        let mut response = None;
+    /// Shows the image gallery with photos from the PhotoManager.
+    ///
+    /// # Arguments
+    /// * `ui` - The egui UI to draw on.
+    /// * `state` - Mutable reference to the gallery state.
+    /// * `scroll_to_path` - If Some, the gallery will scroll to show this path.
+    /// 
+    /// # Returns
+    /// An `ImageGalleryResponse` containing information about interactions that occurred this frame.
+    pub fn show(
+        ui: &mut Ui, 
+        state: &'a mut ImageGalleryState,
+        scroll_to_path: Option<&PathBuf>,
+    ) -> ImageGalleryResponse {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let selected_images = &mut state.selected_images;
+        
+        // Initialize response with defaults
+        let mut primary_action_photo: Option<Photo> = None;
+        let mut secondary_action_photo: Option<Photo> = None;
+        let mut selected_photo: Option<Photo> = None;
+        let mut selection_cleared = false;
 
         let has_photos = photo_manager.with_lock(|photo_manager| !photo_manager.photos.is_empty());
 
@@ -55,6 +80,7 @@ impl<'a> ImageGallery<'a> {
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
                     selected_images.clear();
+                    selection_cleared = true;
                 }
 
                 let spacing = 10.0;
@@ -118,82 +144,118 @@ impl<'a> ImageGallery<'a> {
 
                     let heights: Vec<f32> = row_metadatas.iter().map(|x| x.height).collect();
 
-                    egui_extras::TableBuilder::new(ui)
+                    let mut scroll_to_row: Option<usize> = None;
+                    
+                    if let Some(path) = scroll_to_path {
+                        let mut section_with_photo: Option<(String, usize)> = None;
+                        
+                        // Find which section and row contains this path
+                        for (section, photos) in &grouped_photos {
+                            // Need to look at the map's keys for the path, not the Photo objects
+                            if let Some(pos) = photos.keys().position(|photo_path| photo_path == path) {
+                                let row_idx = pos / num_columns;
+                                section_with_photo = Some((section.clone(), row_idx));
+                                break;
+                            }
+                        }
+                        
+                        // If found, look up the corresponding row
+                        if let Some((section, row_idx)) = section_with_photo {
+                            for (idx, metadata) in row_metadatas.iter().enumerate() {
+                                if metadata.section == section && 
+                                   !metadata.is_title && 
+                                   metadata.row_index_in_section == row_idx {
+                                    scroll_to_row = Some(idx);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                 
+                    
+                    // Create the table builder
+                    let mut builder = egui_extras::TableBuilder::new(ui)
                         .min_scrolled_height(table_size.y)
                         .auto_shrink(false)
                         .columns(Column::exact(column_width), num_columns)
-                        .column(Column::exact(spacer_width))
-                        .body(|body| {
-                            body.heterogeneous_rows(heights.into_iter(), |mut row| {
-                                let row_index = row.index();
-                                let metadata = &row_metadatas[row_index];
-                                let offest = metadata.row_index_in_section * num_columns;
+                        .column(Column::exact(spacer_width));
+                        
+                    // Apply scroll if needed
+                    if let Some(row) = scroll_to_row {
+                        builder = builder.scroll_to_row(row, None);
+                    }
+                        
+                    builder.body(|body| {
+                        body.heterogeneous_rows(heights.into_iter(), |mut row| {
+                            let row_index = row.index();
+                            let metadata = &row_metadatas[row_index];
+                            let offest = metadata.row_index_in_section * num_columns;
 
-                                let group = grouped_photos.get(&metadata.section).unwrap();
+                            let group = grouped_photos.get(&metadata.section).unwrap();
 
-                                if metadata.is_title {
-                                    row.col(|ui| {
-                                        ui.vertical(|ui| {
-                                            ui.add_space(10.0);
-                                            ui.heading(metadata.section.clone());
-                                        });
+                            if metadata.is_title {
+                                row.col(|ui| {
+                                    ui.vertical(|ui| {
+                                        ui.add_space(10.0);
+                                        ui.heading(metadata.section.clone());
                                     });
-                                } else {
-                                    for i in 0..num_columns {
-                                        if offest + i >= group.len() {
-                                            break;
-                                        }
-
-                                        row.col(|ui: &mut Ui| {
-                                            let photo = &group[offest + i];
-                                            photo_manager.with_lock_mut(|photo_manager| {
-                                                let image = GalleryImage::new(
-                                                    photo.clone(),
-                                                    photo_manager
-                                                        .thumbnail_texture_for(photo, ui.ctx()),
-                                                    selected_images.contains(&photo.path),
-                                                );
-
-                                                let image_response = ui.add(image);
-
-                                                if image_response.clicked() {
-                                                    let ctrl_held =
-                                                        ui.input(|input| input.modifiers.ctrl);
-                                                    if ctrl_held {
-                                                        if selected_images.contains(&photo.path) {
-                                                            selected_images.remove(&photo.path);
-                                                        } else {
-                                                            selected_images
-                                                                .insert(photo.path.clone());
-                                                        }
-                                                    } else {
-                                                        selected_images.clear();
-                                                        selected_images.insert(photo.path.clone());
-                                                    }
-                                                }
-
-                                                if image_response.double_clicked() {
-                                                    response = Some(
-                                                        ImageGalleryResponse::SelectPhotoPrimaryAction(
-                                                            photo.clone(),
-                                                        ),
-                                                    );
-                                                } else if image_response.secondary_clicked() {
-                                                    response =
-                                                        Some(ImageGalleryResponse::SelectPhotoSecondaryAction(
-                                                            photo.clone(),
-                                                        ));
-                                                }
-                                            });
-                                        });
+                                });
+                            } else {
+                                for i in 0..num_columns {
+                                    if offest + i >= group.len() {
+                                        break;
                                     }
 
-                                    row.col(|ui| {
-                                        ui.add(Spacer::new(spacer_width, row_height));
+                                    row.col(|ui: &mut Ui| {
+                                        let photo = &group[offest + i];
+                                        photo_manager.with_lock_mut(|photo_manager| {
+                                            let image = GalleryImage::new(
+                                                photo.clone(),
+                                                photo_manager
+                                                    .thumbnail_texture_for(photo, ui.ctx()),
+                                                selected_images.contains(&photo.path),
+                                            );
+
+                                            let image_response = ui.add(image);
+
+                                            if image_response.clicked() {
+                                                let ctrl_held =
+                                                    ui.input(|input| input.modifiers.ctrl);
+                                                if ctrl_held {
+                                                    if selected_images.contains(&photo.path) {
+                                                        selected_images.remove(&photo.path);
+                                                    } else {
+                                                        selected_images
+                                                            .insert(photo.path.clone());
+                                                        selected_photo = Some(photo.clone());
+                                                    }
+                                                } else {
+                                                    let was_empty = selected_images.is_empty();
+                                                    let was_already_selected = selected_images.contains(&photo.path);
+                                                    selected_images.clear();
+                                                    selected_images.insert(photo.path.clone());
+                                                    // Only report as newly selected if it wasn't the only selection before
+                                                    if was_empty || !was_already_selected || selected_images.len() != 1 {
+                                                        selected_photo = Some(photo.clone());
+                                                    }
+                                                }
+                                            }
+
+                                            if image_response.double_clicked() {
+                                                primary_action_photo = Some(photo.clone());
+                                            } else if image_response.secondary_clicked() {
+                                                secondary_action_photo = Some(photo.clone());
+                                            }
+                                        });
                                     });
                                 }
-                            });
-                        })
+
+                                row.col(|ui| {
+                                    ui.add(Spacer::new(spacer_width, row_height));
+                                });
+                            }
+                        });
+                    });
                 });
                 ui.painter().rect_filled(
                     ui.available_rect_before_wrap(),
@@ -218,10 +280,13 @@ impl<'a> ImageGallery<'a> {
                     );
                 });
             });
-        } else {
-            ui.both_centered(|ui| ui.heading("Import photos or open a project to get started"));
         }
 
-        response
+        ImageGalleryResponse {
+            primary_action_photo,
+            secondary_action_photo,
+            selected_photo,
+            selection_cleared,
+        }
     }
 }

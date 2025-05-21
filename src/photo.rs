@@ -478,7 +478,7 @@ impl PhotoMetadata {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, EnumIter, PartialEq)]
+#[derive(Debug, Clone, Copy, EnumIter, PartialEq)]
 pub enum PhotoRating {
     Yes = 0,
     Maybe = 1,
@@ -501,7 +501,7 @@ impl Display for PhotoRating {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,

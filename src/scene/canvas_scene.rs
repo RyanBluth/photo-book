@@ -265,53 +265,57 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                if let Some(response) = ImageGallery::show(ui, &mut self.scene_state.gallery_state)
-                {
-                    match response {
-                        ImageGalleryResponse::SelectPhotoSecondaryAction(photo) => {
-                            self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
-                        }
-                        ImageGalleryResponse::SelectPhotoPrimaryAction(photo) => {
-                            let is_template = self.scene_state.selected_page().template.is_some();
+                let response = ImageGallery::show(
+                    ui, 
+                    &mut self.scene_state.gallery_state,
+                    None
+                );
 
-                            if is_template {
-                                let page = self.scene_state.selected_page_mut();
-                                let mut selected_template_photos: Vec<_> = page
-                                    .layers
-                                    .iter_mut()
-                                    .filter(|(_, layer)| {
-                                        matches!(layer.content, LayerContent::TemplatePhoto { .. })
-                                            && layer.selected
-                                    })
-                                    .collect();
+                // Handle primary action (double-click)
+                if let Some(photo) = response.primary_action_photo {
+                    let is_template = self.scene_state.selected_page().template.is_some();
 
-                                if selected_template_photos.len() == 1 {
-                                    if let LayerContent::TemplatePhoto {
-                                        region: _,
-                                        photo: canvas_photo,
-                                        scale_mode: _,
-                                    } = &mut selected_template_photos[0].1.content
-                                    {
-                                        *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
-                                    }
-                                    // Create a snapshot of the state after modification
-                                    let page_snapshot = self.scene_state.selected_page().clone();
-                                    self.scene_state
-                                        .history_manager
-                                        .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
-                                }
-                            } else {
-                                self.scene_state
-                                    .selected_page_mut()
-                                    .add_photo(photo.clone());
-                                // Create a snapshot of the state after modification
-                                let page_snapshot = self.scene_state.selected_page().clone();
-                                self.scene_state
-                                    .history_manager
-                                    .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
+                    if is_template {
+                        let page = self.scene_state.selected_page_mut();
+                        let mut selected_template_photos: Vec<_> = page
+                            .layers
+                            .iter_mut()
+                            .filter(|(_, layer)| {
+                                matches!(layer.content, LayerContent::TemplatePhoto { .. })
+                                    && layer.selected
+                            })
+                            .collect();
+
+                        if selected_template_photos.len() == 1 {
+                            if let LayerContent::TemplatePhoto {
+                                region: _,
+                                photo: canvas_photo,
+                                scale_mode: _,
+                            } = &mut selected_template_photos[0].1.content
+                            {
+                                *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
                             }
+                            // Create a snapshot of the state after modification
+                            let page_snapshot = self.scene_state.selected_page().clone();
+                            self.scene_state
+                                .history_manager
+                                .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
                         }
+                    } else {
+                        self.scene_state
+                            .selected_page_mut()
+                            .add_photo(photo.clone());
+                        // Create a snapshot of the state after modification
+                        let page_snapshot = self.scene_state.selected_page().clone();
+                        self.scene_state
+                            .history_manager
+                            .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
                     }
+                }
+                
+                // Handle secondary action (right-click)
+                if let Some(photo) = response.secondary_action_photo {
+                    self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                 }
             }
             CanvasScenePane::Canvas => {

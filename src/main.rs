@@ -20,7 +20,7 @@ use font_manager::FontManager;
 use dirs::Dirs;
 use log::info;
 use modal::manager::ModalManager;
-use project::v1::Project;
+use project::Project;
 use scene::{organize_edit_scene::OrganizeEditScene, SceneManager};
 use tokio::runtime;
 
@@ -54,6 +54,7 @@ mod theme;
 mod utils;
 mod widget;
 mod layout;
+mod file_tree;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
             .with_maximize_button(true)
             .with_inner_size((3000.0, 2000.0)),
         hardware_acceleration: eframe::HardwareAcceleration::Required,
-        renderer: eframe::Renderer::Glow,
+        renderer: eframe::Renderer::Wgpu,
         wgpu_options: WgpuConfiguration {
             wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
                 power_preference: wgpu::PowerPreference::HighPerformance,

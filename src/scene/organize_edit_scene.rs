@@ -17,7 +17,7 @@ use crate::{
         ModalActionResponse,
     },
     photo_manager::{PhotoManager, PhotosGrouping},
-    project::v1::Project,
+    project::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
     utils::{Either, Toggle},
@@ -25,7 +25,8 @@ use crate::{
 
 use super::{
     canvas_scene::{CanvasScene},
-    organize_scene::GalleryScene, Scene, ScenePopResponse, SceneResponse,
+    organize_scene::GalleryScene,
+    Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
 };
 
@@ -190,7 +191,7 @@ impl Scene for OrganizeEditScene {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
                         let open_path = native_dialog::FileDialog::new()
-                            .add_filter("Images", &["rpb"])
+                            .add_filter("Photobook Project", &["rpb"])
                             .show_open_single_file();
 
                         match open_path {
@@ -275,7 +276,7 @@ impl Scene for OrganizeEditScene {
                     if ui.button("Save").clicked() {
                         let save_path: Result<Option<std::path::PathBuf>, native_dialog::Error> =
                             native_dialog::FileDialog::new()
-                                .add_filter("Images", &["rpb"])
+                                .add_filter("Photobook Project", &["rpb"])
                                 .show_save_single_file();
 
                         match save_path {

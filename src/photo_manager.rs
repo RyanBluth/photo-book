@@ -22,6 +22,7 @@ use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 use crate::{
     dependencies::Dependency,
     dirs::Dirs,
+    file_tree::FileTreeCollection,
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
@@ -36,6 +37,8 @@ use fast_image_resize::{self as fr, ResizeOptions};
 use crate::dependencies::SingletonFor;
 
 use crate::utils;
+
+use serde::{Deserialize, Serialize};
 
 const THUMBNAIL_SIZE: f32 = 256.0;
 
@@ -54,7 +57,7 @@ impl PhotoLoadResult {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy, Serialize, Deserialize)]
 pub enum PhotosGrouping {
     Date,
     Rating,
@@ -66,6 +69,13 @@ impl Default for PhotosGrouping {
     }
 }
 
+pub struct PhotoMetadata {
+    pub rating: Option<PhotoRating>,
+    pub date_time: Option<DateTime<Utc>>,
+    pub index: usize,
+    pub grouped_index: usize,
+}
+
 #[derive(Debug)]
 pub struct PhotoManager {
     pub photos: IndexMap<PathBuf, Photo>, // TODO: Use an Arc or something
@@ -73,6 +83,7 @@ pub struct PhotoManager {
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
     thumbnail_existence_cache: HashSet<String>,
+    pub file_collection: FileTreeCollection,
 }
 
 impl PhotoManager {
@@ -83,6 +94,7 @@ impl PhotoManager {
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
             thumbnail_existence_cache: HashSet::new(),
+            file_collection: FileTreeCollection::new(),
         }
     }
 
@@ -128,6 +140,7 @@ impl PhotoManager {
                     Result::Ok(photo) => {
                         Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                             photo_manager.photos.insert(photo_path.clone(), photo);
+                            photo_manager.file_collection.insert(&photo_path);
                         });
                     }
                     Err(err) => {
@@ -194,6 +207,7 @@ impl PhotoManager {
                     Result::Ok(photo) => {
                         Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                             photo_manager.photos.insert(path.clone(), photo);
+                            photo_manager.file_collection.insert(&path);
 
                             photos_since_regroup += 1;
 
@@ -302,13 +316,16 @@ impl PhotoManager {
                     }
                     .unwrap_or_else(|| "Unknown Date".to_string());
 
-                    match grouped_photos.get_mut(&key) { Some(group) => {
-                        group.insert(photo_path.clone(), photo.clone());
-                    } _ => {
-                        let mut group = IndexMap::new();
-                        group.insert(photo_path.clone(), photo.clone());
-                        grouped_photos.insert(key, group);
-                    }}
+                    match grouped_photos.get_mut(&key) {
+                        Some(group) => {
+                            group.insert(photo_path.clone(), photo.clone());
+                        }
+                        _ => {
+                            let mut group = IndexMap::new();
+                            group.insert(photo_path.clone(), photo.clone());
+                            grouped_photos.insert(key, group);
+                        }
+                    }
                 }
 
                 grouped_photos.sort_by(|a, _, b, _| b.cmp(a));
@@ -323,13 +340,16 @@ impl PhotoManager {
                     let rating = photo.rating;
                     let key = format!("{:?}", rating);
 
-                    match grouped_photos.get_mut(&key) { Some(group) => {
-                        group.insert(photo_path.clone(), photo.clone());
-                    } _ => {
-                        let mut group = IndexMap::new();
-                        group.insert(photo_path.clone(), photo.clone());
-                        grouped_photos.insert(key, group);
-                    }}
+                    match grouped_photos.get_mut(&key) {
+                        Some(group) => {
+                            group.insert(photo_path.clone(), photo.clone());
+                        }
+                        _ => {
+                            let mut group = IndexMap::new();
+                            group.insert(photo_path.clone(), photo.clone());
+                            grouped_photos.insert(key, group);
+                        }
+                    }
                 }
 
                 if let Some(yes_index) = grouped_photos.get_index_of(&PhotoRating::Yes.to_string())
@@ -627,7 +647,7 @@ impl PhotoManager {
                 thumbnail_path.set_extension(extension);
 
                 if thumbnail_path.exists() {
-                    info!("Thumbnail already exists for: {:?}", &photo_path);
+                    // info!("Thumbnail already exists for: {:?}", &photo_path);
                     Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
                         photo_manager.thumbnail_existence_cache.insert(hash);
                     });

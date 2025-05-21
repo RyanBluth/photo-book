@@ -48,7 +48,7 @@ impl<'a> PageInfo<'a> {
                         for preset in PageSizePreset::iter() {
                             if ui.selectable_label(false, preset.to_string()).clicked() {
                                 if let Some((width, height)) = preset.dimensions() {
-                                    page.set_size(Vec2::new(width, height));
+                                    page.set_size(width, height);
                                     page.edit_state.width.begin_editing();
                                     page.edit_state.height.begin_editing();
 
@@ -72,14 +72,14 @@ impl<'a> PageInfo<'a> {
 
                 let new_width = ui.text_edit_editable_value_singleline(&mut page.edit_state.width);
                 let height = page.size().y;
-                page.set_size(Vec2::new(new_width, height));
+                page.set_size(new_width, height);
 
                 ui.label("Height:");
 
                 let new_height =
                     ui.text_edit_editable_value_singleline(&mut page.edit_state.height);
                 let width = page.size().x;
-                page.set_size(Vec2::new(width, new_height));
+                page.set_size(width, new_height);
             });
 
             ui.separator();

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use egui::{Color32, FontId, Id, Pos2, Rect, Vec2};
 use indexmap::IndexMap;
+use savefile_derive::Savefile;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -37,6 +37,8 @@ use crate::{
     },
 };
 
+pub const PROJECT_VERSION: u32 = 1;
+
 #[derive(Error, Debug)]
 pub enum ProjectError {
     #[error("IO error: {0}")]
@@ -44,9 +46,12 @@ pub enum ProjectError {
 
     #[error("Serde error: {0}")]
     SerdeError(#[from] serde_json::Error),
+
+    #[error("Savefile error: {0}")]
+    SavefileError(#[from] savefile::SavefileError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 pub struct Project {
     pub photos: Vec<Photo>,
     pub pages: Vec<CanvasPage>,
@@ -87,15 +92,15 @@ impl Project {
                                             path: canvas_photo.photo.path,
                                             rating: canvas_photo.photo.rating.into(),
                                         },
-                                        crop: canvas_photo.crop,
+                                        crop: canvas_photo.crop.into(),
                                     })
                                 }
                                 AppLayerContent::Text(canvas_text) => {
                                     LayerContent::Text(CanvasText {
                                         text: canvas_text.text,
                                         font_size: canvas_text.font_size,
-                                        font_id: canvas_text.font_id,
-                                        color: canvas_text.color,
+                                        font_id: canvas_text.font_id.into(),
+                                        color: canvas_text.color.into(),
                                         horizontal_alignment: match canvas_text.horizontal_alignment
                                         {
                                             AppTextHorizontalAlignment::Left => {
@@ -127,8 +132,8 @@ impl Project {
                                     scale_mode,
                                 } => LayerContent::TemplatePhoto {
                                     region: TemplateRegion {
-                                        relative_position: region.relative_position,
-                                        relative_size: region.relative_size,
+                                        relative_position: region.relative_position.into(),
+                                        relative_size: region.relative_size.into(),
                                         kind: match region.kind {
                                             AppTemplateRegionKind::Image => {
                                                 TemplateRegionKind::Image
@@ -147,7 +152,7 @@ impl Project {
                                             path: canvas_photo.photo.path,
                                             rating: canvas_photo.photo.rating.into(),
                                         },
-                                        crop: canvas_photo.crop,
+                                        crop: canvas_photo.crop.into(),
                                     }),
                                     scale_mode: match scale_mode {
                                         AppScaleMode::Fit => ScaleMode::Fit,
@@ -158,8 +163,8 @@ impl Project {
                                 AppLayerContent::TemplateText { region, text } => {
                                     LayerContent::TemplateText {
                                         region: TemplateRegion {
-                                            relative_position: region.relative_position,
-                                            relative_size: region.relative_size,
+                                            relative_position: region.relative_position.into(),
+                                            relative_size: region.relative_size.into(),
                                             kind: match region.kind {
                                                 AppTemplateRegionKind::Image => {
                                                     TemplateRegionKind::Image
@@ -176,8 +181,8 @@ impl Project {
                                         text: CanvasText {
                                             text: text.text,
                                             font_size: text.font_size,
-                                            font_id: text.font_id,
-                                            color: text.color,
+                                            font_id: text.font_id.into(),
+                                            color: text.color.into(),
                                             horizontal_alignment: match text.horizontal_alignment {
                                                 AppTextHorizontalAlignment::Left => {
                                                     TextHorizontalAlignment::Left
@@ -209,7 +214,7 @@ impl Project {
                             locked: layer.locked,
                             selected: layer.selected,
                             id: layer.id,
-                            rect: layer.transform_state.rect,
+                            rect: layer.transform_state.rect.into(),
                             rotation: layer.transform_state.rotation,
                         }
                     })
@@ -219,7 +224,8 @@ impl Project {
                 CanvasPage {
                     layers,
                     page: Page {
-                        size: canvas_state.page.size(),
+                        width: canvas_state.page.size().x,
+                        height: canvas_state.page.size().y,
                         ppi: canvas_state.page.ppi(),
                         unit: match canvas_state.page.unit() {
                             AppUnit::Pixels => Unit::Pixels,
@@ -230,7 +236,8 @@ impl Project {
                     template: template.map(|template| Template {
                         name: template.name,
                         page: Page {
-                            size: template.page.size(),
+                            width: template.page.width(),
+                            height: template.page.height(),
                             ppi: template.page.ppi(),
                             unit: match template.page.unit() {
                                 AppUnit::Pixels => Unit::Pixels,
@@ -242,8 +249,8 @@ impl Project {
                             .regions
                             .iter()
                             .map(|region| TemplateRegion {
-                                relative_position: region.relative_position,
-                                relative_size: region.relative_size,
+                                relative_position: region.relative_position.into(),
+                                relative_size: region.relative_size.into(),
                                 kind: match &region.kind {
                                     AppTemplateRegionKind::Image => TemplateRegionKind::Image,
                                     AppTemplateRegionKind::Text {
@@ -284,20 +291,29 @@ impl Project {
     ) -> Result<(), ProjectError> {
         let project = Project::new(root_scene, photo_manager);
 
-        let project_data = serde_json::to_string_pretty(&project)?;
-
-        std::fs::write(path, project_data)?;
-
-        Ok(())
+        // Use savefile with compression to serialize the project
+        match savefile::save_file_compressed(path, PROJECT_VERSION, &project) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                println!("Error saving project: {:?}", e);
+                Err(ProjectError::SavefileError(e))
+            }
+        }
     }
 
     pub fn load(path: &PathBuf) -> Result<OrganizeEditScene, ProjectError> {
-        let file = std::fs::File::open(path)?;
-        let project: Project = serde_json::from_reader(file)?;
-
-        println!("Loaded project: {:?}", project);
-
-        Ok(project.into())
+        // Use savefile to deserialize the project
+        // Note: This will load any version up to PROJECT_VERSION
+        match savefile::load_file::<Project, _>(path, PROJECT_VERSION) {
+            Ok(project) => {
+                println!("Loaded project: {:?}", project);
+                Ok(project.into())
+            }
+            Err(e) => {
+                println!("Error loading project: {:?}", e);
+                Err(ProjectError::SavefileError(e))
+            }
+        }
     }
 }
 
@@ -325,14 +341,14 @@ impl Into<OrganizeEditScene> for Project {
                     .into_iter()
                     .map(|layer| {
                         let transformable_state = TransformableState {
-                            rect: layer.rect,
+                            rect: layer.rect.into(),
                             active_handle: None,
                             is_moving: false,
                             handle_mode: Resize(ResizeMode::Free),
                             rotation: layer.rotation,
                             last_frame_rotation: layer.rotation,
                             change_in_rotation: None,
-                            id: Id::random(),
+                            id: egui::Id::random(),
                         };
 
                         let layer = AppLayer {
@@ -345,14 +361,14 @@ impl Into<OrganizeEditScene> for Project {
                                             photo.photo.rating.into(),
                                         )
                                         .unwrap(),
-                                        crop: photo.crop,
+                                        crop: photo.crop.into(),
                                     })
                                 }
                                 LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
                                     text: text.text,
                                     font_size: text.font_size,
-                                    font_id: text.font_id,
-                                    color: text.color,
+                                    font_id: text.font_id.into(),
+                                    color: text.color.into(),
                                     edit_state: CanvasTextEditState::new(text.font_size),
                                     horizontal_alignment: match text.horizontal_alignment {
                                         TextHorizontalAlignment::Left => {
@@ -381,8 +397,8 @@ impl Into<OrganizeEditScene> for Project {
                                     scale_mode,
                                 } => AppLayerContent::TemplatePhoto {
                                     region: AppTemplateRegion {
-                                        relative_position: region.relative_position,
-                                        relative_size: region.relative_size,
+                                        relative_position: region.relative_position.into(),
+                                        relative_size: region.relative_size.into(),
                                         kind: match region.kind {
                                             TemplateRegionKind::Image => {
                                                 AppTemplateRegionKind::Image
@@ -402,7 +418,7 @@ impl Into<OrganizeEditScene> for Project {
                                             photo.photo.rating.into(),
                                         )
                                         .unwrap(), // TODO: Don't unwrap
-                                        crop: photo.crop,
+                                        crop: photo.crop.into(),
                                     }),
                                     scale_mode: match scale_mode {
                                         ScaleMode::Fit => AppScaleMode::Fit,
@@ -413,8 +429,8 @@ impl Into<OrganizeEditScene> for Project {
                                 LayerContent::TemplateText { region, text } => {
                                     AppLayerContent::TemplateText {
                                         region: AppTemplateRegion {
-                                            relative_position: region.relative_position,
-                                            relative_size: region.relative_size,
+                                            relative_position: region.relative_position.into(),
+                                            relative_size: region.relative_size.into(),
                                             kind: match region.kind {
                                                 TemplateRegionKind::Image => {
                                                     AppTemplateRegionKind::Image
@@ -431,8 +447,8 @@ impl Into<OrganizeEditScene> for Project {
                                         text: AppCanvasText {
                                             text: text.text,
                                             font_size: text.font_size,
-                                            font_id: text.font_id,
-                                            color: text.color,
+                                            font_id: text.font_id.into(),
+                                            color: text.color.into(),
                                             edit_state: CanvasTextEditState::new(text.font_size),
                                             horizontal_alignment: match text.horizontal_alignment {
                                                 TextHorizontalAlignment::Left => {
@@ -480,7 +496,8 @@ impl Into<OrganizeEditScene> for Project {
                 let canvas_state = CanvasState::with_layers(
                     layers,
                     EditablePage::new(AppPage::new(
-                        page.page.size,
+                        page.page.width,
+                        page.page.height,
                         page.page.ppi,
                         match page.page.unit {
                             Unit::Pixels => AppUnit::Pixels,
@@ -491,7 +508,8 @@ impl Into<OrganizeEditScene> for Project {
                     page.template.map(|template| AppTemplate {
                         name: template.name,
                         page: AppPage::new(
-                            template.page.size,
+                            template.page.width,
+                            template.page.height,
                             template.page.ppi,
                             match template.page.unit {
                                 Unit::Pixels => AppUnit::Pixels,
@@ -503,8 +521,8 @@ impl Into<OrganizeEditScene> for Project {
                             .regions
                             .iter()
                             .map(|region| AppTemplateRegion {
-                                relative_position: region.relative_position,
-                                relative_size: region.relative_size,
+                                relative_position: region.relative_position.clone().into(),
+                                relative_size: region.relative_size.clone().into(),
                                 kind: match &region.kind {
                                     TemplateRegionKind::Image => AppTemplateRegionKind::Image,
                                     TemplateRegionKind::Text {
@@ -525,14 +543,13 @@ impl Into<OrganizeEditScene> for Project {
             })
             .collect();
 
-        let edit_scene = match pages.first().map(|(id, _)| *id) { Some(first_page_id) => {
-            Some(CanvasScene::with_state(CanvasSceneState::with_pages(
+        let edit_scene = match pages.first().map(|(id, _)| *id) {
+            Some(first_page_id) => Some(CanvasScene::with_state(CanvasSceneState::with_pages(
                 pages,
                 first_page_id,
-            )))
-        } _ => {
-            None
-        }};
+            ))),
+            _ => None,
+        };
 
         let organize_scene = GalleryScene::new();
 
@@ -544,7 +561,7 @@ impl Into<OrganizeEditScene> for Project {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
@@ -552,27 +569,28 @@ struct CanvasPage {
     pub quick_layout_order: Vec<LayerId>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct Page {
-    size: Vec2,
+    width: f32,
+    height: f32,
     ppi: i32,
     unit: Unit,
 }
 
-#[derive(Debug, Clone, PartialEq, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Copy, Savefile)]
 enum Unit {
     Pixels,
     Inches,
     Centimeters,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct Layer {
     pub content: LayerContent,
     pub name: String,
@@ -584,40 +602,40 @@ struct Layer {
     pub rotation: f32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 enum ScaleMode {
     Fit,
     Fill,
     Stretch,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 pub struct Template {
     pub name: String,
     pub page: Page,
     pub regions: Vec<TemplateRegion>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct TemplateRegion {
     pub relative_position: Pos2,
     pub relative_size: Vec2,
     pub kind: TemplateRegionKind,
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Clone, Savefile)]
 enum TemplateRegionKind {
     Image,
     Text { sample_text: String, font_size: f32 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct CanvasPhoto {
     pub photo: Photo,
     pub crop: Rect,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 struct CanvasText {
     pub text: String,
     pub font_size: f32,
@@ -627,7 +645,7 @@ struct CanvasText {
     pub vertical_alignment: TextVerticalAlignment,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
@@ -642,28 +660,28 @@ enum LayerContent {
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Savefile)]
 pub enum TextHorizontalAlignment {
     Left,
     Center,
     Right,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Savefile)]
 pub enum TextVerticalAlignment {
     Top,
     Center,
     Bottom,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 pub enum PhotoRating {
     Yes,
     No,
     Maybe,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 pub struct ProjectSettings {
     default_page: Option<Page>,
 }
@@ -704,7 +722,7 @@ impl Into<PhotoRating> for AppPhotoRating {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Savefile)]
 pub enum PhotosGrouping {
     Rating,
     Date,
@@ -731,7 +749,8 @@ impl Into<PhotosGrouping> for AppPhotosGrouping {
 impl Into<Page> for AppPage {
     fn into(self) -> Page {
         Page {
-            size: self.size(),
+            width: self.width(),
+            height: self.height(),
             ppi: self.ppi(),
             unit: match self.unit() {
                 AppUnit::Pixels => Unit::Pixels,
@@ -745,7 +764,8 @@ impl Into<Page> for AppPage {
 impl Into<AppPage> for Page {
     fn into(self) -> AppPage {
         AppPage::new(
-            self.size,
+            self.width,
+            self.height,
             self.ppi,
             match self.unit {
                 Unit::Pixels => AppUnit::Pixels,
@@ -753,5 +773,136 @@ impl Into<AppPage> for Page {
                 Unit::Centimeters => AppUnit::Centimeters,
             },
         )
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+struct Vec2 {
+    x: f32,
+    y: f32,
+}
+
+impl Into<Vec2> for egui::Vec2 {
+    fn into(self) -> Vec2 {
+        Vec2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
+impl Into<egui::Vec2> for Vec2 {
+    fn into(self) -> egui::Vec2 {
+        egui::Vec2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+struct Rect {
+    min_x: f32,
+    min_y: f32,
+    max_x: f32,
+    max_y: f32,
+}
+
+impl Into<Rect> for egui::Rect {
+    fn into(self) -> Rect {
+        Rect {
+            min_x: self.min.x,
+            min_y: self.min.y,
+            max_x: self.max.x,
+            max_y: self.max.y,
+        }
+    }
+}
+
+impl Into<egui::Rect> for Rect {
+    fn into(self) -> egui::Rect {
+        egui::Rect::from_min_max(
+            egui::Pos2::new(self.min_x, self.min_y),
+            egui::Pos2::new(self.max_x, self.max_y),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+struct Color32 {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
+}
+
+impl Into<Color32> for egui::Color32 {
+    fn into(self) -> Color32 {
+        Color32 {
+            r: self.r(),
+            g: self.g(),
+            b: self.b(),
+            a: self.a(),
+        }
+    }
+}
+
+impl Into<egui::Color32> for Color32 {
+    fn into(self) -> egui::Color32 {
+        egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+struct Pos2 {
+    x: f32,
+    y: f32,
+}
+
+impl Into<Pos2> for egui::Pos2 {
+    fn into(self) -> Pos2 {
+        Pos2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
+impl Into<egui::Pos2> for Pos2 {
+    fn into(self) -> egui::Pos2 {
+        egui::Pos2::new(self.x, self.y)
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+pub struct FontId {
+    pub size: f32,
+    pub family: String,
+}
+
+impl From<egui::FontId> for FontId {
+    fn from(font: egui::FontId) -> Self {
+        let family = match font.family {
+            egui::FontFamily::Proportional => "Proportional".to_string(),
+            egui::FontFamily::Monospace => "Monospace".to_string(),
+            egui::FontFamily::Name(name) => name.to_string(),
+        };
+
+        FontId {
+            size: font.size,
+            family,
+        }
+    }
+}
+
+impl From<FontId> for egui::FontId {
+    fn from(font: FontId) -> Self {
+        let family = match font.family.as_str() {
+            "Proportional" => egui::FontFamily::Proportional,
+            "Monospace" => egui::FontFamily::Monospace,
+            name => egui::FontFamily::Name(name.into()),
+        };
+
+        egui::FontId::new(font.size, family)
     }
 }

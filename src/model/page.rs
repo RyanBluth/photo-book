@@ -1,24 +1,24 @@
 use egui::Vec2;
-
 use super::{editable_value::EditableValue, unit::Unit};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Page {
-    size: Vec2,
+    width: f32,
+    height: f32,
     ppi: i32,
     unit: Unit,
 }
 
 impl Page {
-    pub fn new(size: Vec2, ppi: i32, unit: Unit) -> Self {
-        Self { size, ppi, unit }
+    pub fn new(width: f32, height: f32, ppi: i32, unit: Unit) -> Self {
+        Self { width, height, ppi, unit }
     }
 
-    pub fn with_size_inches(size: Vec2) -> Self {
+    pub fn with_size_inches(width: f32, height: f32) -> Self {
         let ppi = 300;
         let unit = Unit::Inches;
 
-        Self { size, ppi, unit }
+        Self { width, height, ppi, unit }
     }
 
     fn a4() -> Self {
@@ -26,7 +26,8 @@ impl Page {
         let unit = Unit::Inches;
 
         Self {
-            size: Vec2::new(8.27, 11.69),
+            width: 8.27,
+            height: 11.69,
             ppi,
             unit,
         }
@@ -34,22 +35,36 @@ impl Page {
 
     pub fn size_pixels(&self) -> Vec2 {
         match self.unit {
-            Unit::Pixels => self.size,
-            Unit::Inches => self.size * self.ppi as f32,
-            Unit::Centimeters => self.size * (self.ppi as f32 / 2.54),
+            Unit::Pixels => Vec2::new(self.width, self.height),
+            Unit::Inches => Vec2::new(self.width * self.ppi as f32, self.height * self.ppi as f32),
+            Unit::Centimeters => Vec2::new(
+                self.width * (self.ppi as f32 / 2.54),
+                self.height * (self.ppi as f32 / 2.54),
+            ),
         }
     }
 
     pub fn size_mm(&self) -> Vec2 {
         match self.unit {
-            Unit::Pixels => self.size / (self.ppi as f32 / 2.54),
-            Unit::Inches => self.size * 25.4,
-            Unit::Centimeters => self.size * 10.0,
+            Unit::Pixels => Vec2::new(
+                self.width / (self.ppi as f32 / 2.54),
+                self.height / (self.ppi as f32 / 2.54),
+            ),
+            Unit::Inches => Vec2::new(self.width * 25.4, self.height * 25.4),
+            Unit::Centimeters => Vec2::new(self.width * 10.0, self.height * 10.0),
         }
     }
 
     pub fn size(&self) -> Vec2 {
-        self.size
+        Vec2::new(self.width, self.height)
+    }
+
+    pub fn width(&self) -> f32 {
+        self.width
+    }
+
+    pub fn height(&self) -> f32 {
+        self.height
     }
 
     pub fn ppi(&self) -> i32 {
@@ -61,19 +76,29 @@ impl Page {
     }
 
     pub fn aspect_ratio(&self) -> f32 {
-        self.size.x / self.size.y
+        self.width / self.height
     }
 
-    pub fn set_size(&mut self, size: Vec2) {
-        self.size = size;
+    pub fn set_size(&mut self, width: f32, height: f32) {
+        self.width = width;
+        self.height = height;
     }
 
     pub fn set_unit(&mut self, unit: Unit) {
         let size_pixels = self.size_pixels();
         match unit {
-            Unit::Pixels => self.size = size_pixels,
-            Unit::Inches => self.size = size_pixels / self.ppi as f32,
-            Unit::Centimeters => self.size = size_pixels / (self.ppi as f32 / 2.54),
+            Unit::Pixels => {
+                self.width = size_pixels.x;
+                self.height = size_pixels.y;
+            }
+            Unit::Inches => {
+                self.width = size_pixels.x / self.ppi as f32;
+                self.height = size_pixels.y / self.ppi as f32;
+            }
+            Unit::Centimeters => {
+                self.width = size_pixels.x / (self.ppi as f32 / 2.54);
+                self.height = size_pixels.y / (self.ppi as f32 / 2.54);
+            }
         }
         self.unit = unit;
     }
@@ -83,7 +108,7 @@ impl Page {
     }
 
     pub fn is_landscape(&self) -> bool {
-        self.size.x > self.size.y
+        self.width > self.height
     }
 }
 
