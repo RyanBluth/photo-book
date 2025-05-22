@@ -51,23 +51,14 @@ pub struct ImageGalleryResponse {
 }
 
 impl<'a> ImageGallery<'a> {
-    /// Shows the image gallery with photos from the PhotoManager.
-    ///
-    /// # Arguments
-    /// * `ui` - The egui UI to draw on.
-    /// * `state` - Mutable reference to the gallery state.
-    /// * `scroll_to_path` - If Some, the gallery will scroll to show this path.
-    /// 
-    /// # Returns
-    /// An `ImageGalleryResponse` containing information about interactions that occurred this frame.
     pub fn show(
-        ui: &mut Ui, 
+        ui: &mut Ui,
         state: &'a mut ImageGalleryState,
         scroll_to_path: Option<&PathBuf>,
     ) -> ImageGalleryResponse {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let selected_images = &mut state.selected_images;
-        
+
         // Initialize response with defaults
         let mut primary_action_photo: Option<Photo> = None;
         let mut secondary_action_photo: Option<Photo> = None;
@@ -108,13 +99,6 @@ impl<'a> ImageGallery<'a> {
                     let grouped_photos = photo_manager
                         .with_lock(|photo_manager| photo_manager.grouped_photos().clone());
 
-                    struct RowMetadata {
-                        height: f32,
-                        is_title: bool,
-                        section: String,
-                        row_index_in_section: usize,
-                    }
-
                     let row_metadatas: Vec<RowMetadata> = {
                         grouped_photos
                             .iter()
@@ -144,47 +128,22 @@ impl<'a> ImageGallery<'a> {
 
                     let heights: Vec<f32> = row_metadatas.iter().map(|x| x.height).collect();
 
-                    let mut scroll_to_row: Option<usize> = None;
-                    
-                    if let Some(path) = scroll_to_path {
-                        let mut section_with_photo: Option<(String, usize)> = None;
-                        
-                        // Find which section and row contains this path
-                        for (section, photos) in &grouped_photos {
-                            // Need to look at the map's keys for the path, not the Photo objects
-                            if let Some(pos) = photos.keys().position(|photo_path| photo_path == path) {
-                                let row_idx = pos / num_columns;
-                                section_with_photo = Some((section.clone(), row_idx));
-                                break;
-                            }
-                        }
-                        
-                        // If found, look up the corresponding row
-                        if let Some((section, row_idx)) = section_with_photo {
-                            for (idx, metadata) in row_metadatas.iter().enumerate() {
-                                if metadata.section == section && 
-                                   !metadata.is_title && 
-                                   metadata.row_index_in_section == row_idx {
-                                    scroll_to_row = Some(idx);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                 
-                    
-                    // Create the table builder
+                    let scroll_to_row_index = if let Some(scroll_to_path) = scroll_to_path {
+                        scroll_to_row_index(scroll_to_path, num_columns, &grouped_photos, &row_metadatas)
+                    } else {
+                        None
+                    };
+
                     let mut builder = egui_extras::TableBuilder::new(ui)
                         .min_scrolled_height(table_size.y)
                         .auto_shrink(false)
                         .columns(Column::exact(column_width), num_columns)
                         .column(Column::exact(spacer_width));
-                        
-                    // Apply scroll if needed
-                    if let Some(row) = scroll_to_row {
+
+                    if let Some(row) = scroll_to_row_index {
                         builder = builder.scroll_to_row(row, None);
                     }
-                        
+
                     builder.body(|body| {
                         body.heterogeneous_rows(heights.into_iter(), |mut row| {
                             let row_index = row.index();
@@ -225,17 +184,20 @@ impl<'a> ImageGallery<'a> {
                                                     if selected_images.contains(&photo.path) {
                                                         selected_images.remove(&photo.path);
                                                     } else {
-                                                        selected_images
-                                                            .insert(photo.path.clone());
+                                                        selected_images.insert(photo.path.clone());
                                                         selected_photo = Some(photo.clone());
                                                     }
                                                 } else {
                                                     let was_empty = selected_images.is_empty();
-                                                    let was_already_selected = selected_images.contains(&photo.path);
+                                                    let was_already_selected =
+                                                        selected_images.contains(&photo.path);
                                                     selected_images.clear();
                                                     selected_images.insert(photo.path.clone());
                                                     // Only report as newly selected if it wasn't the only selection before
-                                                    if was_empty || !was_already_selected || selected_images.len() != 1 {
+                                                    if was_empty
+                                                        || !was_already_selected
+                                                        || selected_images.len() != 1
+                                                    {
                                                         selected_photo = Some(photo.clone());
                                                     }
                                                 }
@@ -289,4 +251,50 @@ impl<'a> ImageGallery<'a> {
             selection_cleared,
         }
     }
+}
+
+fn scroll_to_row_index(
+    scroll_to_path: &PathBuf,
+    num_columns: usize,
+    grouped_photos: &indexmap::IndexMap<String, indexmap::IndexMap<PathBuf, Photo>>,
+    row_metadatas: &[RowMetadata],
+) -> Option<usize> {
+    let mut scroll_to_row: Option<usize> = None;
+
+    let mut section_with_photo: Option<(String, usize)> = None;
+
+    // Find which section and row contains this path
+    for (section, photos) in grouped_photos {
+        // Need to look at the map's keys for the path, not the Photo objects
+        if let Some(pos) = photos
+            .keys()
+            .position(|photo_path| photo_path == scroll_to_path)
+        {
+            let row_idx = pos / num_columns;
+            section_with_photo = Some((section.clone(), row_idx));
+            break;
+        }
+    }
+
+    // If found, look up the corresponding row
+    if let Some((section, row_idx)) = section_with_photo {
+        for (idx, metadata) in row_metadatas.iter().enumerate() {
+            if metadata.section == section
+                && !metadata.is_title
+                && metadata.row_index_in_section == row_idx
+            {
+                scroll_to_row = Some(idx);
+                break;
+            }
+        }
+    }
+
+    scroll_to_row
+}
+
+struct RowMetadata {
+    height: f32,
+    is_title: bool,
+    section: String,
+    row_index_in_section: usize,
 }

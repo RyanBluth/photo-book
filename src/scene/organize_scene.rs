@@ -193,18 +193,8 @@ impl GalleryTreeBehavior<'_> {
                 UiResponse::None
             }
             GalleryScenePane::FileTree => {
-                let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
-                // Collect all tree items once
-                let tree_items: Vec<FlattenedTreeItem> = photo_manager.with_lock(|photo_manager| {
-                    // Use the standard iterator which now automatically compresses directory chains
-                    photo_manager.file_collection.iter().collect()
-                });
-
-                // Show the file tree widget with any scroll-to info from the state
-                let file_tree_response =
-                    FileTree::new(&tree_items, &mut self.scene_state.file_tree_state)
-                        .show(ui, self.scene_state.scroll_file_tree_to_path.as_ref());
+                let file_tree_response = FileTree::new(&mut self.scene_state.file_tree_state)
+                    .show(ui, self.scene_state.scroll_file_tree_to_path.as_ref());
 
                 // Clear the scroll target after it's been used
                 self.scene_state.scroll_file_tree_to_path = None;
