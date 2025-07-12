@@ -40,8 +40,6 @@ pub enum ExportError {
     FileError(String),
     #[error("PDF rendering error: {0}")]
     PdfRenderingError(String),
-    #[error("PDF saving error: {0}")]
-    PdfSavingError(String),
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -61,6 +59,20 @@ pub struct Exporter {
 }
 
 impl Exporter {
+    /// Get the maximum texture size from global GPU limits
+    fn get_max_texture_size() -> usize {
+        // Import the global limit from main module
+        use crate::MAX_TEXTURE_SIZE;
+        use std::sync::atomic::Ordering;
+        
+        let size = MAX_TEXTURE_SIZE.load(Ordering::Relaxed);
+        if size > 0 {
+            size as usize
+        } else {
+            // Fallback for export operations if GPU limits weren't set
+            8192
+        }
+    }
     pub fn new() -> Self {
         Self {
             tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -170,7 +182,7 @@ impl Exporter {
         egui_extras::install_image_loaders(&backend.egui_ctx);
 
         backend.egui_ctx.input_mut(|input| {
-            input.max_texture_side = usize::MAX; // TODO: What are the consequences of doing this?
+            input.max_texture_side = Self::get_max_texture_size();
         });
 
         let photo_manager = Singleton::new(PhotoManager::new());
@@ -304,7 +316,7 @@ impl Exporter {
             File::create(pdf_path).map_err(|e| ExportError::FileError(e.to_string()))?;
 
         pdf.save(&mut BufWriter::new(output_pdf))
-            .map_err(|e| ExportError::PdfSavingError(e.to_string().to_string()))?;
+            .map_err(|e| ExportError::PdfRenderingError(e.to_string()))?;
 
         Ok(())
     }

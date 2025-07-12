@@ -257,7 +257,7 @@ struct ViewerTreeBehavior<'a> {
 impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
     fn pane_ui(
         &mut self,
-        ui: &mut Ui,
+        ui: &mut egui::Ui,
         _tile_id: egui_tiles::TileId,
         pane: &mut CanvasScenePane,
     ) -> UiResponse {
@@ -266,7 +266,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
                 let response = ImageGallery::show(
-                    ui, 
+                    ui,
                     &mut self.scene_state.gallery_state,
                     None
                 );
@@ -312,7 +312,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                             .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
                     }
                 }
-                
+
                 // Handle secondary action (right-click)
                 if let Some(photo) = response.secondary_action_photo {
                     self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
@@ -427,7 +427,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
         UiResponse::None
     }
 
-    fn tab_title_for_pane(&mut self, pane: &CanvasScenePane) -> egui::WidgetText {
+    fn tab_title_for_pane(&mut self, pane: &CanvasScenePane) -> egui::widget_text::WidgetText {
         match pane {
             CanvasScenePane::Gallery => "Gallery".into(),
             CanvasScenePane::Canvas => "Canvas".into(),

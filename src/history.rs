@@ -1,5 +1,4 @@
 use std::fmt::Display;
-use std::ops::Index;
 
 pub trait HistoricallyEqual {
     fn historically_equal_to(&self, other: &Self) -> bool;

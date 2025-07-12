@@ -6,10 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-re_ui = "0.23.1"
-egui = { version = "0.31" }
-eframe = { version = "0.31", features = ["glow"] }
-egui_extras = { version = "0.31", features = ["default", "all_loaders"] }
+# re_ui = "0.23.1"
+egui = { version = "0.32" }
+eframe = { version = "0.32", features = ["glow", "wgpu"] }
+egui_extras = { version = "0.32", features = ["default", "all_loaders"] }
 native-dialog = "0.7.0"
 env_logger = "0.11.5"
 image = { version = "0.25.4", features = ["jpeg", "png"] }
@@ -17,7 +17,7 @@ tokio = { version = "1.29.1", features = ["full", "rt-multi-thread"] }
 once_cell = "1.18.0"
 fast_image_resize = "5.1.0"
 anyhow = "1.0.72"
-flexi_logger = "0.29.6"
+flexi_logger = "0.31.2"
 log = "0.4"
 kamadak-exif = "0.6.1"
 imagesize = "0.13.0"
@@ -28,11 +28,12 @@ strum_macros = "0.26.4"
 chrono = { version = "0.4.31", features = ["serde"] }
 indexmap = { version = "2.1.0", features = ["serde"] }
 font-kit = "0.14.2"
-egui_tiles = "0.12"
+egui_tiles = { git = "https://github.com/rerun-io/egui_tiles.git", branch = "main" }
 ab_glyph = "0.2.23"
 rand = "0.8.5"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }
-skia-safe = "0.75"
+skia-safe = { version = "0.87", features = ["vulkan"] }
+wgpu = { version = "25.0", features = ["vulkan", "metal", "dx12", "gles"] }
 thiserror = "2.0.6"
 printpdf = { version = "0.7.0", features = ["embedded_images"] }
 serde = "1.0.203"

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use indexmap::IndexMap;
 use savefile_derive::Savefile;
-use serde::{Deserialize, Serialize};
+
 use thiserror::Error;
 
 use crate::{
@@ -354,7 +354,7 @@ impl Into<OrganizeEditScene> for Project {
                         let layer = AppLayer {
                             content: match layer.content {
                                 LayerContent::Photo(photo) => {
-                                    /// TODO: Don't unwrap
+                                    // TODO: Don't unwrap
                                     AppLayerContent::Photo(AppCanvasPhoto {
                                         photo: AppPhoto::with_rating(
                                             photo.photo.path,

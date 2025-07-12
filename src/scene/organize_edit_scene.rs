@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use egui::{menu, Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
+use egui::{Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
 
 use crate::{
@@ -187,7 +187,7 @@ impl Scene for OrganizeEditScene {
 
             ui.add_space(-20.0);
 
-            menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
                         let open_path = native_dialog::FileDialog::new()

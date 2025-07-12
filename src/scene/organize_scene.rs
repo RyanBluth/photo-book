@@ -248,7 +248,7 @@ impl egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'_> {
         self.ui(pane, ui)
     }
 
-    fn tab_title_for_pane(&mut self, pane: &GalleryScenePane) -> egui::WidgetText {
+    fn tab_title_for_pane(&mut self, pane: &GalleryScenePane) -> egui::widget_text::WidgetText {
         match pane {
             GalleryScenePane::Gallery => "Gallery".into(),
             GalleryScenePane::PhotoInfo => "Photo Info".into(),

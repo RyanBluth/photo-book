@@ -139,7 +139,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
         UiResponse::None
     }
 
-    fn tab_title_for_pane(&mut self, pane: &ViewerScenePane) -> egui::WidgetText {
+    fn tab_title_for_pane(&mut self, pane: &ViewerScenePane) -> egui::widget_text::WidgetText {
         match pane {
             ViewerScenePane::Viewer => "Viewer".into(),
             ViewerScenePane::PhotoInfo => "Photo Info".into(),

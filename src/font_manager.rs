@@ -93,7 +93,7 @@ impl FontManager {
                 }
             }
 
-            let fonts = Fonts::new(1.0, 1024, font_definitions.clone());
+            let fonts = Fonts::new(1.0, 1024, Default::default(), font_definitions.clone());
 
             let valid_fonts = fonts
                 .families()

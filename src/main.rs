@@ -6,18 +6,15 @@ use auto_persisting::AutoPersisting;
 use autosave_manager::AutoSaveManager;
 use config::Config;
 use cursor_manager::CursorManager;
-use dependencies::{Dependency, DependencyFor, Singleton, SingletonFor};
+use dependencies::{Dependency, Singleton, SingletonFor};
 use eframe::{
-    egui::{self, ViewportBuilder, Widget},
-    egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew},
-    wgpu,
-    // egui_wgpu::{WgpuConfiguration, WgpuSetup},
-    // wgpu,
+    egui::{self, ViewportBuilder},
 };
 
 use font_manager::FontManager;
 
 use dirs::Dirs;
+use std::sync::atomic::{AtomicU32, Ordering};
 use log::info;
 use modal::manager::ModalManager;
 use project::Project;
@@ -55,6 +52,9 @@ mod utils;
 mod widget;
 mod layout;
 mod file_tree;
+mod photo_database;
+
+static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -85,8 +85,8 @@ async fn main() -> anyhow::Result<()> {
             .with_inner_size((3000.0, 2000.0)),
         hardware_acceleration: eframe::HardwareAcceleration::Required,
         renderer: eframe::Renderer::Wgpu,
-        wgpu_options: WgpuConfiguration {
-            wgpu_setup: WgpuSetup::CreateNew(WgpuSetupCreateNew {
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(eframe::egui_wgpu::WgpuSetupCreateNew {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 device_descriptor: Arc::new(|adapter| {
                     let base_limits: wgpu::Limits =
@@ -96,14 +96,25 @@ async fn main() -> anyhow::Result<()> {
                             wgpu::Limits::default()
                         };
 
+                    let adapter_limits = adapter.limits();
+                    let safe_texture_limit = adapter_limits.max_texture_dimension_2d.min(32768);
+
+                    MAX_TEXTURE_SIZE.store(safe_texture_limit, Ordering::Relaxed);
+
+                    info!("GPU adapter: {}", adapter.get_info().name);
+                    info!("GPU backend: {:?}", adapter.get_info().backend);
+                    info!("Max texture dimension (hardware): {}", adapter_limits.max_texture_dimension_2d);
+                    info!("Max texture dimension (application): {}", safe_texture_limit);
+
                     wgpu::DeviceDescriptor {
                         label: Some("egui wgpu device"),
                         required_features: wgpu::Features::default(),
                         required_limits: wgpu::Limits {
-                            max_texture_dimension_2d: 16384, // TODO: Can we look up the max size?
+                            max_texture_dimension_2d: safe_texture_limit,
                             ..base_limits
                         },
                         memory_hints: wgpu::MemoryHints::default(),
+                        trace: wgpu::Trace::Off,
                     }
                 }),
                 ..Default::default()
@@ -118,8 +129,8 @@ async fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
-        Box::new(|cc| {
-            re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
+        Box::new(|_cc| {
+            //re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
             Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log)))
         }),
     )
@@ -212,6 +223,20 @@ impl PhotoBookApp {
 
         std::fs::metadata(last_project_path).ok()?.modified().ok()
     }
+
+    /// Get the maximum texture size that was determined during GPU initialization
+    fn get_max_texture_size() -> usize {
+        let size = MAX_TEXTURE_SIZE.load(Ordering::Relaxed);
+        if size > 0 {
+            let final_size = size as usize;
+            info!("Using GPU-determined max texture size: {}", final_size);
+            final_size
+        } else {
+            // Fallback if GPU limits weren't set (shouldn't happen with wgpu config enabled)
+            info!("GPU limits not available, using conservative default of 8192");
+            8192
+        }
+    }
 }
 
 impl eframe::App for PhotoBookApp {
@@ -220,7 +245,7 @@ impl eframe::App for PhotoBookApp {
             egui_extras::install_image_loaders(ctx);
 
             ctx.input_mut(|input| {
-                input.max_texture_side = usize::MAX; // Allow maximum possible texture size
+                input.max_texture_side = Self::get_max_texture_size();
             });
 
             self.loaded_initial_scene = true;
