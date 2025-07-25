@@ -5,23 +5,29 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{Color32, Image, Layout, Slider};
+use egui::{Button, Color32, Image, Layout, Rect, Slider};
 use egui_extras::Column;
 
 use crate::{
     assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
+    modal::{
+        manager::{ModalManager, TypedModalId},
+        photo_filter::PhotoFilterModal,
+        ModalActionResponse,
+    },
     photo::Photo,
     photo_manager::PhotoManager,
-    utils::EguiUiExt,
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct ImageGalleryState {
     pub selected_images: HashSet<PathBuf>,
     pub scale: f32,
+    /// Filter modal ID for managing photo filter dialog
+    pub filter_modal_id: Option<TypedModalId<PhotoFilterModal>>,
 }
 
 impl Default for ImageGalleryState {
@@ -29,6 +35,7 @@ impl Default for ImageGalleryState {
         Self {
             selected_images: HashSet::new(),
             scale: 1.0,
+            filter_modal_id: None,
         }
     }
 }
@@ -65,9 +72,12 @@ impl<'a> ImageGallery<'a> {
         let mut selected_photo: Option<Photo> = None;
         let mut selection_cleared = false;
 
-        let has_photos = photo_manager.with_lock(|photo_manager| !photo_manager.photos.is_empty());
+        let has_photos = photo_manager.with_lock(|photo_manager| photo_manager.photo_database.photo_count() > 0);
 
         if has_photos {
+
+            let initial_available_rect = ui.available_rect_before_wrap();
+
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
                     selected_images.clear();
@@ -97,7 +107,9 @@ impl<'a> ImageGallery<'a> {
                         .max(0.0);
 
                     let grouped_photos = photo_manager
-                        .with_lock(|photo_manager| photo_manager.grouped_photos().clone());
+                        .with_lock_mut(|photo_manager| {
+                            photo_manager.grouped_photos()
+                        });
 
                     let row_metadatas: Vec<RowMetadata> = {
                         grouped_photos
@@ -242,6 +254,61 @@ impl<'a> ImageGallery<'a> {
                     );
                 });
             });
+
+            // Add filter button
+            let mut filter_button_origin = initial_available_rect.right_top();
+            filter_button_origin.x -= 80.0;
+            filter_button_origin.y += 20.0;
+            let filter_button_rect = Rect::from_min_size(filter_button_origin, Vec2::new(50.0, 20.0));
+            let filter_button = Button::new("Filter");
+            let filter_button_response = ui.put(filter_button_rect, filter_button);
+            
+            if filter_button_response.clicked() {
+                let photo_manager = Dependency::<PhotoManager>::get();
+                let modal = photo_manager.with_lock(|pm| {
+                    let current_filter = pm.get_current_filter();
+                    // Always use with_query to preserve current state
+                    PhotoFilterModal::with_query(current_filter.clone())
+                });
+                state.filter_modal_id = Some(ModalManager::push(modal));
+            }
+        }
+
+        // Handle filter modal response
+        if let Some(modal_id) = &state.filter_modal_id {
+            let modal_manager: Singleton<ModalManager> = Dependency::get();
+            
+            let exists = modal_manager.with_lock(|modal_manager| modal_manager.exists(modal_id));
+            
+            if !exists {
+                state.filter_modal_id = None;
+            } else {
+                let modal_response = modal_manager.with_lock(|modal_manager| modal_manager.response_for(modal_id));
+                match modal_response {
+                    Some(ModalActionResponse::Confirm) => {
+                        // Get the filter query from the modal and apply it
+                        if let Ok(()) = modal_manager.with_lock(|modal_manager| modal_manager.modify(modal_id, |modal: &mut PhotoFilterModal| {
+                            let query = modal.get_query();
+                            if modal.is_modified() {
+                                let photo_manager = Dependency::<PhotoManager>::get();
+                                photo_manager.with_lock_mut(|pm| {
+                                    pm.set_current_filter(query);
+                                });
+                            }
+                        })) {
+                            // Modal will be dismissed by the modal manager
+                        }
+                        state.filter_modal_id = None;
+                    }
+                    Some(ModalActionResponse::Cancel) => {
+                        // Modal was cancelled, just clear the ID
+                        state.filter_modal_id = None;
+                    }
+                    _ => {
+                        // Modal is still active, do nothing
+                    }
+                }
+            }
         }
 
         ImageGalleryResponse {

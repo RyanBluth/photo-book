@@ -186,6 +186,54 @@ impl FileTreeNode {
         }
     }
 
+    /// Removes a path from this `FileTreeNode`.
+    ///
+    /// This method removes the specified path from the tree structure. If the path
+    /// corresponds to a file, it is removed from its parent directory. If the path
+    /// corresponds to a directory, the entire directory and its contents are removed.
+    ///
+    /// # Returns
+    /// * `true` if the path was found and removed
+    /// * `false` if the path was not found
+    pub fn remove(&mut self, path_to_remove: &Path) -> bool {
+        match self {
+            FileTreeNode::File(file_path) => {
+                // If this is the file to remove, we can't remove ourselves directly
+                // The parent needs to handle this
+                file_path == path_to_remove
+            }
+            FileTreeNode::Directory(dir_path, children) => {
+                if dir_path == path_to_remove {
+                    // If this directory is the one to remove, we can't remove ourselves
+                    // The parent needs to handle this
+                    return true;
+                }
+
+                // Check if any child matches the path to remove
+                let mut found_index = None;
+                for (i, child) in children.iter_mut().enumerate() {
+                    if child.path() == path_to_remove {
+                        found_index = Some(i);
+                        break;
+                    } else if child.remove(path_to_remove) {
+                        // Child found and removed the path, or child itself should be removed
+                        if child.path() == path_to_remove {
+                            found_index = Some(i);
+                        }
+                        break;
+                    }
+                }
+
+                if let Some(index) = found_index {
+                    children.remove(index);
+                    return true;
+                }
+
+                false
+            }
+        }
+    }
+
     /// Recursive helper for displaying the `FileTreeNode` with indentation.
     /// Used by the `Display` implementation for `FileTree`.
     fn fmt_recursive(
@@ -378,6 +426,36 @@ impl FileTree {
                 self_root_path, new_branch_root_path
             );
         }
+    }
+
+    /// Removes a path from the `FileTree`.
+    ///
+    /// This method removes the specified path from the tree structure. If the path
+    /// is found, it will be removed from the tree.
+    ///
+    /// # Returns
+    /// * `true` if the path was found and removed
+    /// * `false` if the path was not found
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::path::Path;
+    /// # use photobook_rs::file_tree::FileTree;
+    /// let mut tree = FileTree::new(Path::new("project"));
+    /// tree.insert(Path::new("project/src/main.rs"));
+    /// 
+    /// // Remove the file
+    /// let removed = tree.remove(Path::new("project/src/main.rs"));
+    /// assert!(removed);
+    /// ```
+    pub fn remove(&mut self, path_to_remove: &Path) -> bool {
+        if self.root.path() == path_to_remove {
+            // Cannot remove the root itself, but we can indicate it was found
+            return true;
+        }
+        
+        self.root.remove(path_to_remove)
     }
 }
 
@@ -757,6 +835,71 @@ impl FileTreeCollection {
 
         FileTreeIterator::new(stack)
     }
+
+    /// Removes a path from the appropriate `FileTree` within the collection.
+    ///
+    /// The method first determines the root component of `path_to_remove` to find
+    /// the correct tree, then removes the path from that tree. If removing the path
+    /// results in an empty tree (only containing the root), the entire tree is
+    /// removed from the collection.
+    ///
+    /// # Returns
+    /// * `true` if the path was found and removed
+    /// * `false` if the path was not found
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use std::path::Path;
+    /// # use photobook_rs::file_tree::FileTreeCollection;
+    /// let mut collection = FileTreeCollection::new();
+    /// collection.insert(Path::new("project_a/src/main.rs"));
+    /// collection.insert(Path::new("project_a/README.md"));
+    ///
+    /// // Remove a file
+    /// let removed = collection.remove(Path::new("project_a/src/main.rs"));
+    /// assert!(removed);
+    /// ```
+    pub fn remove(&mut self, path_to_remove: &Path) -> bool {
+        // Clear the flattened trees so they can be recomputed
+        self.flattened_file_trees = None;
+        
+        // Determine the root component of the path to find which tree it belongs to
+        let root_component_of_path_to_remove = path_to_remove
+            .components()
+            .next()
+            .map_or_else(PathBuf::new, |comp| PathBuf::from(comp.as_os_str()));
+
+        // Find the tree that contains this path
+        for i in 0..self.file_trees.len() {
+            if self.file_trees[i].root.path() == &root_component_of_path_to_remove {
+                let removed = self.file_trees[i].remove(path_to_remove);
+                
+                if removed {
+                    // Check if the tree is now empty (only contains the root with no children)
+                    match &self.file_trees[i].root {
+                        FileTreeNode::Directory(_, children) if children.is_empty() => {
+                            // If the directory is empty and we're removing the root itself
+                            if self.file_trees[i].root.path() == path_to_remove {
+                                self.file_trees.remove(i);
+                            }
+                        }
+                        FileTreeNode::File(_) => {
+                            // If it's a file and we're removing the root file itself
+                            if self.file_trees[i].root.path() == path_to_remove {
+                                self.file_trees.remove(i);
+                            }
+                        }
+                        _ => {}
+                    }
+                    return true;
+                }
+                break;
+            }
+        }
+        
+        false
+    }
 }
 
 /// Implements `Display` for `FileTreeCollection` to print all trees it contains.
@@ -779,5 +922,70 @@ impl Display for FileTreeCollection {
             write!(f, "{}", tree)?;
         }
         fmt::Result::Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_file_tree_remove_file() {
+        let mut tree = FileTree::new(Path::new("project"));
+        tree.insert(Path::new("project/src/main.rs"));
+        tree.insert(Path::new("project/README.md"));
+
+        // Remove a file
+        let removed = tree.remove(Path::new("project/src/main.rs"));
+        assert!(removed);
+
+        // Try to remove non-existent file
+        let not_removed = tree.remove(Path::new("project/src/lib.rs"));
+        assert!(!not_removed);
+    }
+
+    #[test]
+    fn test_file_tree_remove_directory() {
+        let mut tree = FileTree::new(Path::new("project"));
+        tree.insert(Path::new("project/src/main.rs"));
+        tree.insert(Path::new("project/src/lib.rs"));
+
+        // Remove the entire src directory
+        let removed = tree.remove(Path::new("project/src"));
+        assert!(removed);
+    }
+
+    #[test]
+    fn test_file_tree_collection_remove() {
+        let mut collection = FileTreeCollection::new();
+        collection.insert(Path::new("project_a/src/main.rs"));
+        collection.insert(Path::new("project_a/README.md"));
+        collection.insert(Path::new("project_b/config.json"));
+
+        // Remove a file from project_a
+        let removed = collection.remove(Path::new("project_a/src/main.rs"));
+        assert!(removed);
+
+        // Try to remove non-existent file
+        let not_removed = collection.remove(Path::new("project_c/test.txt"));
+        assert!(!not_removed);
+
+        // Remove the entire project_b
+        let removed = collection.remove(Path::new("project_b"));
+        assert!(removed);
+    }
+
+    #[test]
+    fn test_file_tree_collection_remove_empty_tree() {
+        let mut collection = FileTreeCollection::new();
+        collection.insert(Path::new("project/file.txt"));
+
+        // Remove the only file, which should remove the entire tree
+        let removed = collection.remove(Path::new("project/file.txt"));
+        assert!(removed);
+
+        // Collection should now be empty
+        assert!(collection.trees().is_empty());
     }
 }

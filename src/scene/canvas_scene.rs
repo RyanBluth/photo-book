@@ -9,7 +9,9 @@ use crate::{
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
     id::{next_layer_id, next_page_id, LayerId, PageId},
+
     model::edit_state::EditablePage,
+    photo_manager::PhotoManager,
     scene::crop_scene::CropScene,
     utils::{IdExt, RectExt},
     widget::{
@@ -19,7 +21,7 @@ use crate::{
             panel::CanvasInfo,
             quick_layout::{QuickLayout, QuickLayoutState},
         },
-        image_gallery::{ImageGallery, ImageGalleryResponse, ImageGalleryState},
+        image_gallery::{ImageGallery, ImageGalleryState},
         pages::{Pages, PagesResponse, PagesState},
         templates::{Templates, TemplatesResponse, TemplatesState},
     },
@@ -317,6 +319,8 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 if let Some(photo) = response.secondary_action_photo {
                     self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                 }
+
+
             }
             CanvasScenePane::Canvas => {
                 if !self.scene_state.has_pages() {

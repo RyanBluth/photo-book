@@ -16,7 +16,8 @@ use crate::{
         page_settings::PageSettingsModal,
         ModalActionResponse,
     },
-    photo_manager::{PhotoManager, PhotosGrouping},
+    model::photo_grouping::PhotoGrouping,
+    photo_manager::PhotoManager,
     project::Project,
     project_settings::ProjectSettingsManager,
     session::Session,
@@ -392,10 +393,10 @@ impl Scene for OrganizeEditScene {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
                     photo_manager.with_lock_mut(|photo_manager| {
                         if ui.button("Date").clicked() {
-                            photo_manager.group_photos_by(PhotosGrouping::Date);
+                            photo_manager.group_photos_by(PhotoGrouping::Date);
                         }
                         if ui.button("Rating").clicked() {
-                            photo_manager.group_photos_by(PhotosGrouping::Rating);
+                            photo_manager.group_photos_by(PhotoGrouping::Rating);
                         }
                     });
                 });

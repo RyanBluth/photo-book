@@ -7,7 +7,7 @@ use crate::{
     photo_manager::PhotoManager,
     widget::{
         image_viewer::{self, ImageViewer, ImageViewerState},
-        photo_info::PhotoInfo,
+        photo_info::{PhotoInfo, PhotoInfoState},
     },
 };
 
@@ -16,6 +16,7 @@ use super::{NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse
 pub struct ViewerSceneState {
     photo: Photo,
     viewer_state: ImageViewerState,
+    photo_info_state: PhotoInfoState,
 }
 
 impl ViewerSceneState {
@@ -23,6 +24,7 @@ impl ViewerSceneState {
         Self {
             photo,
             viewer_state: ImageViewerState::default(),
+            photo_info_state: PhotoInfoState::new(),
         }
     }
 }
@@ -132,7 +134,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
             }
             ViewerScenePane::PhotoInfo => {
                 ui.set_max_width(600.0);
-                PhotoInfo::new(SaveOnDropPhoto::new(&mut self.scene_state.photo)).show(ui);
+                PhotoInfo::new(SaveOnDropPhoto::new(&mut self.scene_state.photo), &mut self.scene_state.photo_info_state).show(ui);
             }
         }
 

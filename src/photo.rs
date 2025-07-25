@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     f32::consts::PI,
     fmt::Display,
     fs::File,
@@ -478,7 +478,7 @@ impl PhotoMetadata {
     }
 }
 
-#[derive(Debug, Clone, Copy, EnumIter, PartialEq)]
+#[derive(Debug, Clone, Copy, EnumIter, PartialEq, Eq, Hash)]
 pub enum PhotoRating {
     Yes = 0,
     Maybe = 1,
@@ -506,44 +506,27 @@ pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,
     pub thumbnail_hash: String,
-    pub rating: PhotoRating,
 }
 
 impl Photo {
     pub fn new(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path(&path)?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
-        let rating = PhotoRating::Maybe;
         Ok(Self {
             path,
             metadata,
             thumbnail_hash,
-            rating,
         })
     }
 
     pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path_async(&path).await?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
-        let rating = PhotoRating::Maybe;
         Ok(Self {
             path,
             metadata,
             thumbnail_hash,
-            rating,
         })
-    }
-
-    pub async fn with_rating_async(path: PathBuf, rating: PhotoRating) -> Result<Self, PhotoError> {
-        let mut res: Photo = Self::new_async(path).await?;
-        res.rating = rating;
-        Ok(res)
-    }
-
-    pub fn with_rating(path: PathBuf, rating: PhotoRating) -> Result<Self, PhotoError> {
-        let mut res = Self::new(path)?;
-        res.rating = rating;
-        Ok(res)
     }
 
     pub fn file_name(&self) -> &str {
@@ -599,6 +582,36 @@ impl Photo {
             }
         };
         (width, height)
+    }
+
+    pub fn rating(&self) -> PhotoRating {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock(|pm| pm.get_photo_rating(&self.path))
+    }
+
+    pub fn set_rating(&self, rating: PhotoRating) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|pm| pm.set_photo_rating(&self.path, rating));
+    }
+
+    pub fn tags(&self) -> HashSet<String> {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock(|pm| pm.get_photo_tags(&self.path))
+    }
+
+    pub fn set_tags(&self, tags: HashSet<String>) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|pm| pm.set_photo_tags(&self.path, tags));
+    }
+
+    pub fn add_tag(&self, tag: String) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|pm| pm.add_photo_tag(&self.path, tag));
+    }
+
+    pub fn remove_tag(&self, tag: &String) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|pm| pm.remove_photo_tag(&self.path, tag));
     }
 }
 

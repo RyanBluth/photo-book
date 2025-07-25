@@ -9,11 +9,12 @@ use crate::{
     dependencies::{Dependency, SingletonFor},
     id::{next_page_id, set_min_layer_id, LayerId, PageId},
     model::{
-        edit_state::EditablePage, page::Page as AppPage, scale_mode::ScaleMode as AppScaleMode,
+        edit_state::EditablePage, page::Page as AppPage,
+        photo_grouping::PhotoGrouping as AppPhotoGrouping, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
     photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
-    photo_manager::{PhotoManager, PhotosGrouping as AppPhotosGrouping},
+    photo_manager::PhotoManager,
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
@@ -55,18 +56,19 @@ pub enum ProjectError {
 pub struct Project {
     pub photos: Vec<Photo>,
     pub pages: Vec<CanvasPage>,
-    pub group_by: PhotosGrouping,
+    pub group_by: ProjectPhotoGrouping,
     pub project_settings: ProjectSettings,
 }
 
 impl Project {
     pub fn new(root_scene: &OrganizeEditScene, photo_manager: &PhotoManager) -> Project {
         let photos = photo_manager
-            .photos
+            .photo_database
+            .get_all_photo_paths()
             .iter()
-            .map(|photo| Photo {
-                path: photo.0.clone(),
-                rating: photo.1.rating.into(),
+            .map(|path| Photo {
+                path: path.clone(),
+                rating: photo_manager.get_photo_rating(path).into(),
             })
             .collect();
 
@@ -89,8 +91,10 @@ impl Project {
                                 AppLayerContent::Photo(canvas_photo) => {
                                     LayerContent::Photo(CanvasPhoto {
                                         photo: Photo {
-                                            path: canvas_photo.photo.path,
-                                            rating: canvas_photo.photo.rating.into(),
+                                            path: canvas_photo.photo.path.clone(),
+                                            rating: photo_manager
+                                                .get_photo_rating(&canvas_photo.photo.path)
+                                                .into(),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     })
@@ -149,8 +153,10 @@ impl Project {
                                     },
                                     photo: photo.map(|canvas_photo| CanvasPhoto {
                                         photo: Photo {
-                                            path: canvas_photo.photo.path,
-                                            rating: canvas_photo.photo.rating.into(),
+                                            path: canvas_photo.photo.path.clone(),
+                                            rating: photo_manager
+                                                .get_photo_rating(&canvas_photo.photo.path)
+                                                .into(),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     }),
@@ -323,13 +329,24 @@ impl Into<OrganizeEditScene> for Project {
             settings.project_settings = self.project_settings.into();
         });
 
-        Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+            let photos_with_ratings: Vec<(PathBuf, AppPhotoRating)> = self
+                .photos
+                .iter()
+                .map(|photo| (photo.path.clone(), photo.rating.clone().into()))
+                .collect();
+
             photo_manager.load_photos(
                 self.photos
                     .into_iter()
-                    .map(|photo| (photo.path, Some(photo.rating.into())))
+                    .map(|photo| (photo.path, None))
                     .collect(),
             );
+
+            // Set ratings from project file into PhotoDatabase
+            for (path, rating) in photos_with_ratings {
+                photo_manager.set_photo_rating(&path, rating);
+            }
         });
 
         let pages: IndexMap<PageId, CanvasState> = self
@@ -356,11 +373,7 @@ impl Into<OrganizeEditScene> for Project {
                                 LayerContent::Photo(photo) => {
                                     // TODO: Don't unwrap
                                     AppLayerContent::Photo(AppCanvasPhoto {
-                                        photo: AppPhoto::with_rating(
-                                            photo.photo.path,
-                                            photo.photo.rating.into(),
-                                        )
-                                        .unwrap(),
+                                        photo: AppPhoto::new(photo.photo.path).unwrap(),
                                         crop: photo.crop.into(),
                                     })
                                 }
@@ -413,11 +426,7 @@ impl Into<OrganizeEditScene> for Project {
                                         },
                                     },
                                     photo: photo.map(|photo| AppCanvasPhoto {
-                                        photo: AppPhoto::with_rating(
-                                            photo.photo.path,
-                                            photo.photo.rating.into(),
-                                        )
-                                        .unwrap(), // TODO: Don't unwrap
+                                        photo: AppPhoto::new(photo.photo.path).unwrap(), // TODO: Don't unwrap
                                         crop: photo.crop.into(),
                                     }),
                                     scale_mode: match scale_mode {
@@ -723,25 +732,26 @@ impl Into<PhotoRating> for AppPhotoRating {
 }
 
 #[derive(Debug, Clone, Savefile)]
-pub enum PhotosGrouping {
+pub enum ProjectPhotoGrouping {
     Rating,
     Date,
 }
 
-impl Into<AppPhotosGrouping> for PhotosGrouping {
-    fn into(self) -> AppPhotosGrouping {
+impl Into<AppPhotoGrouping> for ProjectPhotoGrouping {
+    fn into(self) -> AppPhotoGrouping {
         match self {
-            PhotosGrouping::Rating => AppPhotosGrouping::Rating,
-            PhotosGrouping::Date => AppPhotosGrouping::Date,
+            ProjectPhotoGrouping::Rating => AppPhotoGrouping::Rating,
+            ProjectPhotoGrouping::Date => AppPhotoGrouping::Date,
         }
     }
 }
 
-impl Into<PhotosGrouping> for AppPhotosGrouping {
-    fn into(self) -> PhotosGrouping {
+impl Into<ProjectPhotoGrouping> for AppPhotoGrouping {
+    fn into(self) -> ProjectPhotoGrouping {
         match self {
-            AppPhotosGrouping::Rating => PhotosGrouping::Rating,
-            AppPhotosGrouping::Date => PhotosGrouping::Date,
+            AppPhotoGrouping::Rating => ProjectPhotoGrouping::Rating,
+            AppPhotoGrouping::Date => ProjectPhotoGrouping::Date,
+            AppPhotoGrouping::Tag => ProjectPhotoGrouping::Date, // Default fallback since project format doesn't support Tag
         }
     }
 }

@@ -3,6 +3,7 @@ use std::any::Any;
 pub mod basic;
 pub mod manager;
 pub mod page_settings;
+pub mod photo_filter;
 pub mod progress;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

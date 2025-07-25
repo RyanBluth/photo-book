@@ -116,18 +116,19 @@ impl ModalManager {
     }
 
     pub fn show_next(&mut self, ui: &mut egui::Ui) {
+        self.responses.values().for_each(|response| {
+            match response {
+                ModalActionResponse::Cancel | ModalActionResponse::Confirm => {
+                    self.modals.pop();
+                }
+                _ => {}
+            }
+        });
         self.responses.clear();
 
         match self.modals.keys().last() {
             Some(id) => {
-                let response = self.show_modal(ui, *id);
-
-                match response {
-                    ModalActionResponse::Cancel | ModalActionResponse::Confirm => {
-                        self.modals.pop();
-                    }
-                    _ => {}
-                }
+                _ = self.show_modal(ui, *id);
             }
             None => {}
         }

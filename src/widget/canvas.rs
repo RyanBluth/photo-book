@@ -1291,110 +1291,110 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_editing_text(
-        ui: &mut Ui,
-        text: &mut String,
-        font_id: &FontId,
-        rect: Rect,
-        font_size: f32,
-        color: Color32,
-        horizontal_alignment: TextHorizontalAlignment,
-        vertical_alignment: TextVerticalAlignment,
-        layer_id: Option<LayerId>,
-    ) {
-        let horizontal_alignment = match horizontal_alignment {
-            TextHorizontalAlignment::Left => Align::Min,
-            TextHorizontalAlignment::Center => Align::Center,
-            TextHorizontalAlignment::Right => Align::Max,
-        };
+            ui: &mut Ui,
+            text: &mut String,
+            font_id: &FontId,
+            rect: Rect,
+            font_size: f32,
+            color: Color32,
+            horizontal_alignment: TextHorizontalAlignment,
+            vertical_alignment: TextVerticalAlignment,
+            layer_id: Option<LayerId>,
+        ) {
+            let horizontal_alignment = match horizontal_alignment {
+                TextHorizontalAlignment::Left => Align::Min,
+                TextHorizontalAlignment::Center => Align::Center,
+                TextHorizontalAlignment::Right => Align::Max,
+            };
 
-        let vertical_alignment = match vertical_alignment {
-            TextVerticalAlignment::Top => Align::Min,
-            TextVerticalAlignment::Center => Align::Center,
-            TextVerticalAlignment::Bottom => Align::Max,
-        };
+            let vertical_alignment = match vertical_alignment {
+                TextVerticalAlignment::Top => Align::Min,
+                TextVerticalAlignment::Center => Align::Center,
+                TextVerticalAlignment::Bottom => Align::Max,
+            };
 
-        let layout = Layout {
-            main_dir: egui::Direction::TopDown,
-            main_wrap: true,
-            main_align: vertical_alignment,
-            main_justify: true,
-            cross_align: horizontal_alignment,
-            cross_justify: false,
-        };
+            let layout = Layout {
+                main_dir: egui::Direction::TopDown,
+                main_wrap: true,
+                main_align: vertical_alignment,
+                main_justify: true,
+                cross_align: horizontal_alignment,
+                cross_justify: false,
+            };
 
-        ui.allocate_new_ui(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
-            ui.style_mut().interaction.selectable_labels = false;
+            ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
+                ui.style_mut().interaction.selectable_labels = false;
 
-            let frame = egui::Frame::new()
-                .inner_margin(Margin::ZERO)
-                .outer_margin(Margin::ZERO);
+                let frame = egui::Frame::new()
+                    .inner_margin(Margin::ZERO)
+                    .outer_margin(Margin::ZERO);
 
-            frame.show(ui, |ui| {
-                // Configure the text edit using the current text's properties
-                let text_edit = egui::TextEdit::multiline(text)
-                    .id("text-edit".into())
-                    .font(FontId::new(font_size, font_id.family.clone()))
-                    .text_color(color)
-                    .min_size(rect.size())
-                    .desired_width(rect.width())
-                    .lock_focus(true)
-                    .background_color(Color32::TRANSPARENT)
-                    .horizontal_align(horizontal_alignment)
-                    .vertical_align(vertical_alignment);
+                frame.show(ui, |ui| {
+                    // Configure the text edit using the current text's properties
+                    let text_edit = egui::TextEdit::multiline(text)
+                        .id("text-edit".into())
+                        .font(FontId::new(font_size, font_id.family.clone()))
+                        .text_color(color)
+                        .min_size(rect.size())
+                        .desired_width(rect.width())
+                        .lock_focus(true)
+                        .background_color(Color32::TRANSPARENT)
+                        .horizontal_align(horizontal_alignment)
+                        .vertical_align(vertical_alignment);
 
-                let response = ui.add(text_edit);
+                    let response = ui.add(text_edit);
 
-                // If user presses Enter or clicks outside, exit edit mode
-                if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    ui.ctx().data_mut(|data| {
-                        data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
-                    });
-                }
+                    // If user presses Enter or clicks outside, exit edit mode
+                    if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        ui.ctx().data_mut(|data| {
+                            data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
+                        });
+                    }
+                });
             });
-        });
-    }
+        }
 
-    fn draw_text(
-        ui: &mut Ui,
-        text: &mut String,
-        font_id: &FontId,
-        rect: Rect,
-        font_size: f32,
-        color: Color32,
-        horizontal_alignment: TextHorizontalAlignment,
-        vertical_alignment: TextVerticalAlignment,
-    ) {
-        let horizontal_alignment = match horizontal_alignment {
-            TextHorizontalAlignment::Left => Align::Min,
-            TextHorizontalAlignment::Center => Align::Center,
-            TextHorizontalAlignment::Right => Align::Max,
-        };
+        fn draw_text(
+                ui: &mut Ui,
+                text: &mut String,
+                font_id: &FontId,
+                rect: Rect,
+                font_size: f32,
+                color: Color32,
+                horizontal_alignment: TextHorizontalAlignment,
+                vertical_alignment: TextVerticalAlignment,
+            ) {
+                let horizontal_alignment = match horizontal_alignment {
+                    TextHorizontalAlignment::Left => Align::Min,
+                    TextHorizontalAlignment::Center => Align::Center,
+                    TextHorizontalAlignment::Right => Align::Max,
+                };
 
-        let vertical_alignment = match vertical_alignment {
-            TextVerticalAlignment::Top => Align::Min,
-            TextVerticalAlignment::Center => Align::Center,
-            TextVerticalAlignment::Bottom => Align::Max,
-        };
+                let vertical_alignment = match vertical_alignment {
+                    TextVerticalAlignment::Top => Align::Min,
+                    TextVerticalAlignment::Center => Align::Center,
+                    TextVerticalAlignment::Bottom => Align::Max,
+                };
 
-        let layout = Layout {
-            main_dir: egui::Direction::TopDown,
-            main_wrap: true,
-            main_align: vertical_alignment,
-            main_justify: true,
-            cross_align: horizontal_alignment,
-            cross_justify: false,
-        };
+                let layout = Layout {
+                    main_dir: egui::Direction::TopDown,
+                    main_wrap: true,
+                    main_align: vertical_alignment,
+                    main_justify: true,
+                    cross_align: horizontal_alignment,
+                    cross_justify: false,
+                };
 
-        ui.allocate_new_ui(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
-            ui.style_mut().interaction.selectable_labels = false;
-            ui.label(
-                RichText::new(text.as_str())
-                    .color(color)
-                    .family(font_id.family.clone())
-                    .size(font_size),
-            );
-        });
-    }
+                ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
+                    ui.style_mut().interaction.selectable_labels = false;
+                    ui.label(
+                        RichText::new(text.as_str())
+                            .color(color)
+                            .family(font_id.family.clone())
+                            .size(font_size),
+                    );
+                });
+            }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
         ctx.input(|input| {

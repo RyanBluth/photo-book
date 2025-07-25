@@ -41,6 +41,8 @@ pub struct FileTreeResponse {
     pub selected: Option<PathBuf>,
 
     pub double_clicked: Option<PathBuf>,
+
+    pub removed: Option<PathBuf>,
 }
 
 impl<'a> FileTree<'a> {
@@ -53,6 +55,7 @@ impl<'a> FileTree<'a> {
 
         let mut selected_path_this_frame: Option<PathBuf> = None;
         let mut double_clicked_path_this_frame: Option<PathBuf> = None;
+        let mut removed_path_this_frame: Option<PathBuf> = None;
 
         let outer_response = ui.allocate_response(ui.available_size(), egui::Sense::click());
         let mut table_ui = ui.new_child(
@@ -62,7 +65,7 @@ impl<'a> FileTree<'a> {
         );
 
         let items = Dependency::<PhotoManager>::get()
-            .with_lock_mut(|pm| pm.file_collection.flattened_file_trees().clone());
+            .with_lock_mut(|pm| pm.photo_database.get_flattened_file_trees());
         let visible_items: Vec<&FlattenedTreeItem> = items
             .iter()
             .filter(|item| self.is_path_visible(item))
@@ -110,12 +113,15 @@ impl<'a> FileTree<'a> {
                 if row_index < visible_items.len() {
                     let item = visible_items[row_index];
                     row.col(|ui| {
-                        let (selected, double_clicked) = self.draw_tree_item(ui, item);
+                        let (selected, double_clicked, removed) = self.draw_tree_item(ui, item);
                         if let Some(path) = selected {
                             selected_path_this_frame = Some(path);
                         }
                         if let Some(path) = double_clicked {
                             double_clicked_path_this_frame = Some(path);
+                        }
+                        if let Some(path) = removed {
+                            removed_path_this_frame = Some(path);
                         }
                     });
                 }
@@ -126,6 +132,7 @@ impl<'a> FileTree<'a> {
             response: outer_response,
             selected: selected_path_this_frame,
             double_clicked: double_clicked_path_this_frame,
+            removed: removed_path_this_frame,
         }
     }
 
@@ -133,9 +140,10 @@ impl<'a> FileTree<'a> {
         &mut self,
         ui: &mut egui::Ui,
         item: &FlattenedTreeItem,
-    ) -> (Option<PathBuf>, Option<PathBuf>) {
+    ) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
         let mut selected_path: Option<PathBuf> = None;
         let mut double_clicked_path: Option<PathBuf> = None;
+        let mut removed_path: Option<PathBuf> = None;
 
         let item_path = item.node.path().clone();
 
@@ -198,7 +206,7 @@ impl<'a> FileTree<'a> {
                 FileTreeNode::File(path) => {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
-                    let photo_clone = photo_manager.with_lock(|pm| pm.photos.get(path).cloned());
+                    let photo_clone = photo_manager.with_lock(|pm| pm.photo_database.get_photo(path).cloned());
 
                     let texture_handle = if let Some(photo) = photo_clone {
                         photo_manager.with_lock_mut(|pm| {
@@ -250,14 +258,22 @@ impl<'a> FileTree<'a> {
             double_clicked_path = Some(item_path.clone());
         }
 
-        (selected_path, double_clicked_path)
+        // Show context menu on right click
+        response.context_menu(|ui| {
+            if ui.button("Remove").clicked() {
+                removed_path = Some(item_path.clone());
+                ui.close();
+            }
+        });
+
+        (selected_path, double_clicked_path, removed_path)
     }
 
     fn collapse_all_subdirectories(&mut self, path: &PathBuf) {
         let mut to_remove = Vec::new();
 
         for item in Dependency::<PhotoManager>::get()
-            .with_lock_mut(|pm| pm.file_collection.flattened_file_trees().clone())
+            .with_lock_mut(|pm| pm.photo_database.get_flattened_file_trees())
             .iter()
         {
             match &item.node {

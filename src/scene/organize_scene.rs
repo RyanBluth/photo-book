@@ -1,18 +1,16 @@
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use egui_tiles::UiResponse;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    file_tree::FlattenedTreeItem,
     photo::SaveOnDropPhoto,
     photo_manager::PhotoManager,
     utils::EguiUiExt,
     widget::{
         file_tree::{FileTree, FileTreeState},
         image_gallery::{ImageGallery, ImageGalleryState},
-        photo_info::PhotoInfo,
+        photo_info::{PhotoInfo, PhotoInfoState},
     },
 };
 
@@ -24,6 +22,7 @@ use super::{
 pub struct GallerySceneState {
     pub image_gallery_state: ImageGalleryState,
     pub file_tree_state: FileTreeState,
+    pub photo_info_state: PhotoInfoState,
 
     // New fields for inter-widget communication - replacing static vars
     /// Path from gallery to scroll the file tree to
@@ -35,11 +34,9 @@ pub struct GallerySceneState {
 impl Default for GallerySceneState {
     fn default() -> Self {
         Self {
-            image_gallery_state: ImageGalleryState {
-                selected_images: HashSet::new(),
-                scale: 1.0,
-            },
+            image_gallery_state: ImageGalleryState::default(),
             file_tree_state: FileTreeState::default(),
+            photo_info_state: PhotoInfoState::new(),
 
             // Initialize new fields
             scroll_file_tree_to_path: None,
@@ -169,6 +166,8 @@ impl GalleryTreeBehavior<'_> {
                     self.scene_state.file_tree_state.selected_node = None;
                 }
 
+
+
                 UiResponse::None
             }
             GalleryScenePane::PhotoInfo => {
@@ -178,10 +177,10 @@ impl GalleryTreeBehavior<'_> {
                 match gallery_state.selected_images.iter().next() {
                     Some(selected_image) => {
                         let mut photo = photo_manager.with_lock(|photo_manager| {
-                            photo_manager.photos[selected_image].clone()
+                            photo_manager.photo_database.get_photo(selected_image).unwrap().clone()
                         });
 
-                        PhotoInfo::new(SaveOnDropPhoto::new(&mut photo)).show(ui);
+                        PhotoInfo::new(SaveOnDropPhoto::new(&mut photo), &mut self.scene_state.photo_info_state).show(ui);
                     }
                     _ => {
                         ui.both_centered(|ui| {
@@ -205,7 +204,7 @@ impl GalleryTreeBehavior<'_> {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
                     photo_manager.with_lock(|photo_manager| {
-                        if let Some(photo) = photo_manager.photos.get(&selected_path) {
+                        if let Some(photo) = photo_manager.photo_database.get_photo(&selected_path) {
                             // Clear current selection
                             self.scene_state.image_gallery_state.selected_images.clear();
                             // Select this photo in the gallery
@@ -224,11 +223,23 @@ impl GalleryTreeBehavior<'_> {
                     // When an image file is double-clicked, open it in the viewer
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
                     photo_manager.with_lock(|photo_manager| {
-                        if let Some(photo) = photo_manager.photos.get(&double_clicked_path) {
+                        if let Some(photo) = photo_manager.photo_database.get_photo(&double_clicked_path) {
                             let photo_clone = photo.clone();
                             self.navigator
                                 .push(SceneTransition::Viewer(ViewerScene::new(photo_clone)));
                         }
+                    });
+                }
+
+                // Handle file removal from the file tree
+                if let Some(removed_path) = file_tree_response.removed {
+                    let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                    photo_manager.with_lock_mut(|photo_manager| {
+                        // Remove the photo from the database (this will also remove from file collection)
+                        photo_manager.photo_database.remove_photo(&removed_path);
+                        
+                        // If this photo was selected in the gallery, clear the selection
+                        self.scene_state.image_gallery_state.selected_images.remove(&removed_path);
                     });
                 }
 
