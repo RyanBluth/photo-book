@@ -136,13 +136,13 @@ impl PhotoManager {
             }
 
             Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                photo_manager.photo_database.sort_photos(PhotoSortCriteria::Date);
+                photo_manager
+                    .photo_database
+                    .sort_photos(PhotoSortCriteria::Date);
             });
 
-            let photo_paths: Vec<PathBuf> =
-                Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
-                    photo_manager.photo_database.get_all_photo_paths()
-                });
+            let photo_paths: Vec<PathBuf> = Dependency::<PhotoManager>::get()
+                .with_lock(|photo_manager| photo_manager.photo_database.get_all_photo_paths());
 
             let _ = Self::gen_thumbnails(photo_paths);
 
@@ -165,8 +165,7 @@ impl PhotoManager {
             let num_photos = filtered_photos.len();
 
             for (path, _) in filtered_photos {
-                let photo =
-                    Photo::new_async(path.clone()).await;
+                let photo = Photo::new_async(path.clone()).await;
 
                 match photo {
                     Result::Err(err) => {
@@ -190,7 +189,8 @@ impl PhotoManager {
 
             let (photo_paths, _) =
                 Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                    let photo_paths: Vec<PathBuf> = photo_manager.photo_database.get_all_photo_paths();
+                    let photo_paths: Vec<PathBuf> =
+                        photo_manager.photo_database.get_all_photo_paths();
                     let thumbnail_dir = Dirs::Thumbnails.path();
 
                     (photo_paths, thumbnail_dir)
@@ -206,14 +206,12 @@ impl PhotoManager {
 
     pub fn grouped_photos(&mut self) -> IndexMap<String, IndexMap<PathBuf, Photo>> {
         let mut query = self.current_filter.clone();
-        
+
         // Ensure grouping is set
         query.grouping = self.current_grouping;
 
         match self.photo_database.query_photos(&query) {
-            PhotoQueryResult::Grouped(groups) => {
-                groups
-            },
+            PhotoQueryResult::Grouped(groups) => groups,
         }
     }
 
@@ -343,21 +341,30 @@ impl PhotoManager {
         current_photo: &Photo,
         _ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
-        let current_index = self
-            .index_for_photo(current_photo)
-            .ok_or(anyhow!("Photo not found"))?;
-        let next_index = (current_index + 1) % self.photo_database.photo_count();
-        match self.photo_database.get_photo_by_index(next_index) {
+        // Use the current filter for navigation
+        let mut query = self.current_filter.clone();
+        query.grouping = self.current_grouping;
+
+        let next_photo = self
+            .photo_database
+            .next_photo_in_query(&current_photo.path, &query);
+
+        match next_photo {
             Some(next_photo) => {
-                if let Some(current_photo) = self.photo_database.get_photo_by_index(current_index) {
-                    if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
-                        // info!("Freeing texture for photo {}", current_photo.uri());
-                        // ctx.forget_image(&current_photo.uri());
-                        // ctx.tex_manager().write().free(texture.id);
-                    }
+                // Clean up texture for current photo
+                if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
+                    // info!("Freeing texture for photo {}", current_photo.uri());
+                    // ctx.forget_image(&current_photo.uri());
+                    // ctx.tex_manager().write().free(texture.id);
                 }
 
-                Ok(Some((next_photo.clone(), next_index)))
+                // Get index for the new photo
+                let next_index = self
+                    .photo_database
+                    .get_photo_index(&next_photo.path)
+                    .unwrap_or(0);
+
+                Ok(Some((next_photo, next_index)))
             }
             _ => Ok(None),
         }
@@ -368,28 +375,36 @@ impl PhotoManager {
         current_photo: &Photo,
         _ctx: &Context,
     ) -> anyhow::Result<Option<(Photo, usize)>> {
-        let current_index = self
-            .index_for_photo(current_photo)
-            .ok_or(anyhow!("Photo not found"))?;
-        let photo_count = self.photo_database.photo_count();
-        let prev_index = (current_index + photo_count - 1) % photo_count;
-        match self.photo_database.get_photo_by_index(prev_index) {
+        // Use the current filter for navigation
+        let mut query = self.current_filter.clone();
+        query.grouping = self.current_grouping;
+
+        let previous_photo = self
+            .photo_database
+            .previous_photo_in_query(&current_photo.path, &query);
+
+        match previous_photo {
             Some(previous_photo) => {
-                if let Some(current_photo) = self.photo_database.get_photo_by_index(current_index) {
-                    if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
-                        // info!("Freeing texture for photo {}", current_photo.uri());
-                        // ctx.forget_image(&current_photo.uri());
-                        // ctx.tex_manager().write().free(texture.id);
-                    }
+                // Clean up texture for current photo
+                if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
+                    // info!("Freeing texture for photo {}", current_photo.uri());
+                    // ctx.forget_image(&current_photo.uri());
+                    // ctx.tex_manager().write().free(texture.id);
                 }
 
-                Ok(Some((previous_photo.clone(), prev_index)))
+                // Get index for the new photo
+                let prev_index = self
+                    .photo_database
+                    .get_photo_index(&previous_photo.path)
+                    .unwrap_or(0);
+
+                Ok(Some((previous_photo, prev_index)))
             }
             _ => Ok(None),
         }
     }
 
-    fn index_for_photo(&self, photo: &Photo) -> Option<usize> {
+    fn index_for_photo(&mut self, photo: &Photo) -> Option<usize> {
         self.photo_database.get_photo_index(&photo.path)
     }
 
@@ -695,6 +710,7 @@ impl PhotoManager {
     }
 
     pub fn set_current_filter(&mut self, filter: PhotoQuery) {
+        self.current_grouping = filter.grouping;
         self.current_filter = filter;
     }
 

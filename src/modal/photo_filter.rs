@@ -84,72 +84,50 @@ impl Modal for PhotoFilterModal {
             .available_tags(&self.available_tags)
             .show_grouping(true)
             .show(ui);
-
-        // Show current filter summary if filters are active
-        if self.filter_state.has_active_filters() {
-            ui.add_space(12.0);
-            ui.separator();
-            ui.add_space(8.0);
-
-            ui.group(|ui| {
-                ui.vertical(|ui| {
-                    ui.strong("Filter Summary");
-                    ui.add_space(4.0);
-
-                    let query = self.filter_state.to_query();
-
-                    if let Some(ratings) = &query.ratings {
-                        ui.label(format!(
-                            "Ratings: {}",
-                            ratings
-                                .iter()
-                                .map(|r| format!("{:?}", r))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        ));
-                    }
-
-                    if let Some(tags) = &query.tags {
-                        let tag_display: Vec<String> = tags.iter().cloned().collect();
-
-                        if !tag_display.is_empty() {
-                            ui.label(format!("Tags: {}", tag_display.join(", ")));
-                        }
-                    }
-
-                    ui.label(format!("Group by: {:?}", query.grouping));
-                });
-            });
-        }
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
-        // Cancel button
-        if ui.button("Cancel").clicked() {
-            return ModalActionResponse::Cancel;
-        }
+        let mut response = ModalActionResponse::None;
 
-        ui.add_space(8.0);
-
-        // Clear filters button (only if filters are active)
-        if self.filter_state.has_active_filters() {
-            if ui.button("Clear All").clicked() {
-                self.filter_state.reset();
+        ui.horizontal(|ui| {
+            // Left side: Clear All button (only if filters are active)
+            if self.filter_state.has_active_filters() {
+                let clear_button = egui::Button::new(
+                    egui::RichText::new("🗑 Clear All")
+                        .color(ui.style().visuals.warn_fg_color)
+                );
+                if ui.add(clear_button).clicked() {
+                    self.filter_state.reset();
+                }
             }
-            ui.add_space(8.0);
-        }
 
-        // Apply button
-        let apply_text = if self.is_modified() {
-            "Apply Changes"
-        } else {
-            "Apply"
-        };
-        if ui.button(apply_text).clicked() {
-            return ModalActionResponse::Confirm;
-        }
+            // Right side: Cancel and Apply buttons
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Apply button (primary action)
+                let apply_text = if self.is_modified() {
+                    "✓ Apply Changes"
+                } else {
+                    "Apply"
+                };
 
-        ModalActionResponse::None
+                let apply_button = egui::Button::new(
+                    egui::RichText::new(apply_text).strong()
+                ).fill(ui.style().visuals.selection.bg_fill);
+
+                if ui.add(apply_button).clicked() {
+                    response = ModalActionResponse::Confirm;
+                }
+
+                ui.add_space(8.0);
+
+                // Cancel button (secondary action)
+                if ui.button("Cancel").clicked() {
+                    response = ModalActionResponse::Cancel;
+                }
+            });
+        });
+
+        response
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

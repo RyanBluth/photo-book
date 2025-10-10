@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    id::{next_modal_id, ModalId},
+    id::{ModalId, next_modal_id},
 };
 
 use super::{Modal, ModalActionResponse};
@@ -116,13 +116,11 @@ impl ModalManager {
     }
 
     pub fn show_next(&mut self, ui: &mut egui::Ui) {
-        self.responses.values().for_each(|response| {
-            match response {
-                ModalActionResponse::Cancel | ModalActionResponse::Confirm => {
-                    self.modals.pop();
-                }
-                _ => {}
+        self.responses.values().for_each(|response| match response {
+            ModalActionResponse::Cancel | ModalActionResponse::Confirm => {
+                self.modals.pop();
             }
+            _ => {}
         });
         self.responses.clear();
 

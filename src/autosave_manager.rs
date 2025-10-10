@@ -6,7 +6,7 @@ use savefile_derive::Savefile;
 use crate::{
     dependencies::{Dependency, SingletonFor},
     photo_manager::PhotoManager,
-    project::{Project, ProjectError, PROJECT_VERSION},
+    project::{PROJECT_VERSION, Project, ProjectError},
     scene::organize_edit_scene::OrganizeEditScene,
     session::Session,
 };
@@ -87,10 +87,10 @@ impl AutoSaveManager {
         &mut self,
         root_scene: &OrganizeEditScene,
     ) -> Result<(), AutoSaveManagerError> {
-        if let Some(task) = &self.current_save_task {
-            if !task.is_finished() {
-                return Err(AutoSaveManagerError::SaveTaskInProgress);
-            }
+        if let Some(task) = &self.current_save_task
+            && !task.is_finished()
+        {
+            return Err(AutoSaveManagerError::SaveTaskInProgress);
         }
 
         let path = auto_save_path().ok_or(AutoSaveManagerError::AutoSavePathError)?;
@@ -110,12 +110,11 @@ fn create_save_task(root_scene: OrganizeEditScene, path: PathBuf) -> tokio::task
     tokio::spawn(async move {
         info!("Auto saving project to {}", path.display());
 
-        let auto_save: AutoSave =
-            Dependency::<PhotoManager>::get().with_lock(|photo_manager| AutoSave {
-                active_project: Dependency::<Session>::get()
-                    .with_lock(|session| session.active_project.clone()),
-                project: Project::new(&root_scene, &photo_manager),
-            });
+        let auto_save: AutoSave = AutoSave {
+            active_project: Dependency::<Session>::get()
+                .with_lock(|session| session.active_project.clone()),
+            project: Project::new(&root_scene),
+        };
 
         if let Err(e) = savefile::save_file_compressed(path, PROJECT_VERSION, &auto_save) {
             error!("Error saving auto save: {:?}", e);

@@ -1,14 +1,14 @@
 use egui::{Pos2, Rect};
 use log::{error, info};
 
-use skia_safe::surfaces::raster_n32_premul;
 use skia_safe::EncodedImageFormat;
+use skia_safe::surfaces::raster_n32_premul;
 
-use printpdf::{ImageTransform, Mm, PdfDocument};
+use printpdf::{Mm, Op, PdfDocument, PdfPage, PdfSaveOptions, RawImage, XObjectTransform};
 use std::collections::HashMap;
 use std::default;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
@@ -21,7 +21,8 @@ use thiserror::Error;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
-use crate::modal::manager::ModalManager;
+use crate::modal::basic::BasicModal;
+use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
@@ -64,7 +65,7 @@ impl Exporter {
         // Import the global limit from main module
         use crate::MAX_TEXTURE_SIZE;
         use std::sync::atomic::Ordering;
-        
+
         let size = MAX_TEXTURE_SIZE.load(Ordering::Relaxed);
         if size > 0 {
             size as usize
@@ -113,14 +114,29 @@ impl Exporter {
 
         spawn_blocking(move || {
             let modal_manager: Singleton<ModalManager> = Dependency::get();
-            let modal_id =
+            let progress_modal_id =
                 ModalManager::push(ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0));
+
+            let show_export_failure_modal =
+                |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
+                    let modal_manager: Singleton<ModalManager> = Dependency::get();
+                    _ = modal_manager.with_lock_mut(|modal_manager| {
+                        modal_manager.dismiss(progress_modal_id);
+                    });
+                    ModalManager::push(BasicModal::new(
+                        "Export Failed",
+                        error.to_string(),
+                        "Dismiss",
+                    ));
+                };
+
             let mut page_number = 0;
             let num_pages = pages.len();
             for page in &pages {
                 if let Err(err) = Self::export_page(page.clone(), &directory, page_number) {
                     let mut tasks = tasks.lock().unwrap();
-                    tasks.insert(task_id, ExportTaskStatus::Failed(err));
+                    tasks.insert(task_id, ExportTaskStatus::Failed(err.clone()));
+                    show_export_failure_modal(progress_modal_id, err);
                     ctx.request_repaint();
                     return;
                 }
@@ -128,8 +144,8 @@ impl Exporter {
                 let progress = page_number as f32 / (num_pages as f32 + 1.0); // +1 for the PDF generation
                 let mut tasks = tasks.lock().unwrap();
                 tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
-                modal_manager.with_lock_mut(|modal_manager| {
-                    modal_manager.modify(&modal_id, |progress_modal| {
+                _ = modal_manager.with_lock_mut(|modal_manager| {
+                    modal_manager.modify(&progress_modal_id, |progress_modal| {
                         progress_modal.progress = progress;
                         progress_modal.message =
                             format!("Exporting page {}/{}", page_number, num_pages);
@@ -140,8 +156,10 @@ impl Exporter {
             }
 
             if let Err(err) = Self::export_pdf(&pages, &directory, &file_name) {
-                let mut tasks: std::sync::MutexGuard<'_, HashMap<ExportTaskId, ExportTaskStatus>> = tasks.lock().unwrap();
-                tasks.insert(task_id, ExportTaskStatus::Failed(err));
+                let mut tasks: std::sync::MutexGuard<'_, HashMap<ExportTaskId, ExportTaskStatus>> =
+                    tasks.lock().unwrap();
+                tasks.insert(task_id, ExportTaskStatus::Failed(err.clone()));
+                show_export_failure_modal(progress_modal_id, err);
                 ctx.request_repaint();
                 return;
             }
@@ -149,7 +167,7 @@ impl Exporter {
             let mut tasks = tasks.lock().unwrap();
             tasks.insert(task_id, ExportTaskStatus::Completed);
             modal_manager.with_lock_mut(|modal_manager| {
-                modal_manager.dismiss(modal_id);
+                modal_manager.dismiss(progress_modal_id);
             });
             ctx.request_repaint();
         });
@@ -174,11 +192,11 @@ impl Exporter {
         let mut surface = raster_n32_premul((size.x as i32, size.y as i32))
             .ok_or(ExportError::SurfaceCreationError)?;
 
-        let RasterizeOptions {
-            pixels_per_point,
-            frames_before_screenshot,
-        } = default::Default::default();
-        let mut backend = EguiSkia::new(pixels_per_point);
+        let rasterize_options = RasterizeOptions {
+            pixels_per_point: 1.0,
+            frames_before_screenshot: 500,
+        };
+        let mut backend = EguiSkia::new(rasterize_options.pixels_per_point);
         egui_extras::install_image_loaders(&backend.egui_ctx);
 
         backend.egui_ctx.input_mut(|input| {
@@ -245,7 +263,7 @@ impl Exporter {
         };
 
         let mut _output_surface: Option<_> = None;
-        for _ in 0..frames_before_screenshot {
+        for _ in 0..rasterize_options.frames_before_screenshot {
             _output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
@@ -278,7 +296,8 @@ impl Exporter {
     ) -> Result<(), ExportError> {
         let directory = PathBuf::from(directory);
 
-        let pdf = PdfDocument::empty(file_name);
+        let mut doc = PdfDocument::new(file_name);
+        let mut pdf_pages = Vec::new();
 
         for page_number in 0..pages.len() {
             let image_path = directory.join(format!("page_{}.jpg", page_number));
@@ -286,38 +305,49 @@ impl Exporter {
             let page_size = pages[page_number].page.size_mm();
             let (mm_width, mm_height) = (Mm(page_size.x), Mm(page_size.y));
 
-            let (page_idx, layer_idx) = pdf.add_page(mm_width, mm_height, "Layer 1");
+            // Load and decode the JPEG image
+            let image_bytes =
+                std::fs::read(&image_path).map_err(|e| ExportError::FileError(e.to_string()))?;
+            let mut warnings = Vec::new();
+            let image = RawImage::decode_from_bytes(&image_bytes, &mut warnings).map_err(|e| {
+                ExportError::PdfRenderingError(format!("Error loading image: {:?}", e))
+            })?;
 
-            let current_layer = pdf.get_page(page_idx).get_layer(layer_idx);
+            // Add image to document and get XObject ID
+            let image_xobject_id = doc.add_image(&image);
 
-            use printpdf::image as printpdf_image;
-            use printpdf::image_crate::codecs::jpeg::JpegDecoder;
+            // Calculate transform based on DPI
+            let dpi = pages[page_number].page.ppi() as f32;
+            let transform = XObjectTransform {
+                dpi: Some(dpi),
+                ..Default::default()
+            };
 
-            let image_file =
-                File::open(image_path).map_err(|e| ExportError::FileError(e.to_string()))?;
-            let image = printpdf_image::Image::try_from(JpegDecoder::new(image_file).unwrap())
-                .map_err(|e| {
-                    ExportError::PdfRenderingError(format!("Error loading image: {:?}", e))
-                })?;
+            // Create page operations
+            let page_contents = vec![Op::UseXobject {
+                id: image_xobject_id,
+                transform,
+            }];
 
-            image.add_to_layer(
-                current_layer.clone(),
-                ImageTransform {
-                    dpi: Some(pages[page_number].page.ppi() as f32),
-                    ..Default::default()
-                },
-            );
+            // Create the page
+            let page = PdfPage::new(mm_width, mm_height, page_contents);
+            pdf_pages.push(page);
         }
+
+        // Add all pages to document and save
+        let mut warnings = Vec::new();
+        let pdf_bytes = doc
+            .with_pages(pdf_pages)
+            .save(&PdfSaveOptions::default(), &mut warnings);
 
         let mut pdf_path = directory.join(file_name);
         pdf_path.set_extension("pdf");
 
-        let output_pdf =
+        let mut output_pdf =
             File::create(pdf_path).map_err(|e| ExportError::FileError(e.to_string()))?;
 
-        pdf.save(&mut BufWriter::new(output_pdf))
-            .map_err(|e| ExportError::PdfRenderingError(e.to_string()))?;
-
-        Ok(())
+        output_pdf
+            .write_all(&pdf_bytes)
+            .map_err(|e| ExportError::FileError(e.to_string()))
     }
 }

@@ -76,6 +76,7 @@ pub struct PhotoDatabase {
     photo_tags: HashMap<PathBuf, HashSet<String>>,
     query_cache: HashMap<PhotoQuery, PhotoQueryResult>,
     pub file_collection: FileTreeCollection,
+    is_sorted: bool,
 }
 
 impl PhotoDatabase {
@@ -87,6 +88,7 @@ impl PhotoDatabase {
             photo_tags: HashMap::new(),
             query_cache: HashMap::new(),
             file_collection: FileTreeCollection::new(),
+            is_sorted: true,
         }
     }
 
@@ -98,6 +100,7 @@ impl PhotoDatabase {
         self.photo_tags.insert(path.clone(), HashSet::new());
         self.file_collection.insert(&path);
         self.photos.push(photo);
+        self.is_sorted = false;
         self.invalidate_query_cache();
     }
 
@@ -113,11 +116,13 @@ impl PhotoDatabase {
             .map(|index| &mut self.photos[*index])
     }
 
-    pub fn get_photo_by_index(&self, index: usize) -> Option<&Photo> {
+    pub fn get_photo_by_index(&mut self, index: usize) -> Option<&Photo> {
+        self.ensure_sorted();
         self.photos.get(index)
     }
 
     pub fn get_photo_by_index_mut(&mut self, index: usize) -> Option<&mut Photo> {
+        self.ensure_sorted();
         self.photos.get_mut(index)
     }
 
@@ -140,6 +145,7 @@ impl PhotoDatabase {
         self.photo_ratings.remove(path);
         self.photo_tags.remove(path);
         self.file_collection.remove(path);
+        self.is_sorted = false;
         self.invalidate_query_cache();
     }
 
@@ -148,6 +154,8 @@ impl PhotoDatabase {
     }
 
     pub fn query_photos(&mut self, query: &PhotoQuery) -> PhotoQueryResult {
+        self.ensure_sorted();
+
         if let Some(cached) = self.query_cache.get(query) {
             return cached.clone();
         }
@@ -346,8 +354,59 @@ impl PhotoDatabase {
     }
 
     /// Get the index of a photo by its path
-    pub fn get_photo_index(&self, path: &PathBuf) -> Option<usize> {
+    pub fn get_photo_index(&mut self, path: &PathBuf) -> Option<usize> {
+        self.ensure_sorted();
         self.path_map.get_right(path).copied()
+    }
+
+    /// Get the next photo in a filtered query result
+    pub fn next_photo_in_query(
+        &mut self,
+        current_path: &PathBuf,
+        query: &PhotoQuery,
+    ) -> Option<Photo> {
+        let result = self.query_photos(query);
+
+        let mut iter = result.clone().into_iter().peekable();
+        while let Some(item) = iter.next() {
+            if &item.1 .0 == current_path {
+                if let Some((_, (_, next_photo))) = iter.peek() {
+                    return Some(next_photo.clone());
+                } else {
+                    return result
+                        .into_iter()
+                        .nth(0)
+                        .map(|(_, (_, next_photo))| next_photo.clone());
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Get the previous photo in a filtered query result
+    pub fn previous_photo_in_query(
+        &mut self,
+        current_path: &PathBuf,
+        query: &PhotoQuery,
+    ) -> Option<Photo> {
+        let result = self.query_photos(query);
+
+        let mut iter = result.clone().into_iter().rev().peekable();
+        while let Some(item) = iter.next() {
+            if &item.1 .0 == current_path {
+                if let Some((_, (_, next_photo))) = iter.peek() {
+                    return Some(next_photo.clone());
+                } else {
+                    let count = result.into_iter().count();
+                    return iter
+                        .nth(count - 1)
+                        .map(|(_, (_, next_photo))| next_photo.clone());
+                }
+            }
+        }
+
+        None
     }
 
     /// Get all photo paths
@@ -358,6 +417,13 @@ impl PhotoDatabase {
     /// Get flattened file trees (for UI display)
     pub fn get_flattened_file_trees(&mut self) -> Arc<Vec<crate::file_tree::FlattenedTreeItem>> {
         self.file_collection.flattened_file_trees()
+    }
+
+    /// Ensure photos are sorted (internal use)
+    fn ensure_sorted(&mut self) {
+        if !self.is_sorted {
+            self.sort_photos(PhotoSortCriteria::Date);
+        }
     }
 
     /// Sort photos by a given criteria (modifies internal order)
@@ -395,6 +461,7 @@ impl PhotoDatabase {
 
         self.photos = new_photos;
         self.path_map = new_path_map;
+        self.is_sorted = true;
         self.invalidate_query_cache();
     }
 }
@@ -414,6 +481,81 @@ pub struct PhotoQuery {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhotoQueryResult {
     Grouped(IndexMap<String, IndexMap<PathBuf, Photo>>),
+}
+
+pub struct PhotoQueryResultIterator {
+    groups: Vec<(String, Vec<(PathBuf, Photo)>)>,
+    current_group_index: usize,
+    current_photo_index: usize,
+}
+
+impl DoubleEndedIterator for PhotoQueryResultIterator {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.current_group_index >= self.groups.len() {
+            return None;
+        }
+
+        let (group_name, photos) = &self.groups[self.current_group_index];
+
+        if self.current_photo_index >= photos.len() {
+            self.current_group_index += 1;
+            self.current_photo_index = 0;
+            return self.next_back();
+        }
+
+        let photo = photos[self.current_photo_index].clone();
+        self.current_photo_index += 1;
+
+        Some((group_name.clone(), photo))
+    }
+}
+
+impl Iterator for PhotoQueryResultIterator {
+    type Item = (String, (PathBuf, Photo));
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_group_index >= self.groups.len() {
+            return None;
+        }
+
+        let (group_name, photos) = &self.groups[self.current_group_index];
+
+        if self.current_photo_index >= photos.len() {
+            self.current_group_index += 1;
+            self.current_photo_index = 0;
+            return self.next();
+        }
+
+        let photo = photos[self.current_photo_index].clone();
+        self.current_photo_index += 1;
+
+        Some((group_name.clone(), photo))
+    }
+}
+
+impl IntoIterator for PhotoQueryResult {
+    type Item = (String, (PathBuf, Photo));
+    type IntoIter = PhotoQueryResultIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        match self {
+            PhotoQueryResult::Grouped(groups) => {
+                let groups_vec: Vec<(String, Vec<(PathBuf, Photo)>)> = groups
+                    .into_iter()
+                    .map(|(group_name, photos)| {
+                        let photos_vec: Vec<(PathBuf, Photo)> = photos.into_iter().collect();
+                        (group_name, photos_vec)
+                    })
+                    .collect();
+
+                PhotoQueryResultIterator {
+                    groups: groups_vec,
+                    current_group_index: 0,
+                    current_photo_index: 0,
+                }
+            }
+        }
+    }
 }
 
 impl Default for PhotoQuery {
@@ -519,45 +661,45 @@ mod tests {
     #[test]
     fn test_remove_photo_with_index_handling() {
         let mut db = PhotoDatabase::new();
-        
+
         // Add multiple photos
         let photo1 = create_test_photo("/test/photo1.jpg", None);
         let photo2 = create_test_photo("/test/photo2.jpg", None);
         let photo3 = create_test_photo("/test/photo3.jpg", None);
-        
+
         let path1 = photo1.path.clone();
         let path2 = photo2.path.clone();
         let path3 = photo3.path.clone();
-        
+
         db.add_photo(photo1);
         db.add_photo(photo2);
         db.add_photo(photo3);
-        
+
         assert_eq!(db.photos.len(), 3);
-        
+
         // Remove the middle photo (this triggers the index update logic)
         db.remove_photo(&path2);
-        
+
         assert_eq!(db.photos.len(), 2);
         assert!(db.get_photo(&path1).is_some());
         assert!(db.get_photo(&path2).is_none());
         assert!(db.get_photo(&path3).is_some());
-        
+
         // Verify that we can still access the remaining photos by index
         assert!(db.get_photo_by_index(0).is_some());
         assert!(db.get_photo_by_index(1).is_some());
         assert!(db.get_photo_by_index(2).is_none());
-        
+
         // Remove the first photo
         db.remove_photo(&path1);
-        
+
         assert_eq!(db.photos.len(), 1);
         assert!(db.get_photo(&path1).is_none());
         assert!(db.get_photo(&path3).is_some());
-        
+
         // Remove the last photo
         db.remove_photo(&path3);
-        
+
         assert_eq!(db.photos.len(), 0);
         assert!(db.get_photo(&path3).is_none());
     }

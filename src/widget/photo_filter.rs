@@ -112,100 +112,152 @@ impl<'a> PhotoFilter<'a> {
 
         let response = ui
             .allocate_ui(ui.available_size(), |ui| {
+                ui.style_mut().spacing.item_spacing = egui::vec2(8.0, 10.0);
+
                 ui.vertical(|ui| {
                     // Rating filter section
-                    ui.group(|ui| {
-                        ui.vertical(|ui| {
-                            ui.strong("Rating Filter");
-                            ui.add_space(8.0);
+                    ui.scope(|ui| {
+                        ui.style_mut().visuals.widgets.noninteractive.bg_fill =
+                            ui.style().visuals.extreme_bg_color;
+                        ui.style_mut().visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
 
-                            ui.horizontal(|ui| {
-                                for rating in PhotoRating::iter() {
-                                    let mut is_enabled =
-                                        self.state.enabled_ratings.contains(&rating);
-                                    let checkbox_response =
-                                        ui.checkbox(&mut is_enabled, format!("{:?}", rating));
+                        egui::Frame::group(ui.style())
+                            .inner_margin(egui::Margin::same(12))
+                            .show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.heading("Rating Filter");
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new("Select which ratings to show")
+                                            .small()
+                                            .color(ui.style().visuals.weak_text_color())
+                                    );
+                                    ui.add_space(8.0);
 
-                                    if checkbox_response.changed() {
-                                        if is_enabled {
-                                            self.state.enabled_ratings.insert(rating);
-                                        } else {
-                                            self.state.enabled_ratings.remove(&rating);
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 12.0;
+                                        for rating in PhotoRating::iter() {
+                                            let mut is_enabled = self.state.enabled_ratings.contains(&rating);
+                                            let checkbox_response = ui.checkbox(&mut is_enabled,
+                                                egui::RichText::new(format!("{:?}", rating)).size(14.0));
+
+                                            if checkbox_response.changed() {
+                                                if is_enabled {
+                                                    self.state.enabled_ratings.insert(rating);
+                                                } else {
+                                                    self.state.enabled_ratings.remove(&rating);
+                                                }
+                                                changed = true;
+                                            }
                                         }
-                                        changed = true;
-                                    }
-                                }
+                                    });
+                                });
                             });
-                        });
                     });
 
-                    ui.add_space(12.0);
+                    ui.add_space(4.0);
 
                     // Tag filter section
-                    ui.group(|ui| {
-                        ui.vertical(|ui| {
-                            ui.strong("Tag Filter");
-                            ui.add_space(8.0);
+                    ui.scope(|ui| {
+                        ui.style_mut().visuals.widgets.noninteractive.bg_fill =
+                            ui.style().visuals.extreme_bg_color;
+                        ui.style_mut().visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
 
-                            let tag_response = TagChips::new(
-                                &mut self.state.selected_tags,
-                                &mut self.state.tag_chips_state,
-                            )
-                            .available_tags(&self.available_tags)
-                            .show_input(false)
-                            .show(ui);
+                        egui::Frame::group(ui.style())
+                            .inner_margin(egui::Margin::same(12))
+                            .show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.heading("Tag Filter");
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        egui::RichText::new("Select tags to filter by (all selected tags must match)")
+                                            .small()
+                                            .color(ui.style().visuals.weak_text_color())
+                                    );
+                                    ui.add_space(8.0);
 
-                            if tag_response.changed() {
-                                changed = true;
-                            }
-                        });
+                                    let tag_response = TagChips::new(
+                                        &mut self.state.selected_tags,
+                                        &mut self.state.tag_chips_state,
+                                    )
+                                    .available_tags(&self.available_tags)
+                                    .show_input(false)
+                                    .show(ui);
+
+                                    if tag_response.changed() {
+                                        changed = true;
+                                    }
+
+                                    if self.available_tags.is_empty() {
+                                        ui.add_space(4.0);
+                                        ui.colored_label(
+                                            ui.style().visuals.warn_fg_color,
+                                            egui::RichText::new("No tags available").italics()
+                                        );
+                                    }
+                                });
+                            });
                     });
 
                     // Grouping section
                     if self.show_grouping {
-                        ui.add_space(12.0);
+                        ui.add_space(4.0);
 
-                        ui.group(|ui| {
-                            ui.vertical(|ui| {
-                                ui.strong("Group By");
-                                ui.add_space(8.0);
+                        ui.scope(|ui| {
+                            ui.style_mut().visuals.widgets.noninteractive.bg_fill =
+                                ui.style().visuals.extreme_bg_color;
+                            ui.style_mut().visuals.widgets.noninteractive.corner_radius = egui::CornerRadius::same(6);
 
-                                let grouping_options = vec![
-                                    (PhotoGrouping::Date, "Date".to_string()),
-                                    (PhotoGrouping::Rating, "Rating".to_string()),
-                                    (PhotoGrouping::Tag, "Tag".to_string()),
-                                ];
+                            egui::Frame::group(ui.style())
+                                .inner_margin(egui::Margin::same(12))
+                                .show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.heading("Group By");
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            egui::RichText::new("Organize photos by")
+                                                .small()
+                                                .color(ui.style().visuals.weak_text_color())
+                                        );
+                                        ui.add_space(8.0);
 
-                                let mut current_grouping = self.state.grouping;
-                                let segment_response =
-                                    SegmentControl::new(&grouping_options, &mut current_grouping)
-                                        .ui(ui);
+                                        let grouping_options = vec![
+                                            (PhotoGrouping::Date, "Date".to_string()),
+                                            (PhotoGrouping::Rating, "Rating".to_string()),
+                                            (PhotoGrouping::Tag, "Tag".to_string()),
+                                        ];
 
-                                if segment_response.changed() {
-                                    self.state.grouping = current_grouping;
-                                    changed = true;
-                                }
-                            });
+                                        let mut current_grouping = self.state.grouping;
+                                        let segment_response =
+                                            SegmentControl::new(&grouping_options, &mut current_grouping)
+                                                .ui(ui);
+
+                                        if segment_response.changed() {
+                                            self.state.grouping = current_grouping;
+                                            changed = true;
+                                        }
+                                    });
+                                });
                         });
                     }
 
-                    ui.add_space(12.0);
+                    ui.add_space(8.0);
 
-                    // Action buttons
+                    // Status indicator
+                    ui.separator();
+                    ui.add_space(8.0);
+
                     ui.horizontal(|ui| {
-                        if ui.button("Reset Filters").clicked() {
-                            self.state.reset();
-                            changed = true;
-                        }
-
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let filter_count = self.count_active_filters();
-                            if filter_count > 0 {
-                                ui.label(format!("{} filter(s) active", filter_count));
-                            } else {
-                                ui.label("No filters active");
-                            }
-                        });
+                        let filter_count = self.count_active_filters();
+                        let status_text = if filter_count > 0 {
+                            egui::RichText::new(format!("✓ {} filter(s) active", filter_count))
+                                .color(ui.style().visuals.selection.bg_fill)
+                                .strong()
+                        } else {
+                            egui::RichText::new("○ No filters active")
+                                .color(ui.style().visuals.weak_text_color())
+                        };
+                        ui.label(status_text);
                     });
                 });
             })

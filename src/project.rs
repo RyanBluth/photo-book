@@ -7,14 +7,14 @@ use thiserror::Error;
 
 use crate::{
     dependencies::{Dependency, SingletonFor},
-    id::{next_page_id, set_min_layer_id, LayerId, PageId},
+    id::{LayerId, PageId, next_page_id, set_min_layer_id},
     model::{
         edit_state::EditablePage, page::Page as AppPage,
         photo_grouping::PhotoGrouping as AppPhotoGrouping, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
     photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
-    photo_manager::PhotoManager,
+    photo_manager::{self, PhotoManager},
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
@@ -61,16 +61,18 @@ pub struct Project {
 }
 
 impl Project {
-    pub fn new(root_scene: &OrganizeEditScene, photo_manager: &PhotoManager) -> Project {
-        let photos = photo_manager
-            .photo_database
-            .get_all_photo_paths()
-            .iter()
-            .map(|path| Photo {
-                path: path.clone(),
-                rating: photo_manager.get_photo_rating(path).into(),
-            })
-            .collect();
+    pub fn new(root_scene: &OrganizeEditScene) -> Project {
+        let photos = Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+            photo_manager
+                .photo_database
+                .get_all_photo_paths()
+                .iter()
+                .map(|path| Photo {
+                    path: path.clone(),
+                    rating: photo_manager.get_photo_rating(path).into(),
+                })
+                .collect()
+        });
 
         let mut app_pages = match &root_scene.edit {
             Some(edit) => edit.read().unwrap().state.pages_state.pages.clone(),
@@ -92,9 +94,13 @@ impl Project {
                                     LayerContent::Photo(CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path.clone(),
-                                            rating: photo_manager
-                                                .get_photo_rating(&canvas_photo.photo.path)
-                                                .into(),
+                                            rating: Dependency::<PhotoManager>::get().with_lock(
+                                                |photo_manager| {
+                                                    photo_manager
+                                                        .get_photo_rating(&canvas_photo.photo.path)
+                                                        .into()
+                                                },
+                                            ),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     })
@@ -154,9 +160,13 @@ impl Project {
                                     photo: photo.map(|canvas_photo| CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path.clone(),
-                                            rating: photo_manager
-                                                .get_photo_rating(&canvas_photo.photo.path)
-                                                .into(),
+                                            rating: Dependency::<PhotoManager>::get().with_lock(
+                                                |photo_manager| {
+                                                    photo_manager
+                                                        .get_photo_rating(&canvas_photo.photo.path)
+                                                        .into()
+                                                },
+                                            ),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     }),
@@ -275,7 +285,8 @@ impl Project {
             })
             .collect();
 
-        let group_by = photo_manager.photo_grouping();
+        let group_by = Dependency::<PhotoManager>::get()
+            .with_lock(|photo_manager| photo_manager.photo_grouping());
 
         let project_settings: AppProjectSettings = Dependency::<ProjectSettingsManager>::get()
             .with_lock(|settings| settings.project_settings.clone());
@@ -290,12 +301,8 @@ impl Project {
         project
     }
 
-    pub fn save(
-        path: &PathBuf,
-        root_scene: &OrganizeEditScene,
-        photo_manager: &PhotoManager,
-    ) -> Result<(), ProjectError> {
-        let project = Project::new(root_scene, photo_manager);
+    pub fn save(path: &PathBuf, root_scene: &OrganizeEditScene) -> Result<(), ProjectError> {
+        let project = Project::new(root_scene);
 
         // Use savefile with compression to serialize the project
         match savefile::save_file_compressed(path, PROJECT_VERSION, &project) {
@@ -329,20 +336,22 @@ impl Into<OrganizeEditScene> for Project {
             settings.project_settings = self.project_settings.into();
         });
 
-        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-            let photos_with_ratings: Vec<(PathBuf, AppPhotoRating)> = self
-                .photos
-                .iter()
-                .map(|photo| (photo.path.clone(), photo.rating.clone().into()))
-                .collect();
+        let photos_with_ratings: Vec<(PathBuf, AppPhotoRating)> = self
+            .photos
+            .iter()
+            .map(|photo| (photo.path.clone(), photo.rating.clone().into()))
+            .collect();
 
+        Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
             photo_manager.load_photos(
                 self.photos
                     .into_iter()
                     .map(|photo| (photo.path, None))
                     .collect(),
             );
+        });
 
+        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
             // Set ratings from project file into PhotoDatabase
             for (path, rating) in photos_with_ratings {
                 photo_manager.set_photo_rating(&path, rating);

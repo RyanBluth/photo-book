@@ -11,10 +11,10 @@ use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     export::Exporter,
     modal::{
+        ModalActionResponse,
         basic::BasicModal,
         manager::{ModalManager, TypedModalId},
         page_settings::PageSettingsModal,
-        ModalActionResponse,
     },
     model::photo_grouping::PhotoGrouping,
     photo_manager::PhotoManager,
@@ -25,10 +25,10 @@ use crate::{
 };
 
 use super::{
-    canvas_scene::{CanvasScene},
-    organize_scene::GalleryScene,
     Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
+    canvas_scene::CanvasScene,
+    organize_scene::GalleryScene,
 };
 
 #[derive(Debug, Clone)]
@@ -191,9 +191,10 @@ impl Scene for OrganizeEditScene {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Open").clicked() {
-                        let open_path = native_dialog::FileDialog::new()
+                        let open_path = native_dialog::DialogBuilder::file()
                             .add_filter("Photobook Project", &["rpb"])
-                            .show_open_single_file();
+                            .open_single_file()
+                            .show();
 
                         match open_path {
                             Ok(Some(open_path)) => match Project::load(&open_path) {
@@ -276,39 +277,34 @@ impl Scene for OrganizeEditScene {
 
                     if ui.button("Save").clicked() {
                         let save_path: Result<Option<std::path::PathBuf>, native_dialog::Error> =
-                            native_dialog::FileDialog::new()
+                            native_dialog::DialogBuilder::file()
                                 .add_filter("Photobook Project", &["rpb"])
-                                .show_save_single_file();
+                                .save_single_file()
+                                .show();
 
                         match save_path {
                             Ok(Some(save_path)) => {
-                                let photo_manager: Singleton<PhotoManager> = Dependency::get();
+                                if let Err(err) = Project::save(&save_path, self) {
+                                    error!("Error saving project: {:?}", err);
+                                } else {
+                                    Dependency::<AutoPersisting<Config>>::get().with_lock_mut(
+                                        |config| {
+                                            let _ = config.modify(
+                                                ConfigModification::AddRecentProject(
+                                                    save_path.clone(),
+                                                ),
+                                            );
+                                            let _ =
+                                                config.modify(ConfigModification::SetLastProject(
+                                                    save_path.clone(),
+                                                ));
+                                        },
+                                    );
 
-                                photo_manager.with_lock(|photo_manager| {
-                                    if let Err(err) = Project::save(&save_path, self, photo_manager)
-                                    {
-                                        error!("Error saving project: {:?}", err);
-                                    } else {
-                                        Dependency::<AutoPersisting<Config>>::get().with_lock_mut(
-                                            |config| {
-                                                let _ = config.modify(
-                                                    ConfigModification::AddRecentProject(
-                                                        save_path.clone(),
-                                                    ),
-                                                );
-                                                let _ = config.modify(
-                                                    ConfigModification::SetLastProject(
-                                                        save_path.clone(),
-                                                    ),
-                                                );
-                                            },
-                                        );
-
-                                        Dependency::<Session>::get().with_lock_mut(|session| {
-                                            session.active_project = Some(save_path);
-                                        });
-                                    }
-                                });
+                                    Dependency::<Session>::get().with_lock_mut(|session| {
+                                        session.active_project = Some(save_path);
+                                    });
+                                }
                             }
                             Err(e) => {
                                 error!("Error opening save file dialog: {:?}", e);
@@ -320,9 +316,10 @@ impl Scene for OrganizeEditScene {
                     }
 
                     if ui.button("Import").clicked() {
-                        let import_dir = native_dialog::FileDialog::new()
+                        let import_dir = native_dialog::DialogBuilder::file()
                             .add_filter("Images", &["png", "jpg", "jpeg"])
-                            .show_open_single_dir();
+                            .open_single_dir()
+                            .show();
 
                         match import_dir {
                             Ok(Some(import_dir)) => {
@@ -339,9 +336,10 @@ impl Scene for OrganizeEditScene {
                     }
 
                     if ui.button("Export").clicked() {
-                        let export_path = native_dialog::FileDialog::new()
+                        let export_path = native_dialog::DialogBuilder::file()
                             .set_filename("export.pdf")
-                            .show_save_single_file();
+                            .save_single_file()
+                            .show();
 
                         match export_path {
                             Ok(Some(export_path)) => {
@@ -411,11 +409,7 @@ impl Scene for OrganizeEditScene {
                 ui.menu_button("Debug", |ui| {
                     Dependency::<DebugSettings>::get().with_lock_mut(|debug_settings| {
                         fn enabled_disabled_suffix(enabled: bool) -> &'static str {
-                            if enabled {
-                                "(Enabled)"
-                            } else {
-                                "(Disabled)"
-                            }
+                            if enabled { "(Enabled)" } else { "(Disabled)" }
                         }
 
                         if ui

@@ -7,18 +7,16 @@ use autosave_manager::AutoSaveManager;
 use config::Config;
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, Singleton, SingletonFor};
-use eframe::{
-    egui::{self, ViewportBuilder},
-};
+use eframe::egui::{self, ViewportBuilder};
 
 use font_manager::FontManager;
 
 use dirs::Dirs;
-use std::sync::atomic::{AtomicU32, Ordering};
 use log::info;
 use modal::manager::ModalManager;
 use project::Project;
 use scene::{organize_edit_scene::OrganizeEditScene, SceneManager};
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
@@ -34,12 +32,15 @@ mod dependencies;
 mod dirs;
 mod error_sink;
 mod export;
+mod file_tree;
 mod font_manager;
 mod history;
 mod id;
+mod layout;
 mod modal;
 mod model;
 mod photo;
+mod photo_database;
 mod photo_manager;
 mod project;
 mod project_settings;
@@ -50,9 +51,6 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
-mod layout;
-mod file_tree;
-mod photo_database;
 
 static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 
@@ -73,6 +71,24 @@ async fn main() -> anyhow::Result<()> {
     // Enter the runtime so that `tokio::spawn` is available immediately.
     let _enter = rt.enter();
 
+    // Start deadlock detection thread
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(3));
+        let deadlocks = parking_lot::deadlock::check_deadlock();
+        if !deadlocks.is_empty() {
+            eprintln!("\n{} deadlock(s) detected!", deadlocks.len());
+            for (i, threads) in deadlocks.iter().enumerate() {
+                eprintln!("\nDeadlock #{}", i);
+                for thread in threads {
+                    eprintln!("Thread ID: {:?}", thread.thread_id());
+                    eprintln!("Backtrace:");
+                    eprintln!("{:?}", thread.backtrace());
+                    eprintln!();
+                }
+            }
+        }
+    });
+
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .unwrap()
         .log_to_writer(Box::new(ArcStringLog::new(Arc::clone(&log))))
@@ -86,39 +102,47 @@ async fn main() -> anyhow::Result<()> {
         hardware_acceleration: eframe::HardwareAcceleration::Required,
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
-            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(eframe::egui_wgpu::WgpuSetupCreateNew {
-                power_preference: wgpu::PowerPreference::HighPerformance,
-                device_descriptor: Arc::new(|adapter| {
-                    let base_limits: wgpu::Limits =
-                        if adapter.get_info().backend == wgpu::Backend::Gl {
-                            wgpu::Limits::downlevel_webgl2_defaults()
-                        } else {
-                            wgpu::Limits::default()
-                        };
+            wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(
+                eframe::egui_wgpu::WgpuSetupCreateNew {
+                    power_preference: wgpu::PowerPreference::HighPerformance,
+                    device_descriptor: Arc::new(|adapter| {
+                        let base_limits: wgpu::Limits =
+                            if adapter.get_info().backend == wgpu::Backend::Gl {
+                                wgpu::Limits::downlevel_webgl2_defaults()
+                            } else {
+                                wgpu::Limits::default()
+                            };
 
-                    let adapter_limits = adapter.limits();
-                    let safe_texture_limit = adapter_limits.max_texture_dimension_2d.min(32768);
+                        let adapter_limits = adapter.limits();
+                        let safe_texture_limit = adapter_limits.max_texture_dimension_2d.min(32768);
 
-                    MAX_TEXTURE_SIZE.store(safe_texture_limit, Ordering::Relaxed);
+                        MAX_TEXTURE_SIZE.store(safe_texture_limit, Ordering::Relaxed);
 
-                    info!("GPU adapter: {}", adapter.get_info().name);
-                    info!("GPU backend: {:?}", adapter.get_info().backend);
-                    info!("Max texture dimension (hardware): {}", adapter_limits.max_texture_dimension_2d);
-                    info!("Max texture dimension (application): {}", safe_texture_limit);
+                        info!("GPU adapter: {}", adapter.get_info().name);
+                        info!("GPU backend: {:?}", adapter.get_info().backend);
+                        info!(
+                            "Max texture dimension (hardware): {}",
+                            adapter_limits.max_texture_dimension_2d
+                        );
+                        info!(
+                            "Max texture dimension (application): {}",
+                            safe_texture_limit
+                        );
 
-                    wgpu::DeviceDescriptor {
-                        label: Some("egui wgpu device"),
-                        required_features: wgpu::Features::default(),
-                        required_limits: wgpu::Limits {
-                            max_texture_dimension_2d: safe_texture_limit,
-                            ..base_limits
-                        },
-                        memory_hints: wgpu::MemoryHints::default(),
-                        trace: wgpu::Trace::Off,
-                    }
-                }),
-                ..Default::default()
-            }),
+                        wgpu::DeviceDescriptor {
+                            label: Some("egui wgpu device"),
+                            required_features: wgpu::Features::default(),
+                            required_limits: wgpu::Limits {
+                                max_texture_dimension_2d: safe_texture_limit,
+                                ..base_limits
+                            },
+                            memory_hints: wgpu::MemoryHints::default(),
+                            trace: wgpu::Trace::Off,
+                        }
+                    }),
+                    ..Default::default()
+                },
+            ),
             ..Default::default()
         },
         ..Default::default()
