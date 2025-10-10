@@ -182,7 +182,7 @@ impl<T> Singleton<T> {
                 if let Some(filename) = symbol.filename() {
                     let path_str = filename.to_string_lossy();
                     // Only print frames from our source code
-                    if path_str.contains("/home/ryan/Proj/photobook-rs/src/") {
+                    if path_str.contains("photobook-rs") {
                         let name = symbol
                             .name()
                             .map(|n| n.to_string())
