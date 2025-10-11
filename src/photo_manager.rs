@@ -7,12 +7,12 @@ use std::{
 use glob::MatchOptions;
 
 use chrono::{DateTime, Utc};
-use eframe::egui::{load::SizedTexture, Context};
+use eframe::egui::{Context, load::SizedTexture};
 use egui::emath::OrderedFloat;
 use fxhash::hash64;
 use image::{
-    codecs::{jpeg::JpegEncoder, png::PngEncoder},
     ExtendedColorType,
+    codecs::{jpeg::JpegEncoder, png::PngEncoder},
 };
 use indexmap::IndexMap;
 use log::{error, info};
@@ -24,10 +24,12 @@ use crate::{
     dirs::Dirs,
     model::photo_grouping::PhotoGrouping,
     photo::{Photo, PhotoRating},
-    photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
+    photo_database::{
+        PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoQueryResultIterator, PhotoSortCriteria,
+    },
 };
 
-use anyhow::{anyhow, Ok};
+use anyhow::{Ok, anyhow};
 use fr::CpuExtensions;
 use image::ImageEncoder;
 
@@ -70,6 +72,7 @@ pub struct PhotoManager {
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
     thumbnail_existence_cache: HashSet<String>,
+    current_query_result: Option<PhotoQueryResult>,
     pub photo_database: PhotoDatabase,
 }
 
@@ -81,6 +84,7 @@ impl PhotoManager {
             texture_cache: HashMap::new(),
             pending_textures: HashSet::new(),
             thumbnail_existence_cache: HashSet::new(),
+            current_query_result: None,
             photo_database: PhotoDatabase::new(),
         }
     }
@@ -209,9 +213,16 @@ impl PhotoManager {
 
         // Ensure grouping is set
         query.grouping = self.current_grouping;
+        let query_result = self.photo_database.query_photos(&query);
 
-        match self.photo_database.query_photos(&query) {
-            PhotoQueryResult::Grouped(groups) => groups,
+        if let Some(current_query_result) = &self.current_query_result
+            && query_result.id() == current_query_result.id()
+        {
+            current_query_result.groups.clone()
+        } else {
+            let groups = query_result.groups.clone();
+            self.current_query_result = Some(query_result);
+            groups
         }
     }
 
@@ -340,33 +351,10 @@ impl PhotoManager {
         &mut self,
         current_photo: &Photo,
         _ctx: &Context,
-    ) -> anyhow::Result<Option<(Photo, usize)>> {
-        // Use the current filter for navigation
-        let mut query = self.current_filter.clone();
-        query.grouping = self.current_grouping;
-
-        let next_photo = self
-            .photo_database
-            .next_photo_in_query(&current_photo.path, &query);
-
-        match next_photo {
-            Some(next_photo) => {
-                // Clean up texture for current photo
-                if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
-                    // info!("Freeing texture for photo {}", current_photo.uri());
-                    // ctx.forget_image(&current_photo.uri());
-                    // ctx.tex_manager().write().free(texture.id);
-                }
-
-                // Get index for the new photo
-                let next_index = self
-                    .photo_database
-                    .get_photo_index(&next_photo.path)
-                    .unwrap_or(0);
-
-                Ok(Some((next_photo, next_index)))
-            }
-            _ => Ok(None),
+    ) -> anyhow::Result<Option<Photo>> {
+        match &self.current_query_result {
+            Some(query_result) => Ok(query_result.photo_after(current_photo)),
+            None => Ok(None),
         }
     }
 
@@ -374,33 +362,10 @@ impl PhotoManager {
         &mut self,
         current_photo: &Photo,
         _ctx: &Context,
-    ) -> anyhow::Result<Option<(Photo, usize)>> {
-        // Use the current filter for navigation
-        let mut query = self.current_filter.clone();
-        query.grouping = self.current_grouping;
-
-        let previous_photo = self
-            .photo_database
-            .previous_photo_in_query(&current_photo.path, &query);
-
-        match previous_photo {
-            Some(previous_photo) => {
-                // Clean up texture for current photo
-                if let Some(_texture) = self.texture_cache.remove(&current_photo.uri()) {
-                    // info!("Freeing texture for photo {}", current_photo.uri());
-                    // ctx.forget_image(&current_photo.uri());
-                    // ctx.tex_manager().write().free(texture.id);
-                }
-
-                // Get index for the new photo
-                let prev_index = self
-                    .photo_database
-                    .get_photo_index(&previous_photo.path)
-                    .unwrap_or(0);
-
-                Ok(Some((previous_photo, prev_index)))
-            }
-            _ => Ok(None),
+    ) -> anyhow::Result<Option<Photo>> {
+        match &self.current_query_result {
+            Some(query_result) => Ok(query_result.photo_before(current_photo)),
+            None => Ok(None),
         }
     }
 

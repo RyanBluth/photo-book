@@ -5,6 +5,7 @@ use once_cell::sync::Lazy;
 pub type LayerId = usize;
 pub type PageId = usize;
 pub type ModalId = usize;
+pub type QueryResultId = usize;
 
 struct IdGenerator {
     next_id: LayerId,
@@ -16,7 +17,11 @@ static ID_GENERATOR: Lazy<Mutex<IdGenerator>> =
 fn next_id() -> usize {
     let mut id_generator = ID_GENERATOR.lock().unwrap();
     let id = id_generator.next_id;
-    id_generator.next_id += 1;
+    if id == usize::MAX {
+        id_generator.next_id = 0;
+    } else {
+        id_generator.next_id += 1;
+    }
     id
 }
 
@@ -33,6 +38,10 @@ pub fn next_modal_id() -> ModalId {
 }
 
 pub fn next_quick_layout_index() -> usize {
+    next_id()
+}
+
+pub fn next_query_result_id() -> QueryResultId {
     next_id()
 }
 

@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 
 use crate::{
     file_tree::FileTreeCollection,
+    id::next_query_result_id,
     model::photo_grouping::PhotoGrouping,
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
@@ -264,7 +265,7 @@ impl PhotoDatabase {
             }
         }
 
-        let result = PhotoQueryResult::Grouped(grouped_photos);
+        let result = PhotoQueryResult::new(grouped_photos);
         self.query_cache.insert(query.clone(), result.clone());
         result
     }
@@ -359,56 +360,6 @@ impl PhotoDatabase {
         self.path_map.get_right(path).copied()
     }
 
-    /// Get the next photo in a filtered query result
-    pub fn next_photo_in_query(
-        &mut self,
-        current_path: &PathBuf,
-        query: &PhotoQuery,
-    ) -> Option<Photo> {
-        let result = self.query_photos(query);
-
-        let mut iter = result.clone().into_iter().peekable();
-        while let Some(item) = iter.next() {
-            if &item.1 .0 == current_path {
-                if let Some((_, (_, next_photo))) = iter.peek() {
-                    return Some(next_photo.clone());
-                } else {
-                    return result
-                        .into_iter()
-                        .nth(0)
-                        .map(|(_, (_, next_photo))| next_photo.clone());
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Get the previous photo in a filtered query result
-    pub fn previous_photo_in_query(
-        &mut self,
-        current_path: &PathBuf,
-        query: &PhotoQuery,
-    ) -> Option<Photo> {
-        let result = self.query_photos(query);
-
-        let mut iter = result.clone().into_iter().rev().peekable();
-        while let Some(item) = iter.next() {
-            if &item.1 .0 == current_path {
-                if let Some((_, (_, next_photo))) = iter.peek() {
-                    return Some(next_photo.clone());
-                } else {
-                    let count = result.into_iter().count();
-                    return iter
-                        .nth(count - 1)
-                        .map(|(_, (_, next_photo))| next_photo.clone());
-                }
-            }
-        }
-
-        None
-    }
-
     /// Get all photo paths
     pub fn get_all_photo_paths(&self) -> Vec<PathBuf> {
         self.path_map.backward.keys().cloned().collect()
@@ -479,81 +430,115 @@ pub struct PhotoQuery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PhotoQueryResult {
-    Grouped(IndexMap<String, IndexMap<PathBuf, Photo>>),
+pub struct PhotoQueryResult {
+    pub groups: IndexMap<String, IndexMap<PathBuf, Photo>>,
+    id: usize,
+    path_to_index_map: HashMap<String, (usize, usize)>,
 }
 
-pub struct PhotoQueryResultIterator {
-    groups: Vec<(String, Vec<(PathBuf, Photo)>)>,
-    current_group_index: usize,
-    current_photo_index: usize,
-}
+impl PhotoQueryResult {
+    pub fn new(groups: IndexMap<String, IndexMap<PathBuf, Photo>>) -> Self {
+        let mut path_to_index_map = HashMap::new();
 
-impl DoubleEndedIterator for PhotoQueryResultIterator {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        if self.current_group_index >= self.groups.len() {
-            return None;
+        for group_idx in 0..groups.len() {
+            if let Some((_group_name, photos)) = groups.get_index(group_idx) {
+                for photo_idx in 0..photos.len() {
+                    if let Some((_path, photo)) = photos.get_index(photo_idx) {
+                        path_to_index_map.insert(
+                            photo.string_path(),
+                            (group_idx, photo_idx),
+                        );
+                    }
+                }
+            }
         }
 
-        let (group_name, photos) = &self.groups[self.current_group_index];
+        Self {
+            groups,
+            id: next_query_result_id(),
+            path_to_index_map,
+        }
+    }
 
-        if self.current_photo_index >= photos.len() {
-            self.current_group_index += 1;
-            self.current_photo_index = 0;
-            return self.next_back();
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn photo_after(&self, photo: &Photo) -> Option<Photo> {
+        let (group_idx, photo_idx) = self.path_to_index_map.get(&photo.string_path())?;
+        let (_group_name, photos) = self.groups.get_index(*group_idx)?;
+
+        if photo_idx + 1 < photos.len() {
+            let (_group, next_photo) = photos.get_index(photo_idx + 1)?;
+            return Some(next_photo.clone());
         }
 
-        let photo = photos[self.current_photo_index].clone();
-        self.current_photo_index += 1;
+        if group_idx + 1 < self.groups.len() {
+            let (_, next_photos) = self.groups.get_index(group_idx + 1)?;
+            let (_group, next_photo) = next_photos.get_index(0)?;
+            return Some(next_photo.clone());
+        }
 
-        Some((group_name.clone(), photo))
+        return None;
+    }
+
+    pub fn photo_before(&self, photo: &Photo) -> Option<Photo> {
+        let (group_idx, photo_idx) = self.path_to_index_map.get(&photo.string_path())?;
+        let (_group_name, photos) = self.groups.get_index(*group_idx)?;
+
+        if *photo_idx > 0 {
+            let (_group, prev_photo) = photos.get_index(photo_idx - 1)?;
+            return Some(prev_photo.clone());
+        }
+
+        if *group_idx > 0 {
+            let (_, prev_photos) = self.groups.get_index(group_idx - 1)?;
+            let (_group, prev_photo) = prev_photos.get_index(prev_photos.len() - 1)?;
+            return Some(prev_photo.clone());
+        }
+
+        return None;
+    }
+
+    fn group_for_photo(&self, photo: &Photo) -> Option<String> {
+        let (group_idx, _) = self.path_to_index_map.get(&photo.string_path())?;
+        self.groups.get_index(*group_idx).map(|(name, _)| name.clone())
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PhotoQueryResultIterator {
+    pub query_result: PhotoQueryResult,
+    current_photo: Option<Photo>,
+}
+
 impl Iterator for PhotoQueryResultIterator {
-    type Item = (String, (PathBuf, Photo));
+    type Item = (String, Photo);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_group_index >= self.groups.len() {
-            return None;
-        }
+        let current = self.current_photo.clone()?;
+        let group = self.query_result.group_for_photo(&current)?;
 
-        let (group_name, photos) = &self.groups[self.current_group_index];
+        self.current_photo = self.query_result.photo_after(&current);
 
-        if self.current_photo_index >= photos.len() {
-            self.current_group_index += 1;
-            self.current_photo_index = 0;
-            return self.next();
-        }
-
-        let photo = photos[self.current_photo_index].clone();
-        self.current_photo_index += 1;
-
-        Some((group_name.clone(), photo))
+        Some((group, current))
     }
 }
 
 impl IntoIterator for PhotoQueryResult {
-    type Item = (String, (PathBuf, Photo));
+    type Item = (String, Photo);
     type IntoIter = PhotoQueryResultIterator;
 
     fn into_iter(self) -> Self::IntoIter {
-        match self {
-            PhotoQueryResult::Grouped(groups) => {
-                let groups_vec: Vec<(String, Vec<(PathBuf, Photo)>)> = groups
-                    .into_iter()
-                    .map(|(group_name, photos)| {
-                        let photos_vec: Vec<(PathBuf, Photo)> = photos.into_iter().collect();
-                        (group_name, photos_vec)
-                    })
-                    .collect();
+        let current_photo = self.groups
+            .iter()
+            .find_map(|(_, photos)| {
+                photos.first().map(|(_, photo)| photo.clone())
+            });
 
-                PhotoQueryResultIterator {
-                    groups: groups_vec,
-                    current_group_index: 0,
-                    current_photo_index: 0,
-                }
-            }
+        PhotoQueryResultIterator {
+            query_result: self,
+            current_photo,
         }
     }
 }
@@ -833,21 +818,16 @@ mod tests {
 
         let result = db.query_photos(&query);
 
-        match result {
-            PhotoQueryResult::Grouped(groups) => {
-                assert_eq!(groups.len(), 2); // Yes, Maybe (only groups with photos)
+        assert_eq!(result.groups.len(), 2); // Yes, Maybe (only groups with photos)
 
-                let yes_group = groups.get("Yes").unwrap();
-                assert_eq!(yes_group.len(), 2);
-                assert!(yes_group.contains_key(&PathBuf::from("/test/photo1.jpg")));
-                assert!(yes_group.contains_key(&PathBuf::from("/test/photo2.jpg")));
+        let yes_group = result.groups.get("Yes").unwrap();
+        assert_eq!(yes_group.len(), 2);
+        assert!(yes_group.contains_key(&PathBuf::from("/test/photo1.jpg")));
+        assert!(yes_group.contains_key(&PathBuf::from("/test/photo2.jpg")));
 
-                let maybe_group = groups.get("Maybe").unwrap();
-                assert_eq!(maybe_group.len(), 1);
-                assert!(maybe_group.contains_key(&PathBuf::from("/test/photo3.jpg")));
-            }
-            _ => panic!("Expected grouped result"),
-        }
+        let maybe_group = result.groups.get("Maybe").unwrap();
+        assert_eq!(maybe_group.len(), 1);
+        assert!(maybe_group.contains_key(&PathBuf::from("/test/photo3.jpg")));
     }
 
     #[test]
@@ -878,21 +858,16 @@ mod tests {
 
         let result = db.query_photos(&query);
 
-        match result {
-            PhotoQueryResult::Grouped(groups) => {
-                assert!(groups.len() >= 2); // At least 2023-01-01, 2023-01-02, possibly "Unknown Date"
+        assert!(result.groups.len() >= 2); // At least 2023-01-01, 2023-01-02, possibly "Unknown Date"
 
-                let jan1_group = groups.get("2023-01-01").unwrap();
-                assert_eq!(jan1_group.len(), 2);
-                assert!(jan1_group.contains_key(&PathBuf::from("/test/photo1.jpg")));
-                assert!(jan1_group.contains_key(&PathBuf::from("/test/photo2.jpg")));
+        let jan1_group = result.groups.get("2023-01-01").unwrap();
+        assert_eq!(jan1_group.len(), 2);
+        assert!(jan1_group.contains_key(&PathBuf::from("/test/photo1.jpg")));
+        assert!(jan1_group.contains_key(&PathBuf::from("/test/photo2.jpg")));
 
-                let jan2_group = groups.get("2023-01-02").unwrap();
-                assert_eq!(jan2_group.len(), 1);
-                assert!(jan2_group.contains_key(&PathBuf::from("/test/photo3.jpg")));
-            }
-            _ => panic!("Expected grouped result"),
-        }
+        let jan2_group = result.groups.get("2023-01-02").unwrap();
+        assert_eq!(jan2_group.len(), 1);
+        assert!(jan2_group.contains_key(&PathBuf::from("/test/photo3.jpg")));
     }
 
     #[test]
@@ -935,4 +910,215 @@ mod tests {
         db.invalidate_query_cache();
         assert_eq!(db.query_cache.len(), 0);
     }
+
+    #[test]
+    fn test_photo_after_within_group() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt2 = DateTime::parse_from_rfc3339("2023-01-01T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+        let photo2 = create_test_photo("/test/photo2.jpg", Some(dt2));
+
+        db.add_photo(photo1.clone());
+        db.add_photo(photo2.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Photos are sorted newest first, so photo2 (13:00) comes before photo1 (12:00)
+        // Test moving to next photo within the same group (from photo2 to photo1)
+        let next = result.photo_after(&photo2);
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().path, photo1.path);
+    }
+
+    #[test]
+    fn test_photo_after_across_groups() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt2 = DateTime::parse_from_rfc3339("2023-01-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+        let photo2 = create_test_photo("/test/photo2.jpg", Some(dt2));
+
+        db.add_photo(photo1.clone());
+        db.add_photo(photo2.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Test moving to first photo of next group
+        let next = result.photo_after(&photo2);
+        assert!(next.is_some());
+        assert_eq!(next.unwrap().path, photo1.path);
+    }
+
+    #[test]
+    fn test_photo_after_at_end() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+
+        db.add_photo(photo1.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Test that we get None when at the last photo
+        let next = result.photo_after(&photo1);
+        assert!(next.is_none());
+    }
+
+    #[test]
+    fn test_photo_before_within_group() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt2 = DateTime::parse_from_rfc3339("2023-01-01T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+        let photo2 = create_test_photo("/test/photo2.jpg", Some(dt2));
+
+        db.add_photo(photo1.clone());
+        db.add_photo(photo2.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Photos are sorted newest first, so photo2 (13:00) comes before photo1 (12:00)
+        // Test moving to previous photo within the same group (from photo1 to photo2)
+        let prev = result.photo_before(&photo1);
+        assert!(prev.is_some());
+        assert_eq!(prev.unwrap().path, photo2.path);
+    }
+
+    #[test]
+    fn test_photo_before_across_groups() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt2 = DateTime::parse_from_rfc3339("2023-01-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+        let photo2 = create_test_photo("/test/photo2.jpg", Some(dt2));
+
+        db.add_photo(photo1.clone());
+        db.add_photo(photo2.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Test moving to last photo of previous group
+        let prev = result.photo_before(&photo1);
+        assert!(prev.is_some());
+        assert_eq!(prev.unwrap().path, photo2.path);
+    }
+
+    #[test]
+    fn test_photo_before_at_beginning() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+
+        db.add_photo(photo1.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+
+        // Test that we get None when at the first photo
+        let prev = result.photo_before(&photo1);
+        assert!(prev.is_none());
+    }
+
+    #[test]
+    fn test_photo_query_result_iterator_forward() {
+        let mut db = PhotoDatabase::new();
+        let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt2 = DateTime::parse_from_rfc3339("2023-01-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let dt3 = DateTime::parse_from_rfc3339("2023-01-02T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let photo1 = create_test_photo("/test/photo1.jpg", Some(dt1));
+        let photo2 = create_test_photo("/test/photo2.jpg", Some(dt2));
+        let photo3 = create_test_photo("/test/photo3.jpg", Some(dt3));
+
+        db.add_photo(photo1.clone());
+        db.add_photo(photo2.clone());
+        db.add_photo(photo3.clone());
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+        let items: Vec<_> = result.clone().into_iter().collect();
+
+        // We should have 3 items (photos are sorted newest first in query)
+        assert_eq!(items.len(), 3);
+
+        // Check that we iterate through all photos
+        let paths: Vec<PathBuf> = items.iter().map(|(_, photo)| photo.path.clone()).collect();
+        assert!(paths.contains(&PathBuf::from("/test/photo1.jpg")));
+        assert!(paths.contains(&PathBuf::from("/test/photo2.jpg")));
+        assert!(paths.contains(&PathBuf::from("/test/photo3.jpg")));
+    }
+
 }

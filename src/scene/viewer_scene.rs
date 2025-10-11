@@ -109,24 +109,24 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                         }
                         image_viewer::Request::Previous => {
                             photo_manager.with_lock_mut(|photo_manager| {
-                                let (prev_photo, _new_index) = photo_manager
+                                if let Some(prev_photo) = photo_manager
                                     .previous_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()
-                                    .unwrap();
-
-                                self.scene_state.photo = prev_photo;
-                                self.scene_state.viewer_state = ImageViewerState::default();
+                                {
+                                    self.scene_state.photo = prev_photo;
+                                    self.scene_state.viewer_state = ImageViewerState::default();
+                                }
                             });
                         }
                         image_viewer::Request::Next => {
                             photo_manager.with_lock_mut(|photo_manager| {
-                                let (next_photo, _new_index) = photo_manager
+                                if let Some(next_photo) = photo_manager
                                     .next_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()
-                                    .unwrap();
-
-                                self.scene_state.photo = next_photo;
-                                self.scene_state.viewer_state = ImageViewerState::default();
+                                {
+                                    self.scene_state.photo = next_photo;
+                                    self.scene_state.viewer_state = ImageViewerState::default();
+                                }
                             });
                         }
                     }
@@ -134,7 +134,11 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
             }
             ViewerScenePane::PhotoInfo => {
                 ui.set_max_width(600.0);
-                PhotoInfo::new(SaveOnDropPhoto::new(&mut self.scene_state.photo), &mut self.scene_state.photo_info_state).show(ui);
+                PhotoInfo::new(
+                    SaveOnDropPhoto::new(&mut self.scene_state.photo),
+                    &mut self.scene_state.photo_info_state,
+                )
+                .show(ui);
             }
         }
 
