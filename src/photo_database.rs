@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     hash::Hash,
     path::PathBuf,
@@ -191,17 +192,7 @@ impl PhotoDatabase {
 
         // Sort by date
         let mut sorted_result = result.into_iter().collect::<Vec<_>>();
-        sorted_result.sort_by(|a, b| {
-            match (
-                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-            ) {
-                (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
-                    b.cmp(a)
-                }
-                _ => b.path.cmp(&a.path),
-            }
-        });
+        sorted_result.sort_by(Self::compare_photos);
 
         let mut grouped_photos: IndexMap<String, IndexMap<PathBuf, Photo>> = IndexMap::new();
         for photo in &sorted_result {
@@ -379,17 +370,7 @@ impl PhotoDatabase {
 
     /// Sort photos by a given criteria (modifies internal order)
     pub fn sort_photos(&mut self, criteria: PhotoSortCriteria) {
-        let compare = match criteria {
-            PhotoSortCriteria::Date => |a: &Photo, b: &Photo| match (
-                a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-                b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
-            ) {
-                (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
-                    b.cmp(a)
-                }
-                _ => b.path.cmp(&a.path),
-            },
-        };
+        println!("Sorting photos");
         // Create a vector of (index, photo) pairs
         let mut indexed_photos: Vec<(usize, Photo)> = self
             .photos
@@ -399,7 +380,7 @@ impl PhotoDatabase {
             .collect();
 
         // Sort by the photo comparison function
-        indexed_photos.sort_by(|(_, a), (_, b)| compare(a, b));
+        indexed_photos.sort_by(|a, b| Self::compare_photos(&a.1, &b.1));
 
         // Rebuild the photos vector and update the path_map
         let mut new_photos = Vec::new();
@@ -414,6 +395,20 @@ impl PhotoDatabase {
         self.path_map = new_path_map;
         self.is_sorted = true;
         self.invalidate_query_cache();
+    }
+
+    fn compare_photos(a: &Photo, b: &Photo) -> Ordering {
+        match (
+            a.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+            b.metadata.fields.get(PhotoMetadataFieldLabel::DateTime),
+        ) {
+            (Some(PhotoMetadataField::DateTime(a)), Some(PhotoMetadataField::DateTime(b))) => {
+                b.timestamp().cmp(&a.timestamp())
+            }
+            (Some(PhotoMetadataField::DateTime(_)), None) => Ordering::Greater,
+            (None, Some(PhotoMetadataField::DateTime(_))) => Ordering::Less,
+            _ => Ordering::Equal,
+        }
     }
 }
 
@@ -444,10 +439,7 @@ impl PhotoQueryResult {
             if let Some((_group_name, photos)) = groups.get_index(group_idx) {
                 for photo_idx in 0..photos.len() {
                     if let Some((_path, photo)) = photos.get_index(photo_idx) {
-                        path_to_index_map.insert(
-                            photo.string_path(),
-                            (group_idx, photo_idx),
-                        );
+                        path_to_index_map.insert(photo.string_path(), (group_idx, photo_idx));
                     }
                 }
             }
@@ -502,7 +494,9 @@ impl PhotoQueryResult {
 
     fn group_for_photo(&self, photo: &Photo) -> Option<String> {
         let (group_idx, _) = self.path_to_index_map.get(&photo.string_path())?;
-        self.groups.get_index(*group_idx).map(|(name, _)| name.clone())
+        self.groups
+            .get_index(*group_idx)
+            .map(|(name, _)| name.clone())
     }
 }
 
@@ -530,11 +524,10 @@ impl IntoIterator for PhotoQueryResult {
     type IntoIter = PhotoQueryResultIterator;
 
     fn into_iter(self) -> Self::IntoIter {
-        let current_photo = self.groups
+        let current_photo = self
+            .groups
             .iter()
-            .find_map(|(_, photos)| {
-                photos.first().map(|(_, photo)| photo.clone())
-            });
+            .find_map(|(_, photos)| photos.first().map(|(_, photo)| photo.clone()));
 
         PhotoQueryResultIterator {
             query_result: self,
@@ -1120,5 +1113,4 @@ mod tests {
         assert!(paths.contains(&PathBuf::from("/test/photo2.jpg")));
         assert!(paths.contains(&PathBuf::from("/test/photo3.jpg")));
     }
-
 }
