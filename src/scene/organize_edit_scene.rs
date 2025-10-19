@@ -17,10 +17,10 @@ use crate::{
         page_settings::PageSettingsModal,
     },
     model::photo_grouping::PhotoGrouping,
-    photo_manager::PhotoManager,
+    photo_manager::{self, PhotoManager},
     project::Project,
     project_settings::ProjectSettingsManager,
-    session::Session,
+    session::{Session, SessionError},
     utils::{Either, Toggle},
 };
 
@@ -190,33 +190,29 @@ impl Scene for OrganizeEditScene {
 
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    if ui.button("Open").clicked() {
-                        let open_path = native_dialog::DialogBuilder::file()
-                            .add_filter("Photobook Project", &["rpb"])
-                            .open_single_file()
-                            .show();
-
-                        match open_path {
-                            Ok(Some(open_path)) => match Project::load(&open_path) {
+                    if ui.button("New Project").clicked() {
+                        Dependency::<Session>::get().with_lock_mut(|session| {
+                            match session.new_project() {
                                 Ok(scene) => {
-                                    let config: Singleton<AutoPersisting<Config>> =
-                                        Dependency::get();
-                                    config.with_lock_mut(|config| {
-                                        let _ = config.modify(
-                                            ConfigModification::AddRecentProject(open_path.clone()),
-                                        );
-                                        let _ = config.modify(ConfigModification::SetLastProject(
-                                            open_path.clone(),
-                                        ));
-                                    });
-
-                                    Dependency::<Session>::get().with_lock_mut(|session| {
-                                        session.active_project = Some(open_path);
-                                    });
-
                                     *self = scene;
                                     self.show_organize();
                                 }
+                                Err(SessionError::WaitingForUserInput) => {}
+                                Err(e) => {
+                                    error!("Error creating new project: {:?}", e);
+                                }
+                            }
+                        })
+                    }
+
+                    if ui.button("Open").clicked() {
+                        Dependency::<Session>::get().with_lock_mut(|session| {
+                            match session.load_project(None) {
+                                Ok(scene) => {
+                                    *self = scene;
+                                    self.show_organize();
+                                }
+                                Err(SessionError::WaitingForUserInput) => {}
                                 Err(err) => {
                                     error!("Error loading project: {:?}", err);
 
@@ -226,14 +222,8 @@ impl Scene for OrganizeEditScene {
                                         "OK",
                                     ));
                                 }
-                            },
-                            Err(e) => {
-                                error!("Error opening open file dialog: {:?}", e);
                             }
-                            Ok(None) => {
-                                info!("No open path selected");
-                            }
-                        }
+                        })
                     }
 
                     ui.menu_button("Open Recent", |ui| {
@@ -247,19 +237,14 @@ impl Scene for OrganizeEditScene {
                         } else {
                             for recent in &recents {
                                 if ui.button(recent.display().to_string()).clicked() {
-                                    match Project::load(&recent.into()) {
+                                    match Dependency::<Session>::get().with_lock_mut(|session| {
+                                        session.load_project(Some(recent.clone()))
+                                    }) {
                                         Ok(scene) => {
-                                            config.with_lock_mut(|config| {
-                                                let _ = config.modify(
-                                                    ConfigModification::AddRecentProject(
-                                                        recent.into(),
-                                                    ),
-                                                );
-                                            });
-
                                             *self = scene;
                                             self.show_organize();
                                         }
+                                        Err(SessionError::WaitingForUserInput) => {}
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
 
@@ -276,42 +261,10 @@ impl Scene for OrganizeEditScene {
                     });
 
                     if ui.button("Save").clicked() {
-                        let save_path: Result<Option<std::path::PathBuf>, native_dialog::Error> =
-                            native_dialog::DialogBuilder::file()
-                                .add_filter("Photobook Project", &["rpb"])
-                                .save_single_file()
-                                .show();
-
-                        match save_path {
-                            Ok(Some(save_path)) => {
-                                if let Err(err) = Project::save(&save_path, self) {
-                                    error!("Error saving project: {:?}", err);
-                                } else {
-                                    Dependency::<AutoPersisting<Config>>::get().with_lock_mut(
-                                        |config| {
-                                            let _ = config.modify(
-                                                ConfigModification::AddRecentProject(
-                                                    save_path.clone(),
-                                                ),
-                                            );
-                                            let _ =
-                                                config.modify(ConfigModification::SetLastProject(
-                                                    save_path.clone(),
-                                                ));
-                                        },
-                                    );
-
-                                    Dependency::<Session>::get().with_lock_mut(|session| {
-                                        session.active_project = Some(save_path);
-                                    });
-                                }
-                            }
-                            Err(e) => {
-                                error!("Error opening save file dialog: {:?}", e);
-                            }
-                            Ok(None) => {
-                                info!("No save path selected");
-                            }
+                        if let Err(err) = Dependency::<Session>::get()
+                            .with_lock_mut(|session| session.save_project(&self))
+                        {
+                            error!("Error saving project: {:?}", err);
                         }
                     }
 

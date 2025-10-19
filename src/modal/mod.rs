@@ -1,15 +1,18 @@
 use std::any::Any;
 
 pub mod basic;
+pub mod custom;
 pub mod manager;
 pub mod page_settings;
 pub mod photo_filter;
 pub mod progress;
+pub mod save_warning;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ModalActionResponse {
     Cancel,
     Confirm,
+    Close,
     None,
 }
 

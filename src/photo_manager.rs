@@ -41,7 +41,7 @@ use crate::dependencies::SingletonFor;
 
 use crate::utils;
 
-const THUMBNAIL_SIZE: f32 = 256.0;
+const THUMBNAIL_SIZE: f32 = 512.0;
 
 #[derive(Clone, Debug)]
 pub enum PhotoLoadResult {
@@ -91,6 +91,20 @@ impl PhotoManager {
 
     fn photo_exists(&self, path: &PathBuf) -> bool {
         self.photo_database.photo_exists(path)
+    }
+
+    pub fn has_photos(&self) -> bool {
+        self.photo_database.has_photos()
+    }
+
+    pub fn clear(&mut self) {
+        self.current_grouping = PhotoGrouping::default();
+        self.current_filter = PhotoQuery::default();
+        self.texture_cache.clear();
+        self.pending_textures.clear();
+        self.thumbnail_existence_cache.clear();
+        self.current_query_result = None;
+        self.photo_database.clear();
     }
 
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {

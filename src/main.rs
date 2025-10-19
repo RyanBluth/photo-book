@@ -302,6 +302,13 @@ impl eframe::App for PhotoBookApp {
             cursor_manager.end_frame(ctx);
         });
 
+        // Check for pending operations from modals
+        if let Some(new_scene) = Dependency::<session::Session>::get().with_lock_mut(|session| {
+            session.check_modals(&self.scene_manager.root_scene)
+        }) {
+            self.scene_manager.root_scene = new_scene;
+        }
+
         Dependency::<AutoSaveManager>::get().with_lock_mut(|auto_save_manager| {
             let _ = auto_save_manager.auto_save_if_needed(&self.scene_manager.root_scene);
         });

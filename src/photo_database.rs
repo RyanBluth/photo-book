@@ -30,6 +30,11 @@ impl<K: Hash + Eq + Clone, V: Hash + Eq + Clone> BidirectionalHashMap<K, V> {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.forward.clear();
+        self.backward.clear();
+    }
+
     pub fn insert(&mut self, key: K, value: V) {
         self.forward.insert(key.clone(), value.clone());
         self.backward.insert(value.clone(), key.clone());
@@ -92,6 +97,20 @@ impl PhotoDatabase {
             file_collection: FileTreeCollection::new(),
             is_sorted: true,
         }
+    }
+
+    pub fn has_photos(&self) -> bool {
+        !self.photos.is_empty()
+    }
+
+    pub fn clear(&mut self) {
+        self.photos.clear();
+        self.path_map.clear();
+        self.photo_ratings.clear();
+        self.photo_tags.clear();
+        self.query_cache.clear();
+        self.file_collection = FileTreeCollection::new();
+        self.is_sorted = true;
     }
 
     pub fn add_photo(&mut self, photo: Photo) {

@@ -1,10 +1,11 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
 };
 
 use egui::{Color32, Layout, Vec2};
 use indexmap::IndexMap;
+use printpdf::Op;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -13,11 +14,22 @@ use crate::{
 
 use super::{Modal, ModalActionResponse};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TypedModalId<T> {
     id: ModalId,
     _phantom: std::marker::PhantomData<T>,
 }
+
+impl<T> Clone for TypedModalId<T> {
+    fn clone(&self) -> Self {
+        TypedModalId {
+            id: self.id,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<T> Copy for TypedModalId<T> {}
 
 impl<T> Into<ModalId> for TypedModalId<T> {
     fn into(self) -> ModalId {
@@ -86,6 +98,23 @@ impl ModalManager {
 
         f(modal);
         Ok(())
+    }
+
+    pub fn read<T: Modal + 'static, R>(
+        &self,
+        id: &TypedModalId<T>,
+        f: impl FnOnce(&T) -> R,
+    ) -> Result<R, ModalError> {
+        let mutex = self.modals.get(&id.id).ok_or(ModalError::NotFound(id.id))?;
+
+        let mut guard = mutex.lock().map_err(|_| ModalError::LockError)?;
+
+        let modal = guard
+            .as_any_mut()
+            .downcast_mut::<T>()
+            .ok_or(ModalError::TypeMismatch)?;
+
+        Ok(f(modal))
     }
 
     pub fn push<T: Modal + Send + 'static>(modal: T) -> TypedModalId<T> {
