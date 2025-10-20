@@ -1,3 +1,5 @@
+use crate::modal::ModalResponse;
+
 use super::{Modal, ModalActionResponse};
 pub struct BasicModal {
     title: String,
@@ -20,6 +22,8 @@ impl BasicModal {
 }
 
 impl Modal for BasicModal {
+    type Response = ModalActionResponse;
+
     fn title(&self) -> String {
         self.title.clone()
     }
@@ -28,11 +32,11 @@ impl Modal for BasicModal {
         ui.label(&self.message);
     }
 
-    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         if ui.button(&self.dismiss_title).clicked() {
-            return ModalActionResponse::Cancel;
+            return Some(ModalActionResponse::Cancel);
         }
-        ModalActionResponse::None
+        None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

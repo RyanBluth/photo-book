@@ -21,6 +21,7 @@ use thiserror::Error;
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
+use crate::modal::ModalActionResponse;
 use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
@@ -118,7 +119,8 @@ impl Exporter {
                 ModalManager::push(ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0));
 
             let show_export_failure_modal =
-                |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
+                |progress_modal_id: TypedModalId<ProgressModal>,
+                 error: ExportError| {
                     let modal_manager: Singleton<ModalManager> = Dependency::get();
                     _ = modal_manager.with_lock_mut(|modal_manager| {
                         modal_manager.dismiss(progress_modal_id);

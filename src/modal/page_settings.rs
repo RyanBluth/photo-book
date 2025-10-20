@@ -1,5 +1,6 @@
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
+    modal::ModalResponse,
     model::edit_state::EditablePage,
     project_settings::ProjectSettingsManager,
     widget::canvas_info::page_info::{PageInfo, PageInfoState},
@@ -28,6 +29,8 @@ impl PageSettingsModal {
 }
 
 impl Modal for PageSettingsModal {
+    type Response = ModalActionResponse;
+
     fn title(&self) -> String {
         "Page Settings".to_string()
     }
@@ -40,9 +43,9 @@ impl Modal for PageSettingsModal {
         self
     }
 
-    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         if ui.button("Cancel").clicked() {
-            return ModalActionResponse::Cancel;
+            return Some(ModalActionResponse::Cancel);
         }
 
         if ui.button("Save").clicked() {
@@ -51,9 +54,9 @@ impl Modal for PageSettingsModal {
                 project_settings_manager.project_settings.default_page =
                     Some(self.editable_page.value.clone());
             });
-            return ModalActionResponse::Confirm;
+            return Some(ModalActionResponse::Confirm);
         }
 
-        return ModalActionResponse::None;
+        None
     }
 }

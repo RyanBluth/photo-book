@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 
+use egui::modal;
+use log::error;
+
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
     dependencies::{Dependency, Singleton, SingletonFor},
-    id::ModalId,
     modal::{
         ModalActionResponse,
-        custom::CustomModal,
         manager::{ModalManager, TypedModalId},
-        save_warning::{SaveWarningModal, SaveWarningSource},
+        save_warning::{SaveWarningModal, SaveWarningResponse, SaveWarningSource},
     },
     photo_manager::PhotoManager,
     project::{Project, ProjectError},
@@ -58,13 +59,13 @@ impl Session {
     }
 
     pub fn check_modals(&mut self, current_scene: &OrganizeEditScene) -> Option<OrganizeEditScene> {
-        let modal_id = self.save_warning_modal_id.take()?;
+        let modal_id = self.save_warning_modal_id.as_ref()?.clone();
 
         let response = Dependency::<ModalManager>::get()
-            .with_lock(|modal_manager| modal_manager.response_for(modal_id));
+            .with_lock(|modal_manager| modal_manager.response_for(&modal_id));
 
         match response {
-            Some(ModalActionResponse::Confirm) => {
+            Ok(Some(SaveWarningResponse::Save)) => {
                 if let Err(e) = self.save_project(current_scene) {
                     log::error!(
                         "Error saving project before executing pending operation: {:?}",
@@ -82,7 +83,7 @@ impl Session {
 
                 return result;
             }
-            Some(ModalActionResponse::Cancel) => {
+            Ok(Some(SaveWarningResponse::DontSave)) => {
                 let result = self.execute_pending_operation();
 
                 Dependency::<ModalManager>::get().with_lock_mut(|modal_manager| {
@@ -91,15 +92,19 @@ impl Session {
 
                 return result;
             }
-            Some(ModalActionResponse::Close) => {
+            Ok(Some(SaveWarningResponse::Cancel)) => {
                 Dependency::<ModalManager>::get().with_lock_mut(|modal_manager| {
                     modal_manager.dismiss(modal_id);
                 });
                 self.pending_operation = None;
             }
-            _ => {
-                self.save_warning_modal_id = Some(modal_id);
+            Err(err) => {
+                error!(
+                    "Error occurred while handling modal response for save warning dialog: {}",
+                    err
+                );
             }
+            _ => {}
         }
         None
     }

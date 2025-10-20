@@ -1,5 +1,6 @@
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
+    modal::ModalResponse,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     widget::photo_filter::{PhotoFilter, PhotoFilterState},
@@ -75,6 +76,8 @@ impl Default for PhotoFilterModal {
 }
 
 impl Modal for PhotoFilterModal {
+    type Response = ModalActionResponse;
+
     fn title(&self) -> String {
         "Filter Photos".to_string()
     }
@@ -86,15 +89,14 @@ impl Modal for PhotoFilterModal {
             .show(ui);
     }
 
-    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
-        let mut response = ModalActionResponse::None;
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
+        let mut response: Option<Self::Response> = None;
 
         ui.horizontal(|ui| {
             // Left side: Clear All button (only if filters are active)
             if self.filter_state.has_active_filters() {
                 let clear_button = egui::Button::new(
-                    egui::RichText::new("🗑 Clear All")
-                        .color(ui.style().visuals.warn_fg_color)
+                    egui::RichText::new("🗑 Clear All").color(ui.style().visuals.warn_fg_color),
                 );
                 if ui.add(clear_button).clicked() {
                     self.filter_state.reset();
@@ -110,19 +112,18 @@ impl Modal for PhotoFilterModal {
                     "Apply"
                 };
 
-                let apply_button = egui::Button::new(
-                    egui::RichText::new(apply_text).strong()
-                ).fill(ui.style().visuals.selection.bg_fill);
+                let apply_button = egui::Button::new(egui::RichText::new(apply_text).strong())
+                    .fill(ui.style().visuals.selection.bg_fill);
 
                 if ui.add(apply_button).clicked() {
-                    response = ModalActionResponse::Confirm;
+                    response = Some(ModalActionResponse::Confirm);
                 }
 
                 ui.add_space(8.0);
 
                 // Cancel button (secondary action)
                 if ui.button("Cancel").clicked() {
-                    response = ModalActionResponse::Cancel;
+                    response = Some(ModalActionResponse::Cancel);
                 }
             });
         });

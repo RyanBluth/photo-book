@@ -12,9 +12,9 @@ use crate::{
     assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
     modal::{
+        ModalActionResponse,
         manager::{ModalManager, TypedModalId},
         photo_filter::PhotoFilterModal,
-        ModalActionResponse,
     },
     photo::Photo,
     photo_manager::PhotoManager,
@@ -290,7 +290,7 @@ impl<'a> ImageGallery<'a> {
                 let modal_response =
                     modal_manager.with_lock(|modal_manager| modal_manager.response_for(modal_id));
                 match modal_response {
-                    Some(ModalActionResponse::Confirm) => {
+                    Ok(Some(ModalActionResponse::Confirm)) => {
                         // Get the filter query from the modal and apply it
                         if let Ok(()) = modal_manager.with_lock(|modal_manager| {
                             modal_manager.modify(modal_id, |modal: &mut PhotoFilterModal| {
@@ -307,7 +307,7 @@ impl<'a> ImageGallery<'a> {
                         }
                         state.filter_modal_id = None;
                     }
-                    Some(ModalActionResponse::Cancel) => {
+                    Ok(Some(ModalActionResponse::Cancel)) => {
                         // Modal was cancelled, just clear the ID
                         state.filter_modal_id = None;
                     }

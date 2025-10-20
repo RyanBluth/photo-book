@@ -1,3 +1,5 @@
+use crate::modal::ModalResponse;
+
 use super::{Modal, ModalActionResponse};
 
 pub struct ProgressModal {
@@ -25,6 +27,8 @@ impl ProgressModal {
 }
 
 impl Modal for ProgressModal {
+    type Response = ModalActionResponse;
+
     fn title(&self) -> String {
         self.title.clone()
     }
@@ -38,11 +42,11 @@ impl Modal for ProgressModal {
         self
     }
 
-    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         if ui.button(&self.dismiss_title).clicked() {
-            return ModalActionResponse::Cancel;
+            return Some(ModalActionResponse::Cancel);
         }
 
-        ModalActionResponse::None
+        None
     }
 }

@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    any::Any,
+    path::{Path, PathBuf},
+};
 
-use crate::modal::{Modal, ModalActionResponse};
+use crate::modal::{Modal, ModalActionResponse, ModalResponse};
 
 #[derive(Debug, Clone)]
 pub enum SaveWarningSource {
@@ -12,6 +15,23 @@ pub struct SaveWarningModal {
     pub source: SaveWarningSource,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SaveWarningResponse {
+    Save,
+    DontSave,
+    Cancel,
+}
+
+impl ModalResponse for SaveWarningResponse {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn should_close(&self) -> bool {
+        true
+    }
+}
+
 impl SaveWarningModal {
     pub fn new(source: SaveWarningSource) -> Self {
         Self { source }
@@ -19,6 +39,8 @@ impl SaveWarningModal {
 }
 
 impl Modal for SaveWarningModal {
+    type Response = SaveWarningResponse;
+
     fn title(&self) -> String {
         "Unsaved Changes".to_string()
     }
@@ -35,19 +57,19 @@ impl Modal for SaveWarningModal {
         ui.label(message);
     }
 
-    fn actions_ui(&mut self, ui: &mut egui::Ui) -> ModalActionResponse {
+    fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         if ui.button("Save").clicked() {
-            ModalActionResponse::Confirm
+            Some(SaveWarningResponse::Save)
         } else if ui.button("Don't Save").clicked() {
-            ModalActionResponse::Cancel
+            Some(SaveWarningResponse::DontSave)
         } else if ui.button("Cancel").clicked() {
-            ModalActionResponse::Close
+            Some(SaveWarningResponse::Cancel)
         } else {
-            ModalActionResponse::None
+            None
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

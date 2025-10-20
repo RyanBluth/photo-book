@@ -132,7 +132,7 @@ impl OrganizeEditScene {
             let modal_response =
                 modal_manager.with_lock(|modal_manager| modal_manager.response_for(id));
             match modal_response {
-                Some(response) => match response {
+                Ok(Some(response)) => match response {
                     ModalActionResponse::Confirm => {
                         if self.edit.is_none() {
                             self.edit = Some(Arc::new(RwLock::new(CanvasScene::new())));
@@ -141,7 +141,7 @@ impl OrganizeEditScene {
                     }
                     _ => {}
                 },
-                None => {}
+                _ => {}
             }
 
             if !exists {
@@ -216,11 +216,13 @@ impl Scene for OrganizeEditScene {
                                 Err(err) => {
                                     error!("Error loading project: {:?}", err);
 
-                                    ModalManager::push(BasicModal::new(
-                                        "Error",
-                                        format!("Error loading project: {:?}", err),
-                                        "OK",
-                                    ));
+                                    ModalManager::push(
+                                        BasicModal::new(
+                                            "Error",
+                                            format!("Error loading project: {:?}", err),
+                                            "OK",
+                                        ),
+                                    );
                                 }
                             }
                         })
@@ -248,11 +250,13 @@ impl Scene for OrganizeEditScene {
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
 
-                                            ModalManager::push(BasicModal::new(
-                                                "Error",
-                                                format!("Error loading project: {:?}", err),
-                                                "OK",
-                                            ));
+                                            ModalManager::push(
+                                                BasicModal::new(
+                                                    "Error",
+                                                    format!("Error loading project: {:?}", err),
+                                                    "OK",
+                                                ),
+                                            );
                                         }
                                     }
                                 }
@@ -322,11 +326,9 @@ impl Scene for OrganizeEditScene {
                                     }
                                     None => {
                                         // Show alert
-                                        ModalManager::push(BasicModal::new(
-                                            "Error",
-                                            "Nothing to export",
-                                            "OK",
-                                        ));
+                                        ModalManager::push(
+                                            BasicModal::new("Error", "Nothing to export", "OK"),
+                                        );
                                     }
                                 };
                             }
