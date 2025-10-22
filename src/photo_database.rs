@@ -389,31 +389,34 @@ impl PhotoDatabase {
 
     /// Sort photos by a given criteria (modifies internal order)
     pub fn sort_photos(&mut self, criteria: PhotoSortCriteria) {
-        println!("Sorting photos");
-        // Create a vector of (index, photo) pairs
-        let mut indexed_photos: Vec<(usize, Photo)> = self
-            .photos
-            .iter()
-            .enumerate()
-            .map(|(i, photo)| (i, photo.clone()))
-            .collect();
+        match criteria {
+            PhotoSortCriteria::Date => {
+                // Create a vector of (index, photo) pairs
+                let mut indexed_photos: Vec<(usize, Photo)> = self
+                    .photos
+                    .iter()
+                    .enumerate()
+                    .map(|(i, photo)| (i, photo.clone()))
+                    .collect();
 
-        // Sort by the photo comparison function
-        indexed_photos.sort_by(|a, b| Self::compare_photos(&a.1, &b.1));
+                // Sort by the photo comparison function
+                indexed_photos.sort_by(|a, b| Self::compare_photos(&a.1, &b.1));
 
-        // Rebuild the photos vector and update the path_map
-        let mut new_photos = Vec::new();
-        let mut new_path_map = BidirectionalHashMap::new();
+                // Rebuild the photos vector and update the path_map
+                let mut new_photos = Vec::new();
+                let mut new_path_map = BidirectionalHashMap::new();
 
-        for (new_index, (_, photo)) in indexed_photos.into_iter().enumerate() {
-            new_path_map.insert(new_index, photo.path.clone());
-            new_photos.push(photo);
+                for (new_index, (_, photo)) in indexed_photos.into_iter().enumerate() {
+                    new_path_map.insert(new_index, photo.path.clone());
+                    new_photos.push(photo);
+                }
+
+                self.photos = new_photos;
+                self.path_map = new_path_map;
+                self.is_sorted = true;
+                self.invalidate_query_cache();
+            }
         }
-
-        self.photos = new_photos;
-        self.path_map = new_path_map;
-        self.is_sorted = true;
-        self.invalidate_query_cache();
     }
 
     fn compare_photos(a: &Photo, b: &Photo) -> Ordering {
@@ -426,7 +429,7 @@ impl PhotoDatabase {
             }
             (Some(PhotoMetadataField::DateTime(_)), None) => Ordering::Greater,
             (None, Some(PhotoMetadataField::DateTime(_))) => Ordering::Less,
-            _ => Ordering::Equal,
+            _ => a.path.cmp(&b.path),
         }
     }
 }

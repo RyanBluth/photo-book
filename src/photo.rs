@@ -31,12 +31,12 @@ use strum_macros::EnumIter;
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
-        #[derive(Debug, Clone, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
         pub enum PhotoMetadataField {
             $( $name($type), )*
         }
 
-        #[derive(Debug, Clone, Eq, PartialEq, Hash, Copy, Serialize, Deserialize)]
+        #[derive(Debug, Clone, PartialEq, Eq, Hash, Copy, Serialize, Deserialize)]
         pub enum PhotoMetadataFieldLabel {
             $( $name, )*
         }
@@ -130,12 +130,12 @@ impl Display for PhotoRotation {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MetadataCollection {
     fields: HashMap<PhotoMetadataFieldLabel, PhotoMetadataField>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Rational {
     pub num: i32,
     pub denom: i32,
@@ -220,7 +220,7 @@ impl Display for PhotoMetadataFieldLabel {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PhotoMetadata {
     pub fields: MetadataCollection,
 }
@@ -501,7 +501,7 @@ impl Display for PhotoRating {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,
@@ -615,12 +615,6 @@ impl Photo {
     }
 }
 
-impl PartialEq for Photo {
-    fn eq(&self, other: &Self) -> bool {
-        self.path == other.path
-    }
-}
-
 impl Eq for Photo {}
 
 impl Hash for Photo {
@@ -657,7 +651,11 @@ impl<'a> Drop for SaveOnDropPhoto<'a> {
     fn drop(&mut self) {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         photo_manager.with_lock_mut(|photo_manager| {
-            photo_manager.update_photo(self.photo.clone());
+            if let Some(current_photo) = photo_manager.photo_database.get_photo(&self.path) {
+                if current_photo != self.photo {
+                    photo_manager.update_photo(self.clone());
+                }
+            }
         });
     }
 }
