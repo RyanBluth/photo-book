@@ -55,6 +55,7 @@ pub trait RectExt {
     fn translate_top_to(&self, new_top: f32) -> Rect;
     fn translate_bottom_to(&self, new_bottom: f32) -> Rect;
     fn corners(&self) -> [Pos2; 4];
+    fn rotated_corners(&self, angle: f32) -> [Pos2; 4];
     fn center_within(&self, rect: Rect) -> Rect;
     fn fit_and_center_within(&self, rect: Rect) -> Rect;
     fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect;
@@ -243,6 +244,18 @@ impl RectExt for Rect {
             Pos2::new(self.left(), self.bottom()),
             Pos2::new(self.right(), self.bottom()),
         ]
+    }
+
+    fn rotated_corners(&self, angle: f32) -> [Pos2; 4] {
+        let center = self.center();
+        let corners = self.corners();
+        let rot = Rot2::from_angle(angle);
+
+        corners.map(|corner| {
+            let offset = corner - center;
+            let rotated_offset = rot * offset;
+            center + rotated_offset
+        })
     }
 
     fn center_within(&self, rect: Rect) -> Rect {

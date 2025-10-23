@@ -146,9 +146,11 @@ impl<'a> TransformableWidget<'a> {
         let rotated_inner_content_rect =
             pre_rotated_inner_content_rect.rotate_bb_around_center(self.state.rotation);
 
+        // Get the actual rotated corners of the pre-rotated rect
+        // Order: [top_left, top_right, bottom_left, bottom_right]
+        let rotated_corners = pre_rotated_inner_content_rect.rotated_corners(self.state.rotation);
         let mut response = if active {
             if rotatable {
-                // Draw the mode selector above the inner content
                 let mode_selector_response =
                     self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
 
@@ -170,47 +172,35 @@ impl<'a> TransformableWidget<'a> {
         let handles = [
             (
                 TransformHandle::TopLeft,
-                rotated_inner_content_rect.left_top() - Self::HANDLE_SIZE / 2.0,
+                rotated_corners[0] - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::TopRight,
-                rotated_inner_content_rect.right_top() - Self::HANDLE_SIZE / 2.0,
+                rotated_corners[1] - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::BottomLeft,
-                rotated_inner_content_rect.left_bottom() - Self::HANDLE_SIZE / 2.0,
+                rotated_corners[2] - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::BottomRight,
-                rotated_inner_content_rect.right_bottom() - Self::HANDLE_SIZE / 2.0,
+                rotated_corners[3] - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleTop,
-                middle_point(
-                    rotated_inner_content_rect.left_top(),
-                    rotated_inner_content_rect.right_top(),
-                ) - Self::HANDLE_SIZE / 2.0,
+                middle_point(rotated_corners[0], rotated_corners[1]) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleBottom,
-                middle_point(
-                    rotated_inner_content_rect.left_bottom(),
-                    rotated_inner_content_rect.right_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
+                middle_point(rotated_corners[2], rotated_corners[3]) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleLeft,
-                middle_point(
-                    rotated_inner_content_rect.left_top(),
-                    rotated_inner_content_rect.left_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
+                middle_point(rotated_corners[0], rotated_corners[2]) - Self::HANDLE_SIZE / 2.0,
             ),
             (
                 TransformHandle::MiddleRight,
-                middle_point(
-                    rotated_inner_content_rect.right_top(),
-                    rotated_inner_content_rect.right_bottom(),
-                ) - Self::HANDLE_SIZE / 2.0,
+                middle_point(rotated_corners[1], rotated_corners[3]) - Self::HANDLE_SIZE / 2.0,
             ),
         ];
 
@@ -424,25 +414,23 @@ impl<'a> TransformableWidget<'a> {
                         }
                         (TransformHandleMode::Rotate, _, _) => {
                             if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
-                                let from_cursor_to_center =
-                                    cursor_pos - rotated_inner_content_rect.center();
+                                // Use the pre-rotated rect center, which is stable during rotation
+                                let center = pre_rotated_inner_content_rect.center();
 
-                                let from_rotated_handle_to_center =
-                                    Rect::from_min_size(*rotated_handle_pos, Self::HANDLE_SIZE)
-                                        .center()
-                                        - rotated_inner_content_rect.center();
+                                // Calculate current cursor angle relative to center
+                                let from_center_to_cursor = cursor_pos - center;
+                                let current_cursor_angle = f32::atan2(
+                                    from_center_to_cursor.y,
+                                    from_center_to_cursor.x,
+                                );
 
-                                let rotated_signed_angle =
-                                    f32::atan2(from_cursor_to_center.y, from_cursor_to_center.x)
-                                        - f32::atan2(
-                                            from_rotated_handle_to_center.y,
-                                            from_rotated_handle_to_center.x,
-                                        );
+                                // If this is the first frame of rotation, store the offset
+                                // change_in_rotation = initial_rotation - initial_cursor_angle
+                                if self.state.change_in_rotation.is_none() {
+                                    self.state.change_in_rotation = Some(self.state.rotation - current_cursor_angle);
+                                }
 
-                                self.state.rotation += rotated_signed_angle
-                                    - self.state.change_in_rotation.unwrap_or(0.0);
-                                self.state.change_in_rotation = Some(rotated_signed_angle);
-
+                                self.state.rotation = self.state.change_in_rotation.unwrap() + current_cursor_angle;
                                 self.state.active_handle = Some(*handle);
                             }
                         }
@@ -476,7 +464,7 @@ impl<'a> TransformableWidget<'a> {
         let inner_response = add_contents(ui, pre_rotated_inner_content_rect, self.state);
 
         if active {
-            self.draw_bounds_with_handles(ui, &rotated_inner_content_rect, &handles);
+            self.draw_bounds_with_handles(ui, &rotated_corners, &handles);
             self.update_cursor(ui, &rotated_inner_content_rect, &handles);
         }
 
@@ -537,20 +525,21 @@ impl<'a> TransformableWidget<'a> {
     fn draw_bounds_with_handles(
         &self,
         ui: &mut Ui,
-        rotated_content_rect: &Rect,
+        rotated_corners: &[Pos2; 4],
         handles: &[(TransformHandle, Pos2)],
     ) {
-        ui.painter().rect_stroke(
-            *rotated_content_rect,
-            0.0,
-            Stroke::new(2.0, Color32::GRAY),
-            StrokeKind::Outside,
-        );
+        let painter = ui.painter();
+        let stroke = Stroke::new(2.0, Color32::GRAY);
+
+        painter.line_segment([rotated_corners[0], rotated_corners[1]], stroke); // top edge
+        painter.line_segment([rotated_corners[1], rotated_corners[3]], stroke); // right edge
+        painter.line_segment([rotated_corners[3], rotated_corners[2]], stroke); // bottom edge
+        painter.line_segment([rotated_corners[2], rotated_corners[0]], stroke); // left edge
 
         // Draw the resize handles
         for (handle, handle_pos) in handles {
             let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
-            ui.painter().rect(
+            painter.rect(
                 handle_rect,
                 1.0,
                 if Some(handle) == self.state.active_handle.as_ref() {

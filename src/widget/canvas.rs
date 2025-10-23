@@ -1,7 +1,7 @@
 use eframe::{
     egui::{self, Context, CursorIcon, Sense, Ui},
     emath::Rot2,
-    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, Vec2},
+    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, TextShape, Vec2},
 };
 use egui::{Align, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder};
 use indexmap::{indexmap, IndexMap};
@@ -949,7 +949,7 @@ impl<'a> Canvas<'a> {
                         self.state.zoom,
                         active && !is_preview && !is_editing, // Disable transform controls when editing
                         true,
-                        |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
+                        |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
                             if is_editing {
                                 Self::draw_editing_text(
                                     ui,
@@ -972,6 +972,7 @@ impl<'a> Canvas<'a> {
                                     text_content.color,
                                     text_content.horizontal_alignment,
                                     text_content.vertical_alignment,
+                                    transformable_state.rotation,
                                 );
                             }
                         },
@@ -1191,6 +1192,7 @@ impl<'a> Canvas<'a> {
                         text_content.color,
                         text_content.horizontal_alignment,
                         text_content.vertical_alignment,
+                        0.0,
                     );
                 }
 
@@ -1363,37 +1365,65 @@ impl<'a> Canvas<'a> {
                 color: Color32,
                 horizontal_alignment: TextHorizontalAlignment,
                 vertical_alignment: TextVerticalAlignment,
+                rotation: f32,
             ) {
-                let horizontal_alignment = match horizontal_alignment {
+                let horizontal_align = match horizontal_alignment {
                     TextHorizontalAlignment::Left => Align::Min,
                     TextHorizontalAlignment::Center => Align::Center,
                     TextHorizontalAlignment::Right => Align::Max,
                 };
 
-                let vertical_alignment = match vertical_alignment {
+                let vertical_align = match vertical_alignment {
                     TextVerticalAlignment::Top => Align::Min,
                     TextVerticalAlignment::Center => Align::Center,
                     TextVerticalAlignment::Bottom => Align::Max,
                 };
 
-                let layout = Layout {
-                    main_dir: egui::Direction::TopDown,
-                    main_wrap: true,
-                    main_align: vertical_alignment,
-                    main_justify: true,
-                    cross_align: horizontal_alignment,
-                    cross_justify: false,
-                };
+                let anchor = egui::Align2([horizontal_align, vertical_align]);
 
-                ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
-                    ui.style_mut().interaction.selectable_labels = false;
-                    ui.label(
-                        RichText::new(text.as_str())
-                            .color(color)
-                            .family(font_id.family.clone())
-                            .size(font_size),
-                    );
+                // Create the text layout with wrapping
+                let wrap_width = rect.width();
+                let galley = ui.fonts(|f| {
+                    f.layout(
+                        text.clone(),
+                        FontId {
+                            size: font_size,
+                            family: font_id.family.clone(),
+                        },
+                        color,
+                        wrap_width,
+                    )
                 });
+
+                // For rotation, we need to think about the galley (actual text) size vs the rect size
+                // The galley is positioned within the rect according to alignment
+                // Then both the galley position AND the galley itself need to rotate around rect center
+
+                // Calculate where the galley would be positioned within the unrotated rect
+                let galley_size = galley.rect.size();
+
+                // Position the galley within the rect based on alignment
+                let galley_rect_in_parent = anchor.align_size_within_rect(galley_size, rect);
+                let text_pos = galley_rect_in_parent.min;
+
+                // Create text shape and apply rotation
+                let mut text_shape = TextShape::new(text_pos, galley, color);
+
+                if rotation != 0.0 {
+                    // Calculate the center of the bounding rect
+                    let rect_center = rect.center();
+
+                    // Rotate the text position around the rect center
+                    let rot = Rot2::from_angle(rotation);
+                    let offset_from_center = text_pos - rect_center;
+                    let rotated_offset = rot * offset_from_center;
+                    text_shape.pos = rect_center + rotated_offset;
+
+                    // Set the angle for the text itself
+                    text_shape.angle = rotation;
+                }
+
+                ui.painter().add(text_shape);
             }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
