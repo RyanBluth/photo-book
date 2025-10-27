@@ -5,20 +5,20 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{Button, Color32, Image, Layout, Rect, Slider};
+use egui::{Button, Color32, Image, Layout, Rect, Slider, containers::menu::MenuConfig};
 use egui_extras::Column;
+use exif::doc::news;
 
 use crate::{
     assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
-    modal::{
-        ModalActionResponse,
-        manager::{ModalManager, TypedModalId},
-        photo_filter::PhotoFilterModal,
-    },
-    photo::Photo,
+    model::photo_grouping::PhotoGrouping,
+    photo::{Photo, PhotoRating},
+    photo_database::PhotoQuery,
     photo_manager::PhotoManager,
 };
+
+use strum::IntoEnumIterator;
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
@@ -26,8 +26,6 @@ use super::{gallery_image::GalleryImage, spacer::Spacer};
 pub struct ImageGalleryState {
     pub selected_images: HashSet<PathBuf>,
     pub scale: f32,
-    /// Filter modal ID for managing photo filter dialog
-    pub filter_modal_id: Option<TypedModalId<PhotoFilterModal>>,
 }
 
 impl Default for ImageGalleryState {
@@ -35,7 +33,6 @@ impl Default for ImageGalleryState {
         Self {
             selected_images: HashSet::new(),
             scale: 1.0,
-            filter_modal_id: None,
         }
     }
 }
@@ -89,11 +86,15 @@ impl<'a> ImageGallery<'a> {
 
                 let spacing = 10.0;
 
-                let bottom_bar_height = 50.0;
+                let bottom_bar_height = 20.0;
+                let top_bar_height = 50.0;
 
                 let mut table_size = ui.available_size();
                 table_size.y -= bottom_bar_height;
+                table_size.y -= top_bar_height;
                 table_size = table_size.max(Vec2::splat(0.0));
+
+                add_filter_menu(ui);
 
                 ui.allocate_ui(table_size, |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(spacing);
@@ -257,65 +258,6 @@ impl<'a> ImageGallery<'a> {
                     );
                 });
             });
-
-            // Add filter button
-            let mut filter_button_origin = initial_available_rect.right_top();
-            filter_button_origin.x -= 80.0;
-            filter_button_origin.y += 20.0;
-            let filter_button_rect =
-                Rect::from_min_size(filter_button_origin, Vec2::new(50.0, 20.0));
-            let filter_button = Button::new("Filter");
-            let filter_button_response = ui.put(filter_button_rect, filter_button);
-
-            if filter_button_response.clicked() {
-                let photo_manager = Dependency::<PhotoManager>::get();
-                let modal = photo_manager.with_lock(|pm| {
-                    let current_filter = pm.get_current_filter();
-                    // Always use with_query to preserve current state
-                    PhotoFilterModal::with_query(current_filter.clone())
-                });
-                state.filter_modal_id = Some(ModalManager::push(modal));
-            }
-        }
-
-        // Handle filter modal response
-        if let Some(modal_id) = &state.filter_modal_id {
-            let modal_manager: Singleton<ModalManager> = Dependency::get();
-
-            let exists = modal_manager.with_lock(|modal_manager| modal_manager.exists(modal_id));
-
-            if !exists {
-                state.filter_modal_id = None;
-            } else {
-                let modal_response =
-                    modal_manager.with_lock(|modal_manager| modal_manager.response_for(modal_id));
-                match modal_response {
-                    Ok(Some(ModalActionResponse::Confirm)) => {
-                        // Get the filter query from the modal and apply it
-                        if let Ok(()) = modal_manager.with_lock(|modal_manager| {
-                            modal_manager.modify(modal_id, |modal: &mut PhotoFilterModal| {
-                                let query = modal.get_query();
-                                if modal.is_modified() {
-                                    let photo_manager = Dependency::<PhotoManager>::get();
-                                    photo_manager.with_lock_mut(|pm| {
-                                        pm.set_current_filter(query);
-                                    });
-                                }
-                            })
-                        }) {
-                            // Modal will be dismissed by the modal manager
-                        }
-                        state.filter_modal_id = None;
-                    }
-                    Ok(Some(ModalActionResponse::Cancel)) => {
-                        // Modal was cancelled, just clear the ID
-                        state.filter_modal_id = None;
-                    }
-                    _ => {
-                        // Modal is still active, do nothing
-                    }
-                }
-            }
         }
 
         ImageGalleryResponse {
@@ -325,6 +267,124 @@ impl<'a> ImageGallery<'a> {
             selection_cleared,
         }
     }
+}
+
+fn add_filter_menu(ui: &mut egui::Ui) {
+    let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+    let get_current_filter = || photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+
+    egui::MenuBar::new()
+        .config(MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
+        .ui(ui, |ui| {
+            ui.painter()
+                .rect_filled(ui.available_rect_before_wrap(), 0.0, Color32::from_gray(40));
+
+            ui.menu_button("Rating", |ui| {
+                let mut new_filter = get_current_filter();
+
+                for rating in PhotoRating::iter() {
+                    let mut is_enabled = new_filter
+                        .ratings
+                        .as_ref()
+                        .map(|ratings| ratings.contains(&rating))
+                        .unwrap_or(false);
+
+                    if ui
+                        .checkbox(&mut is_enabled, format!("{}", rating))
+                        .changed()
+                    {
+                        let ratings = new_filter.ratings.get_or_insert_with(Vec::new);
+                        if is_enabled {
+                            if !ratings.contains(&rating) {
+                                ratings.push(rating);
+                            }
+                        } else {
+                            ratings.retain(|r| r != &rating);
+                        }
+
+                        if ratings.is_empty() {
+                            new_filter.ratings = None;
+                        }
+                    }
+                }
+
+                if get_current_filter() != new_filter {
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                }
+            });
+
+            ui.menu_button("Tags", |ui| {
+                let mut new_filter = get_current_filter();
+                let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
+
+                if available_tags.is_empty() {
+                    ui.label("No Tags");
+                } else {
+                    for tag in available_tags {
+                        let mut is_enabled = new_filter
+                            .tags
+                            .as_ref()
+                            .map(|tags| tags.contains(&tag))
+                            .unwrap_or(false);
+
+                        if ui.checkbox(&mut is_enabled, &tag).changed() {
+                            let tags = new_filter.tags.get_or_insert_with(Vec::new);
+                            if is_enabled {
+                                if !tags.contains(&tag) {
+                                    tags.push(tag.clone());
+                                }
+                            } else {
+                                tags.retain(|t| t != &tag);
+                            }
+
+                            if tags.is_empty() {
+                                new_filter.tags = None;
+                            }
+                        }
+                    }
+                }
+
+                if get_current_filter() != new_filter {
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                }
+            });
+
+            ui.menu_button("Grouping", |ui| {
+                let new_grouping = photo_manager.with_lock(|pm| pm.get_current_filter().grouping);
+
+                if ui
+                    .radio(new_grouping == PhotoGrouping::Date, "Date")
+                    .clicked()
+                {
+                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    filter.grouping = PhotoGrouping::Date;
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                }
+
+                if ui
+                    .radio(new_grouping == PhotoGrouping::Rating, "Rating")
+                    .clicked()
+                {
+                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    filter.grouping = PhotoGrouping::Rating;
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                }
+
+                if ui
+                    .radio(new_grouping == PhotoGrouping::Tag, "Tag")
+                    .clicked()
+                {
+                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    filter.grouping = PhotoGrouping::Tag;
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                }
+            });
+
+            if ui.button("Clear All Filters").clicked() {
+                photo_manager.with_lock_mut(|pm| pm.set_current_filter(PhotoQuery::default()));
+            }
+        });
 }
 
 fn scroll_to_row_index(
