@@ -116,9 +116,6 @@ impl PhotoDatabase {
     pub fn add_photo(&mut self, photo: Photo) {
         let path = photo.path.clone();
         self.path_map.insert(self.photos.len(), path.clone());
-        self.photo_ratings
-            .insert(path.clone(), PhotoRating::default());
-        self.photo_tags.insert(path.clone(), HashSet::new());
         self.file_collection.insert(&path);
         self.photos.push(photo);
         self.is_sorted = false;

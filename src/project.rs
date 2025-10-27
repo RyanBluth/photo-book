@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use indexmap::IndexMap;
 use savefile_derive::Savefile;
@@ -38,7 +38,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 1;
+pub const PROJECT_VERSION: u32 = 2;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -70,6 +70,7 @@ impl Project {
                 .map(|path| Photo {
                     path: path.clone(),
                     rating: photo_manager.get_photo_rating(path).into(),
+                    tags: photo_manager.get_photo_tags(path).into(),
                 })
                 .collect()
         });
@@ -98,6 +99,13 @@ impl Project {
                                                 |photo_manager| {
                                                     photo_manager
                                                         .get_photo_rating(&canvas_photo.photo.path)
+                                                        .into()
+                                                },
+                                            ),
+                                            tags: Dependency::<PhotoManager>::get().with_lock(
+                                                |photo_manager| {
+                                                    photo_manager
+                                                        .get_photo_tags(&canvas_photo.photo.path)
                                                         .into()
                                                 },
                                             ),
@@ -164,6 +172,13 @@ impl Project {
                                                 |photo_manager| {
                                                     photo_manager
                                                         .get_photo_rating(&canvas_photo.photo.path)
+                                                        .into()
+                                                },
+                                            ),
+                                            tags: Dependency::<PhotoManager>::get().with_lock(
+                                                |photo_manager| {
+                                                    photo_manager
+                                                        .get_photo_tags(&canvas_photo.photo.path)
                                                         .into()
                                                 },
                                             ),
@@ -336,10 +351,16 @@ impl Into<OrganizeEditScene> for Project {
             settings.project_settings = self.project_settings.into();
         });
 
-        let photos_with_ratings: Vec<(PathBuf, AppPhotoRating)> = self
+        let photos_with_metadata: Vec<(PathBuf, AppPhotoRating, HashSet<String>)> = self
             .photos
             .iter()
-            .map(|photo| (photo.path.clone(), photo.rating.clone().into()))
+            .map(|photo| {
+                (
+                    photo.path.clone(),
+                    photo.rating.clone().into(),
+                    photo.tags.clone(),
+                )
+            })
             .collect();
 
         Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
@@ -352,9 +373,9 @@ impl Into<OrganizeEditScene> for Project {
         });
 
         Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-            // Set ratings from project file into PhotoDatabase
-            for (path, rating) in photos_with_ratings {
+            for (path, rating, tags) in photos_with_metadata {
                 photo_manager.set_photo_rating(&path, rating);
+                photo_manager.set_photo_tags(&path, tags);
             }
         });
 
@@ -606,6 +627,8 @@ enum Unit {
 struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
+    #[savefile_versions = "2.."]
+    pub tags: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Savefile)]
@@ -760,7 +783,7 @@ impl Into<ProjectPhotoGrouping> for AppPhotoGrouping {
         match self {
             AppPhotoGrouping::Rating => ProjectPhotoGrouping::Rating,
             AppPhotoGrouping::Date => ProjectPhotoGrouping::Date,
-            AppPhotoGrouping::Tag => ProjectPhotoGrouping::Date, // Default fallback since project format doesn't support Tag
+            AppPhotoGrouping::Tag => ProjectPhotoGrouping::Date,
         }
     }
 }
