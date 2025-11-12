@@ -238,6 +238,7 @@ impl Exporter {
                     LayerContent::TemplatePhoto { photo: None, .. } => {}
                     LayerContent::Text(_) => {}
                     LayerContent::TemplateText { .. } => {}
+                    LayerContent::Shape(_) => {},
                 }
             }
             Ok(())

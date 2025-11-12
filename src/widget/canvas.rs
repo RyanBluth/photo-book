@@ -3,14 +3,18 @@ use eframe::{
     emath::Rot2,
     epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, TextShape, Vec2},
 };
-use egui::{Align, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder};
-use indexmap::{indexmap, IndexMap};
+use egui::{
+    Align, CornerRadius, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder,
+    emath::TSTransform,
+    epaint::{EllipseShape, RectShape},
+};
+use indexmap::{IndexMap, indexmap};
 
 use crate::{
     cursor_manager::CursorManager,
     debug::DebugSettings,
     dependencies::{Dependency, SingletonFor},
-    id::{next_layer_id, LayerId},
+    id::{LayerId, next_layer_id},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     photo_manager::PhotoManager,
@@ -18,6 +22,7 @@ use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::{Template, TemplateRegionKind},
     utils::{IdExt, RectExt, Toggle},
+    widget::canvas_info::layers::{CanvasShapeKind, LineToolSettings},
 };
 
 use super::{
@@ -25,13 +30,14 @@ use super::{
     auto_center::AutoCenter,
     canvas_info::{
         layers::{
-            CanvasText, Layer, LayerContent, LayerTransformEditState, TextHorizontalAlignment,
-            TextVerticalAlignment,
+            CanvasText, Layer, LayerContent, LayerTransformEditState, ShapeToolSettings,
+            TextHorizontalAlignment, TextToolSettings, TextVerticalAlignment,
         },
         quick_layout::{self},
     },
+    toolbar::Toolbar,
     transformable::{
-        ResizeMode, TransformHandleMode, TransformableState, TransformableWidget,
+        ResizeMode, TransformHandle, TransformHandleMode, TransformableState, TransformableWidget,
         TransformableWidgetResponse,
     },
 };
@@ -42,6 +48,23 @@ pub enum CanvasResponse {
         target_layer: LayerId,
         photo: CanvasPhoto,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tool {
+    Select,
+    Text,
+    Rectangle,
+    Ellipse,
+    Line,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum CreatingLayer {
+    /// Line being created - stored here for live preview
+    Line(Layer, Pos2),
+    /// Other layer being created - stored in layers map with this ID
+    Other(LayerId, Pos2),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -72,6 +95,12 @@ pub struct CanvasState {
     pub last_quick_layout: Option<quick_layout::Layout>,
     pub canvas_id: egui::Id,
     pub text_edit_mode: Option<LayerId>,
+    pub current_tool: Tool,
+    pub creating_layer: Option<CreatingLayer>,
+    pub text_tool_settings: TextToolSettings,
+    pub rectangle_tool_settings: ShapeToolSettings,
+    pub ellipse_tool_settings: ShapeToolSettings,
+    pub line_tool_settings: LineToolSettings,
     computed_initial_zoom: bool,
 }
 
@@ -96,6 +125,12 @@ impl CanvasState {
             last_quick_layout: None,
             canvas_id: Id::random(),
             text_edit_mode: None,
+            current_tool: Tool::Select,
+            creating_layer: None,
+            text_tool_settings: TextToolSettings::default(),
+            rectangle_tool_settings: ShapeToolSettings::default(),
+            ellipse_tool_settings: ShapeToolSettings::default(),
+            line_tool_settings: LineToolSettings::default(),
             computed_initial_zoom: false,
         }
     }
@@ -117,6 +152,12 @@ impl CanvasState {
             last_quick_layout: None,
             canvas_id: Id::random(),
             text_edit_mode: None,
+            current_tool: Tool::Select,
+            creating_layer: None,
+            text_tool_settings: TextToolSettings::default(),
+            rectangle_tool_settings: ShapeToolSettings::default(),
+            ellipse_tool_settings: ShapeToolSettings::default(),
+            line_tool_settings: LineToolSettings::default(),
             computed_initial_zoom: false,
         }
     }
@@ -175,6 +216,12 @@ impl CanvasState {
             last_quick_layout: None,
             canvas_id: Id::random(),
             text_edit_mode: None,
+            current_tool: Tool::Select,
+            creating_layer: None,
+            text_tool_settings: TextToolSettings::default(),
+            rectangle_tool_settings: ShapeToolSettings::default(),
+            ellipse_tool_settings: ShapeToolSettings::default(),
+            line_tool_settings: LineToolSettings::default(),
             computed_initial_zoom: false,
         }
     }
@@ -268,6 +315,12 @@ impl CanvasState {
             last_quick_layout: None,
             canvas_id: Id::random(),
             text_edit_mode: None,
+            current_tool: Tool::Select,
+            creating_layer: None,
+            text_tool_settings: TextToolSettings::default(),
+            rectangle_tool_settings: ShapeToolSettings::default(),
+            ellipse_tool_settings: ShapeToolSettings::default(),
+            line_tool_settings: LineToolSettings::default(),
             computed_initial_zoom: false,
         }
     }
@@ -486,15 +539,46 @@ impl<'a> Canvas<'a> {
             return Some(response);
         }
 
+        // Show toolbar at the top
+        let toolbar_height = 40.0;
+        let toolbar_rect = Rect::from_min_size(
+            self.available_rect.min,
+            Vec2::new(self.available_rect.width(), toolbar_height),
+        );
+
+        ui.allocate_new_ui(
+            UiBuilder::new().max_rect(toolbar_rect),
+            |ui| {
+                ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
+                ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
+
+                egui::Frame::none()
+                    .fill(egui::Color32::from_gray(25))
+                    .inner_margin(8.0)
+                    .show(ui, |ui| {
+                        Toolbar::new(&mut self.state.current_tool).show(ui);
+                    });
+            },
+        );
+
+        // Adjust available rect to account for toolbar
+        let canvas_rect = Rect::from_min_size(
+            self.available_rect.min + Vec2::new(0.0, toolbar_height),
+            Vec2::new(
+                self.available_rect.width(),
+                self.available_rect.height() - toolbar_height,
+            ),
+        );
+
         // Adjust the zoom so that the page fits in the available rect
         if !self.state.computed_initial_zoom {
             let page_size = self.state.page.size_pixels() * 1.1;
-            self.state.zoom = (self.available_rect.width() / page_size.x)
-                .min(self.available_rect.height() / page_size.y);
+            self.state.zoom = (canvas_rect.width() / page_size.x)
+                .min(canvas_rect.height() / page_size.y);
             self.state.computed_initial_zoom = true;
         }
 
-        let canvas_response = ui.allocate_rect(self.available_rect, Sense::click());
+        let canvas_response = ui.allocate_rect(canvas_rect, Sense::click());
         let canvas_rect = canvas_response.rect;
 
         let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
@@ -594,6 +678,8 @@ impl<'a> Canvas<'a> {
 
         self.draw_multi_select(ui, page_rect);
 
+        self.draw_creating_layer(ui, page_rect);
+
         // Add action bar at the bottom
         if self.state.layers.values().any(|layer| layer.selected) {
             if let Some(response) = self.show_action_bar(ui) {
@@ -604,6 +690,163 @@ impl<'a> Canvas<'a> {
         None
     }
 
+    fn draw_creating_layer(&mut self, ui: &mut Ui, page_rect: Rect) {
+        // Draw creating layer if it's a line (others are drawn via transform widget)
+        if let Some(CreatingLayer::Line(ref creating_layer, _)) = self.state.creating_layer {
+            // Draw the line being created
+            let layer_rect = creating_layer.transform_state.rect;
+    
+            // Transform the start and end points to screen space
+            let start_screen = page_rect.min + layer_rect.min.to_vec2() * self.state.zoom;
+            let end_screen = page_rect.min + layer_rect.max.to_vec2() * self.state.zoom;
+    
+            // Draw line from actual start to end points
+            if let crate::widget::canvas_info::layers::LayerContent::Shape(ref shape) = creating_layer.content {
+                if let Some((stroke, _)) = shape.stroke {
+                    let zoomed_stroke = Stroke::new(stroke.width * self.state.zoom, stroke.color);
+                    ui.painter().line_segment([start_screen, end_screen], zoomed_stroke);
+                }
+            }
+        }
+    
+        // Handle canvas interactions for tool-based creation with click-and-drag
+        let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
+        let primary_pointer_down = ui.input(|input| input.pointer.primary_down());
+        let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
+    
+        // Start creating layer on mouse down
+        if primary_pointer_pressed && self.state.creating_layer.is_none() {
+            if let Some(click_pos) = ui.input(|input| input.pointer.press_origin()) {
+                if page_rect.contains(click_pos) {
+                    match self.state.current_tool {
+                        Tool::Select => {
+                            // Selection is already handled above
+                        }
+                        Tool::Text | Tool::Rectangle | Tool::Ellipse | Tool::Line => {
+                            // Create a new layer at click position with minimal size
+                            let mut layer = match self.state.current_tool {
+                                Tool::Text => Layer::new_text_layer_with_settings(&self.state.text_tool_settings),
+                                Tool::Rectangle => Layer::new_rectangle_shape_layer_with_settings(&self.state.rectangle_tool_settings),
+                                Tool::Ellipse => Layer::new_ellipse_shape_layer_with_settings(&self.state.ellipse_tool_settings),
+                                Tool::Line => Layer::new_line_shape_layer_with_settings(&self.state.line_tool_settings),
+                                _ => unreachable!(),
+                            };
+    
+                            // Calculate position relative to page
+                            let relative_pos = (click_pos - page_rect.min) / self.state.zoom;
+    
+                            self.deselect_all_photos();
+                            layer.selected = true;
+    
+                            // For lines, we don't use transform handles - we draw from click to mouse
+                            if self.state.current_tool == Tool::Line {
+                                // Start line at click position - store start as min, end as max (same initially)
+                                let start_pos = Pos2::new(relative_pos.x, relative_pos.y);
+                                // Don't use from_two_pos as it normalizes - manually set min/max to preserve order
+                                layer.transform_state.rect = Rect {
+                                    min: start_pos,
+                                    max: start_pos,
+                                };
+    
+                                // Track that we're creating this line (separate from layers map)
+                                self.state.creating_layer = Some(CreatingLayer::Line(layer, click_pos));
+                            } else {
+                                // For other tools, use transform widget by adding to layers map
+                                let initial_size = Vec2::new(10.0, 10.0);
+                                layer.transform_state.rect = Rect::from_min_size(
+                                    Pos2::new(relative_pos.x, relative_pos.y),
+                                    initial_size,
+                                );
+                                layer.transform_state.active_handle = Some(TransformHandle::BottomRight);
+                                layer.transform_state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
+    
+                                let layer_id = layer.id;
+                                self.state.layers.insert(layer_id, layer);
+    
+                                // Track that we're creating this layer
+                                self.state.creating_layer = Some(CreatingLayer::Other(layer_id, click_pos));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    
+        // Update layer size while dragging
+        if primary_pointer_down {
+            match &mut self.state.creating_layer {
+                Some(CreatingLayer::Line(creating_layer, start_pos)) => {
+                    if let Some(current_pos) = ui.input(|input| input.pointer.hover_pos()) {
+                        // Calculate positions relative to page
+                        let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
+                        let relative_current = (current_pos - page_rect.min) / self.state.zoom;
+    
+                        // For lines, store the actual endpoints in the rect
+                        // We use rect.min as start point and rect.max as end point
+                        // Don't use from_two_pos as it normalizes - manually set to preserve order
+                        creating_layer.transform_state.rect = Rect {
+                            min: Pos2::new(relative_start.x, relative_start.y),
+                            max: Pos2::new(relative_current.x, relative_current.y),
+                        };
+                    }
+                }
+                Some(CreatingLayer::Other(layer_id, start_pos)) => {
+                    // For other shapes, manually handle the drag
+                    if let Some(current_pos) = ui.input(|input| input.pointer.hover_pos()) {
+                        if let Some(layer) = self.state.layers.get_mut(layer_id) {
+                            // Calculate size based on drag distance
+                            let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
+                            let relative_current = (current_pos - page_rect.min) / self.state.zoom;
+    
+                            let size = Vec2::new(
+                                (relative_current.x - relative_start.x).abs().max(10.0),
+                                (relative_current.y - relative_start.y).abs().max(10.0),
+                            );
+    
+                            // Update the rect
+                            layer.transform_state.rect = Rect::from_min_size(
+                                Pos2::new(relative_start.x, relative_start.y),
+                                size,
+                            );
+                        }
+                    }
+                }
+                None => {}
+            }
+        }
+    
+        // Finish creating layer on mouse release
+        if primary_pointer_released {
+            if let Some(creating_layer) = self.state.creating_layer.take() {
+                match creating_layer {
+                    CreatingLayer::Line(layer, _) => {
+                        // Insert the line into the state
+                        let layer_id = layer.id;
+                        self.state.layers.insert(layer_id, layer);
+                    }
+                    CreatingLayer::Other(layer_id, _) => {
+                        // Clear the active handle for shapes
+                        if let Some(layer) = self.state.layers.get_mut(&layer_id) {
+                            layer.transform_state.active_handle = None;
+                        }
+                    }
+                }
+    
+                // Save history based on tool type
+                let history_kind = match self.state.current_tool {
+                    Tool::Text => CanvasHistoryKind::AddText,
+                    Tool::Rectangle | Tool::Ellipse | Tool::Line => CanvasHistoryKind::AddShape,
+                    _ => CanvasHistoryKind::AddPhoto, // Fallback
+                };
+    
+                self.history_manager.save_history(history_kind, self.state);
+    
+                // Switch back to select tool
+                self.state.current_tool = Tool::Select;
+            }
+        }
+    }
+    
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
         let zoom = (rect.width() / self.state.page.size_pixels().x)
             .min(rect.height() / self.state.page.size_pixels().y);
@@ -987,9 +1230,10 @@ impl<'a> Canvas<'a> {
                 if is_editing {
                     ui.ctx().data(|data| {
                         // Check if we need to exit edit mode
-                        if let Some(exit_layer_id) =
-                            data.get_temp::<LayerId>(Id::new(format!("exit_text_edit_mode_{}", layer.id)))
-                        {
+                        if let Some(exit_layer_id) = data.get_temp::<LayerId>(Id::new(format!(
+                            "exit_text_edit_mode_{}",
+                            layer.id
+                        ))) {
                             if exit_layer_id == *layer_id {
                                 self.state.text_edit_mode = None;
                                 self.history_manager
@@ -1008,7 +1252,6 @@ impl<'a> Canvas<'a> {
 
                 Some(transform_response)
             }
-
             LayerContent::TemplatePhoto {
                 region,
                 photo,
@@ -1251,6 +1494,75 @@ impl<'a> Canvas<'a> {
                     double_clicked: response.double_clicked(),
                 })
             }
+            LayerContent::Shape(canvas_shape) => {
+                let mut transform_state = layer.transform_state.clone();
+                let response = ui.push_id(
+                    format!("shape_{}_{:?}", layer_id.to_string(), canvas_shape.kind),
+                    |ui| {
+                        TransformableWidget::new(&mut transform_state).show(
+                            ui,
+                            available_rect,
+                            self.state.zoom,
+                            active && !is_preview,
+                            true,
+                            |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                                match canvas_shape.kind {
+                                    CanvasShapeKind::Rectangle { corner_radius } => {
+                                        let rotation = transformable_state.rotation;
+                                        let shape = Shape::Rect(
+                                            RectShape::new(
+                                                transformed_rect,
+                                                CornerRadius::same(corner_radius as u8),
+                                                canvas_shape.fill_color,
+                                                canvas_shape
+                                                    .stroke
+                                                    .map(|(stroke, _)| Stroke::new(stroke.width * self.state.zoom, stroke.color))
+                                                    .unwrap_or(Stroke::NONE),
+                                                canvas_shape
+                                                    .stroke
+                                                    .map(|(_, kind)| kind.into())
+                                                    .unwrap_or(StrokeKind::Outside),
+                                            )
+                                            .with_angle_and_pivot(rotation, transformed_rect.left_top()),
+                                        );
+                                        ui.painter().add(shape);
+                                    }
+                                    CanvasShapeKind::Ellipse => {
+                                        let rotation = transformable_state.rotation;
+                                        let shape = Shape::Ellipse(EllipseShape {
+                                            center: transformed_rect.center(),
+                                            radius: Vec2::new(
+                                                transformed_rect.width() / 2.0,
+                                                transformed_rect.height() / 2.0,
+                                            ),
+                                            fill: canvas_shape.fill_color,
+                                            stroke: canvas_shape
+                                                .stroke
+                                                .map(|(stroke, _)| Stroke::new(stroke.width * self.state.zoom, stroke.color))
+                                                .unwrap_or(Stroke::NONE),
+                                            angle: rotation,
+                                        });
+                                        ui.painter().add(shape);
+                                    }
+                                    CanvasShapeKind::Line => {
+                                        // For lines, draw from actual start to end (stored in rect.min and rect.max)
+                                        let start = transformed_rect.min;
+                                        let end = transformed_rect.max;
+                                        if let Some((stroke, _)) = canvas_shape.stroke {
+                                            let zoomed_stroke = Stroke::new(stroke.width * self.state.zoom, stroke.color);
+                                            ui.painter().line_segment([start, end], zoomed_stroke);
+                                        }
+                                    }
+                                }
+                            },
+                        )
+                    },
+                );
+                let mut updated_layer = layer.clone();
+                updated_layer.transform_state = transform_state;
+                self.state.layers.insert(*layer_id, updated_layer);
+                Some(response.inner)
+            }
         };
 
         return layer_response;
@@ -1293,138 +1605,138 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_editing_text(
-            ui: &mut Ui,
-            text: &mut String,
-            font_id: &FontId,
-            rect: Rect,
-            font_size: f32,
-            color: Color32,
-            horizontal_alignment: TextHorizontalAlignment,
-            vertical_alignment: TextVerticalAlignment,
-            layer_id: Option<LayerId>,
-        ) {
-            let horizontal_alignment = match horizontal_alignment {
-                TextHorizontalAlignment::Left => Align::Min,
-                TextHorizontalAlignment::Center => Align::Center,
-                TextHorizontalAlignment::Right => Align::Max,
-            };
+        ui: &mut Ui,
+        text: &mut String,
+        font_id: &FontId,
+        rect: Rect,
+        font_size: f32,
+        color: Color32,
+        horizontal_alignment: TextHorizontalAlignment,
+        vertical_alignment: TextVerticalAlignment,
+        layer_id: Option<LayerId>,
+    ) {
+        let horizontal_alignment = match horizontal_alignment {
+            TextHorizontalAlignment::Left => Align::Min,
+            TextHorizontalAlignment::Center => Align::Center,
+            TextHorizontalAlignment::Right => Align::Max,
+        };
 
-            let vertical_alignment = match vertical_alignment {
-                TextVerticalAlignment::Top => Align::Min,
-                TextVerticalAlignment::Center => Align::Center,
-                TextVerticalAlignment::Bottom => Align::Max,
-            };
+        let vertical_alignment = match vertical_alignment {
+            TextVerticalAlignment::Top => Align::Min,
+            TextVerticalAlignment::Center => Align::Center,
+            TextVerticalAlignment::Bottom => Align::Max,
+        };
 
-            let layout = Layout {
-                main_dir: egui::Direction::TopDown,
-                main_wrap: true,
-                main_align: vertical_alignment,
-                main_justify: true,
-                cross_align: horizontal_alignment,
-                cross_justify: false,
-            };
+        let layout = Layout {
+            main_dir: egui::Direction::TopDown,
+            main_wrap: true,
+            main_align: vertical_alignment,
+            main_justify: true,
+            cross_align: horizontal_alignment,
+            cross_justify: false,
+        };
 
-            ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
-                ui.style_mut().interaction.selectable_labels = false;
+        ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
+            ui.style_mut().interaction.selectable_labels = false;
 
-                let frame = egui::Frame::new()
-                    .inner_margin(Margin::ZERO)
-                    .outer_margin(Margin::ZERO);
+            let frame = egui::Frame::new()
+                .inner_margin(Margin::ZERO)
+                .outer_margin(Margin::ZERO);
 
-                frame.show(ui, |ui| {
-                    // Configure the text edit using the current text's properties
-                    let text_edit = egui::TextEdit::multiline(text)
-                        .id("text-edit".into())
-                        .font(FontId::new(font_size, font_id.family.clone()))
-                        .text_color(color)
-                        .min_size(rect.size())
-                        .desired_width(rect.width())
-                        .lock_focus(true)
-                        .background_color(Color32::TRANSPARENT)
-                        .horizontal_align(horizontal_alignment)
-                        .vertical_align(vertical_alignment);
+            frame.show(ui, |ui| {
+                // Configure the text edit using the current text's properties
+                let text_edit = egui::TextEdit::multiline(text)
+                    .id("text-edit".into())
+                    .font(FontId::new(font_size, font_id.family.clone()))
+                    .text_color(color)
+                    .min_size(rect.size())
+                    .desired_width(rect.width())
+                    .lock_focus(true)
+                    .background_color(Color32::TRANSPARENT)
+                    .horizontal_align(horizontal_alignment)
+                    .vertical_align(vertical_alignment);
 
-                    let response = ui.add(text_edit);
+                let response = ui.add(text_edit);
 
-                    // If user presses Enter or clicks outside, exit edit mode
-                    if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        ui.ctx().data_mut(|data| {
-                            data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
-                        });
-                    }
-                });
+                // If user presses Enter or clicks outside, exit edit mode
+                if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    ui.ctx().data_mut(|data| {
+                        data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
+                    });
+                }
             });
+        });
+    }
+
+    fn draw_text(
+        ui: &mut Ui,
+        text: &mut String,
+        font_id: &FontId,
+        rect: Rect,
+        font_size: f32,
+        color: Color32,
+        horizontal_alignment: TextHorizontalAlignment,
+        vertical_alignment: TextVerticalAlignment,
+        rotation: f32,
+    ) {
+        let horizontal_align = match horizontal_alignment {
+            TextHorizontalAlignment::Left => Align::Min,
+            TextHorizontalAlignment::Center => Align::Center,
+            TextHorizontalAlignment::Right => Align::Max,
+        };
+
+        let vertical_align = match vertical_alignment {
+            TextVerticalAlignment::Top => Align::Min,
+            TextVerticalAlignment::Center => Align::Center,
+            TextVerticalAlignment::Bottom => Align::Max,
+        };
+
+        let anchor = egui::Align2([horizontal_align, vertical_align]);
+
+        // Create the text layout with wrapping
+        let wrap_width = rect.width();
+        let galley = ui.fonts(|f| {
+            f.layout(
+                text.clone(),
+                FontId {
+                    size: font_size,
+                    family: font_id.family.clone(),
+                },
+                color,
+                wrap_width,
+            )
+        });
+
+        // For rotation, we need to think about the galley (actual text) size vs the rect size
+        // The galley is positioned within the rect according to alignment
+        // Then both the galley position AND the galley itself need to rotate around rect center
+
+        // Calculate where the galley would be positioned within the unrotated rect
+        let galley_size = galley.rect.size();
+
+        // Position the galley within the rect based on alignment
+        let galley_rect_in_parent = anchor.align_size_within_rect(galley_size, rect);
+        let text_pos = galley_rect_in_parent.min;
+
+        // Create text shape and apply rotation
+        let mut text_shape = TextShape::new(text_pos, galley, color);
+
+        if rotation != 0.0 {
+            // Calculate the center of the bounding rect
+            let rect_center = rect.center();
+
+            // Rotate the text position around the rect center
+            let rot = Rot2::from_angle(rotation);
+            let offset_from_center = text_pos - rect_center;
+            let rotated_offset = rot * offset_from_center;
+            text_shape.pos = rect_center + rotated_offset;
+
+            // Set the angle for the text itself
+            text_shape.angle = rotation;
         }
 
-        fn draw_text(
-                ui: &mut Ui,
-                text: &mut String,
-                font_id: &FontId,
-                rect: Rect,
-                font_size: f32,
-                color: Color32,
-                horizontal_alignment: TextHorizontalAlignment,
-                vertical_alignment: TextVerticalAlignment,
-                rotation: f32,
-            ) {
-                let horizontal_align = match horizontal_alignment {
-                    TextHorizontalAlignment::Left => Align::Min,
-                    TextHorizontalAlignment::Center => Align::Center,
-                    TextHorizontalAlignment::Right => Align::Max,
-                };
-
-                let vertical_align = match vertical_alignment {
-                    TextVerticalAlignment::Top => Align::Min,
-                    TextVerticalAlignment::Center => Align::Center,
-                    TextVerticalAlignment::Bottom => Align::Max,
-                };
-
-                let anchor = egui::Align2([horizontal_align, vertical_align]);
-
-                // Create the text layout with wrapping
-                let wrap_width = rect.width();
-                let galley = ui.fonts(|f| {
-                    f.layout(
-                        text.clone(),
-                        FontId {
-                            size: font_size,
-                            family: font_id.family.clone(),
-                        },
-                        color,
-                        wrap_width,
-                    )
-                });
-
-                // For rotation, we need to think about the galley (actual text) size vs the rect size
-                // The galley is positioned within the rect according to alignment
-                // Then both the galley position AND the galley itself need to rotate around rect center
-
-                // Calculate where the galley would be positioned within the unrotated rect
-                let galley_size = galley.rect.size();
-
-                // Position the galley within the rect based on alignment
-                let galley_rect_in_parent = anchor.align_size_within_rect(galley_size, rect);
-                let text_pos = galley_rect_in_parent.min;
-
-                // Create text shape and apply rotation
-                let mut text_shape = TextShape::new(text_pos, galley, color);
-
-                if rotation != 0.0 {
-                    // Calculate the center of the bounding rect
-                    let rect_center = rect.center();
-
-                    // Rotate the text position around the rect center
-                    let rot = Rot2::from_angle(rotation);
-                    let offset_from_center = text_pos - rect_center;
-                    let rotated_offset = rot * offset_from_center;
-                    text_shape.pos = rect_center + rotated_offset;
-
-                    // Set the angle for the text itself
-                    text_shape.angle = rotation;
-                }
-
-                ui.painter().add(text_shape);
-            }
+        ui.painter().add(text_shape);
+    }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
         ctx.input(|input| {
@@ -1491,7 +1803,26 @@ impl<'a> Canvas<'a> {
                         save_transform_history = true
                     }
                 }
+            }
 
+            // Tool switching shortcuts (before transform mode shortcuts)
+            if input.key_pressed(egui::Key::V) {
+                self.state.current_tool = Tool::Select;
+            }
+            if input.key_pressed(egui::Key::T) {
+                self.state.current_tool = Tool::Text;
+            }
+            if input.key_pressed(egui::Key::U) {
+                self.state.current_tool = Tool::Rectangle;
+            }
+            if input.key_pressed(egui::Key::O) {
+                self.state.current_tool = Tool::Ellipse;
+            }
+            if input.key_pressed(egui::Key::L) {
+                self.state.current_tool = Tool::Line;
+            }
+
+            for layer in self.state.selected_layers_iter_mut() {
                 // Switch to scale mode
                 if input.key_pressed(egui::Key::S) {
                     // TODO should the resize mode be persisted? Probably.

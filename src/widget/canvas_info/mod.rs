@@ -1,9 +1,14 @@
 pub mod alignment;
 pub mod history_info;
 pub mod layers;
+pub mod line_edit_control;
+pub mod line_tool_control;
 pub mod page_info;
 pub mod panel;
 pub mod quick_layout;
 pub mod scale_mode;
-pub mod text_control;
+pub mod shape_edit_control;
+pub mod shape_tool_control;
+pub mod text_edit_control;
+pub mod text_tool_control;
 pub mod transform_control;

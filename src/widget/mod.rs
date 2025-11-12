@@ -17,5 +17,6 @@ pub mod segment_control;
 pub mod spacer;
 pub mod tag_chips;
 pub mod templates;
+pub mod toolbar;
 pub mod transformable;
 pub mod file_tree;

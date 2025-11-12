@@ -29,16 +29,17 @@ use crate::{
     widget::{
         canvas::{CanvasPhoto as AppCanvasPhoto, CanvasState},
         canvas_info::layers::{
-            CanvasText as AppCanvasText, CanvasTextEditState, Layer as AppLayer,
-            LayerContent as AppLayerContent, LayerTransformEditState,
-            TextHorizontalAlignment as AppTextHorizontalAlignment,
+            CanvasShape as AppCanvasShape, CanvasShapeEditState,
+            CanvasShapeKind as AppCanvasShapeKind, CanvasText as AppCanvasText,
+            CanvasTextEditState, Layer as AppLayer, LayerContent as AppLayerContent,
+            LayerTransformEditState, TextHorizontalAlignment as AppTextHorizontalAlignment,
             TextVerticalAlignment as AppTextVerticalAlignment,
         },
         transformable::{ResizeMode, TransformHandleMode::Resize, TransformableState},
     },
 };
 
-pub const PROJECT_VERSION: u32 = 2;
+pub const PROJECT_VERSION: u32 = 3;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -238,6 +239,21 @@ impl Project {
                                             },
                                         },
                                     }
+                                }
+                                AppLayerContent::Shape(canvas_shape) => {
+                                    LayerContent::Shape(CanvasShape {
+                                        kind: match canvas_shape.kind {
+                                            AppCanvasShapeKind::Rectangle { corner_radius } => {
+                                                CanvasShapeKind::Rectangle { corner_radius }
+                                            }
+                                            AppCanvasShapeKind::Ellipse => CanvasShapeKind::Ellipse,
+                                            AppCanvasShapeKind::Line => CanvasShapeKind::Line,
+                                        },
+                                        fill_color: canvas_shape.fill_color.into(),
+                                        stroke: canvas_shape
+                                            .stroke
+                                            .map(|(stroke, kind)| (stroke.into(), kind.into())),
+                                    })
                                 }
                             },
                             name: layer.name.clone(),
@@ -514,6 +530,30 @@ impl Into<OrganizeEditScene> for Project {
                                         },
                                     }
                                 }
+                                LayerContent::Shape(canvas_shape) => {
+                                    AppLayerContent::Shape(AppCanvasShape {
+                                        kind: match canvas_shape.kind {
+                                            CanvasShapeKind::Rectangle { corner_radius } => {
+                                                AppCanvasShapeKind::Rectangle { corner_radius }
+                                            }
+                                            CanvasShapeKind::Ellipse => AppCanvasShapeKind::Ellipse,
+                                            CanvasShapeKind::Line => AppCanvasShapeKind::Line,
+                                        },
+                                        fill_color: canvas_shape.fill_color.into(),
+                                        stroke: canvas_shape.stroke.as_ref().map(
+                                            |(stroke, kind)| {
+                                                (stroke.clone().into(), kind.clone().into())
+                                            },
+                                        ),
+                                        edit_state: CanvasShapeEditState::new(
+                                            canvas_shape
+                                                .stroke
+                                                .as_ref()
+                                                .map(|(stroke, _)| stroke.width)
+                                                .unwrap_or(1.0),
+                                        ),
+                                    })
+                                }
                             },
                             name: layer.name,
                             visible: layer.visible,
@@ -687,6 +727,20 @@ struct CanvasText {
 }
 
 #[derive(Debug, Clone, Savefile)]
+struct CanvasShape {
+    pub kind: CanvasShapeKind,
+    pub fill_color: Color32,
+    pub stroke: Option<(Stroke, StrokeKind)>,
+}
+
+#[derive(Debug, Clone, Savefile)]
+enum CanvasShapeKind {
+    Rectangle { corner_radius: f32 },
+    Ellipse,
+    Line,
+}
+
+#[derive(Debug, Clone, Savefile)]
 enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
@@ -699,6 +753,8 @@ enum LayerContent {
         region: TemplateRegion,
         text: CanvasText,
     },
+    #[savefile_versions = "3.."]
+    Shape(CanvasShape),
 }
 
 #[derive(Debug, Clone, Copy, Savefile)]
@@ -946,5 +1002,56 @@ impl From<FontId> for egui::FontId {
         };
 
         egui::FontId::new(font.size, family)
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+struct Stroke {
+    pub color: Color32,
+    pub width: f32,
+}
+
+impl Into<Stroke> for egui::Stroke {
+    fn into(self) -> Stroke {
+        Stroke {
+            color: self.color.into(),
+            width: self.width,
+        }
+    }
+}
+
+impl Into<egui::Stroke> for Stroke {
+    fn into(self) -> egui::Stroke {
+        egui::Stroke {
+            color: self.color.into(),
+            width: self.width,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+enum StrokeKind {
+    Inside,
+    Middle,
+    Outside,
+}
+
+impl Into<StrokeKind> for egui::StrokeKind {
+    fn into(self) -> StrokeKind {
+        match self {
+            egui::StrokeKind::Inside => StrokeKind::Inside,
+            egui::StrokeKind::Middle => StrokeKind::Middle,
+            egui::StrokeKind::Outside => StrokeKind::Outside,
+        }
+    }
+}
+
+impl Into<egui::StrokeKind> for StrokeKind {
+    fn into(self) -> egui::StrokeKind {
+        match self {
+            StrokeKind::Inside => egui::StrokeKind::Inside,
+            StrokeKind::Middle => egui::StrokeKind::Middle,
+            StrokeKind::Outside => egui::StrokeKind::Outside,
+        }
     }
 }

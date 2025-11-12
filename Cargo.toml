@@ -9,9 +9,12 @@ debug_dependency_locks = []
 
 [dependencies]
 # re_ui = "0.23.1"
-egui = { version = "0.32.3" }
-eframe = { version = "0.32.3", features = ["glow", "wgpu"] }
-egui_extras = { version = "0.32.3", features = ["default", "all_loaders"] }
+# egui = { version = "0.32.3" }
+egui = { path = "../egui/crates/egui"}
+eframe = { path = "../egui/crates/eframe", features = ["glow", "wgpu"] }
+egui_extras = { path = "../egui/crates/egui_extras", features = ["default", "all_loaders"] }
+# eframe = { version = "0.32.3", features = ["glow", "wgpu"] }
+# egui_extras = { version = "0.32.3", features = ["default", "all_loaders"] }
 native-dialog = "0.9.0"
 env_logger = "0.11.8"
 image = { version = "0.25.8", features = ["jpeg", "png"] }
@@ -30,7 +33,7 @@ strum_macros = "0.27.2"
 chrono = { version = "0.4.42", features = ["serde"] }
 indexmap = { version = "2.11.4", features = ["serde"] }
 font-kit = "0.14.3"
-egui_tiles = { git = "https://github.com/rerun-io/egui_tiles.git", branch = "main" }
+egui_tiles = "0.13.0"
 ab_glyph = "0.2.32"
 rand = "0.9.2"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }
@@ -64,7 +67,12 @@ codegen-units = 1
 panic = "abort"
 
 
-# [patch.crates-io]
-# egui = { git = "https://github.com/RyanBluth/egui.git", branch = "master"}
+[patch.crates-io]
+egui = { path = "../egui/crates/egui"}
+eframe = { path = "../egui/crates/eframe"}
+egui_extras = { path = "../egui/crates/egui_extras"}
+emath = { path = "../egui/crates/emath"}
+epaint = { path = "../egui/crates/epaint"}
+ecolor = { path = "../egui/crates/ecolor"}
 # eframe = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["glow"] }
 # egui_extras = { git = "https://github.com/RyanBluth/egui.git", branch = "master", features = ["default", "all_loaders"] }

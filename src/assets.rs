@@ -27,4 +27,11 @@ impl Asset {
     image_asset!(vertical_align_bottom, "assets/vertical_align_bottom.png");
     image_asset!(distribute_horizontal, "assets/horizontal_distribute.png");
     image_asset!(distribute_vertical, "assets/vertical_distribute.png");
+
+    // Toolbar icons
+    image_asset!(icon_select, "assets/icons/select.svg");
+    image_asset!(icon_text, "assets/icons/text.svg");
+    image_asset!(icon_rectangle, "assets/icons/rectangle.svg");
+    image_asset!(icon_ellipse, "assets/icons/ellipse.svg");
+    image_asset!(icon_line, "assets/icons/line.svg");
 }

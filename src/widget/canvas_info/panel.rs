@@ -4,9 +4,10 @@ use egui::InnerResponse;
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
-        canvas::CanvasState,
+        canvas::{CanvasState, Tool},
         canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
+            layers::CanvasShapeKind,
             page_info::{PageInfo, PageInfoState},
         },
     },
@@ -15,8 +16,13 @@ use crate::{
 use super::{
     history_info::{HistoryInfo, HistoryInfoState},
     layers::{Layer, LayerContent, Layers, LayersResponse},
+    line_edit_control::LineEditControl,
+    line_tool_control::LineToolControl,
     scale_mode::{ScaleMode, ScaleModeState},
-    text_control::{TextControl, TextControlState},
+    shape_edit_control::ShapeEditControl,
+    shape_tool_control::ShapeToolControl,
+    text_edit_control::TextEditControl,
+    text_tool_control::TextToolControl,
     transform_control::{TransformControl, TransformControlState},
 };
 
@@ -75,9 +81,41 @@ impl<'a> CanvasInfo<'a> {
 
                         ui.separator();
 
-                        if layer.content.is_text() {
-                            TextControl::new(TextControlState::new(layer)).show(ui);
+                        if matches!(layer.content, LayerContent::Text(_)) {
+                            TextEditControl::new(layer).show(ui);
                             ui.separator();
+                        } else if matches!(&layer.content, LayerContent::Shape(shape) if shape.kind == CanvasShapeKind::Line) {
+                            LineEditControl::new(layer).show(ui);
+                            ui.separator();
+                        } else if matches!(layer.content, LayerContent::Shape(_)) {
+                            ShapeEditControl::new(layer).show(ui);
+                            ui.separator();
+                        }
+                    }
+                } else {
+                    // No layer selected - show create mode controls based on current tool
+                    match self.canvas_state.current_tool {
+                        Tool::Text => {
+                            TextToolControl::new(&mut self.canvas_state.text_tool_settings)
+                                .show(ui);
+                            ui.separator();
+                        }
+                        Tool::Rectangle => {
+                            ShapeToolControl::new(&mut self.canvas_state.rectangle_tool_settings)
+                                .show(ui);
+                            ui.separator();
+                        }
+                        Tool::Ellipse => {
+                            ShapeToolControl::new(&mut self.canvas_state.ellipse_tool_settings)
+                                .show(ui);
+                            ui.separator();
+                        }
+                        Tool::Line => {
+                            LineToolControl::new(&mut self.canvas_state.line_tool_settings).show(ui);
+                            ui.separator();
+                        }
+                        Tool::Select => {
+                            // No controls to show in select mode when nothing is selected
                         }
                     }
                 }
@@ -95,6 +133,18 @@ impl<'a> CanvasInfo<'a> {
                     let layer = Layer::new_text_layer();
                     self.canvas_state.layers.insert(layer.id, layer);
                     history = Some(CanvasHistoryKind::AddText);
+                }
+
+                if ui.button("Add Shape").clicked() {
+                    let layer = Layer::new_rectangle_shape_layer();
+                    self.canvas_state.layers.insert(layer.id, layer);
+                    history = Some(CanvasHistoryKind::AddShape);
+                }
+
+                if ui.button("Add Ellipse Shape").clicked() {
+                    let layer = Layer::new_ellipse_shape_layer();
+                    self.canvas_state.layers.insert(layer.id, layer);
+                    history = Some(CanvasHistoryKind::AddShape);
                 }
 
                 ui.separator();

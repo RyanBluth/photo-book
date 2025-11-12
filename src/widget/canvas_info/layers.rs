@@ -1,7 +1,7 @@
 use std::hash::Hasher;
 
-use eframe::epaint::Color32;
-use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Vec2};
+use eframe::epaint::{Color32, Stroke};
+use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, StrokeKind, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
@@ -9,7 +9,7 @@ use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, Singleton, SingletonFor},
     history::HistoricallyEqual,
-    id::{next_layer_id, LayerId},
+    id::{LayerId, next_layer_id},
     model::{self, editable_value::EditableValue},
     photo::Photo,
     photo_manager::PhotoManager,
@@ -120,6 +120,140 @@ impl CanvasText {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum CanvasShapeKind {
+    Rectangle { corner_radius: f32 },
+    Ellipse,
+    Line,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CanvasShape {
+    pub kind: CanvasShapeKind,
+    pub fill_color: Color32,
+    pub stroke: Option<(Stroke, StrokeKind)>,
+    pub edit_state: CanvasShapeEditState,
+}
+
+impl CanvasShape {
+    pub fn new(kind: CanvasShapeKind, color: Color32, rect: Rect) -> Self {
+        Self {
+            kind,
+            fill_color: color,
+            stroke: None,
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+
+    pub fn rectangle(color: Color32) -> Self {
+        Self {
+            kind: CanvasShapeKind::Rectangle { corner_radius: 0.0 },
+            fill_color: color,
+            stroke: None,
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+
+    pub fn ellipse(color: Color32) -> Self {
+        Self {
+            kind: CanvasShapeKind::Ellipse,
+            fill_color: color,
+            stroke: None,
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+
+    pub fn line(color: Color32) -> Self {
+        Self {
+            kind: CanvasShapeKind::Line,
+            fill_color: color,
+            stroke: Some((Stroke::new(2.0, color), StrokeKind::Middle)),
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CanvasShapeEditState {
+    pub stroke_width: EditableValue<f32>,
+}
+
+impl CanvasShapeEditState {
+    pub fn new(stroke_width: f32) -> Self {
+        Self {
+            stroke_width: EditableValue::new(stroke_width),
+        }
+    }
+
+    pub fn update(&mut self, stroke_width: f32) {
+        self.stroke_width.update_if_not_active(stroke_width);
+    }
+}
+
+impl Default for CanvasShapeEditState {
+    fn default() -> Self {
+        Self { stroke_width: EditableValue::new(1.0) }
+    }
+}
+
+// Tool settings for pre-creation configuration
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextToolSettings {
+    pub font_size: f32,
+    pub font_id: FontId,
+    pub color: Color32,
+    pub horizontal_alignment: TextHorizontalAlignment,
+    pub vertical_alignment: TextVerticalAlignment,
+    pub edit_state: CanvasTextEditState,
+}
+
+impl Default for TextToolSettings {
+    fn default() -> Self {
+        Self {
+            font_size: 24.0,
+            font_id: FontId::default(),
+            color: Color32::BLACK,
+            horizontal_alignment: TextHorizontalAlignment::Left,
+            vertical_alignment: TextVerticalAlignment::Top,
+            edit_state: CanvasTextEditState::new(24.0),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShapeToolSettings {
+    pub fill_color: Color32,
+    pub stroke: Option<(Stroke, StrokeKind)>,
+    pub edit_state: CanvasShapeEditState,
+}
+
+impl Default for ShapeToolSettings {
+    fn default() -> Self {
+        Self {
+            fill_color: Color32::from_rgb(100, 150, 200), // Nice blue default
+            stroke: None,
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LineToolSettings {
+    pub color: Color32,
+    pub width: f32,
+    pub edit_state: CanvasShapeEditState,
+}
+
+impl Default for LineToolSettings {
+    fn default() -> Self {
+        Self {
+            color: Color32::BLACK,
+            width: 2.0,
+            edit_state: CanvasShapeEditState::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
@@ -132,6 +266,7 @@ pub enum LayerContent {
         region: TemplateRegion,
         text: CanvasText,
     },
+    Shape(CanvasShape),
 }
 
 impl LayerContent {
@@ -146,6 +281,10 @@ impl LayerContent {
     pub fn is_template(&self) -> bool {
         matches!(self, LayerContent::TemplatePhoto { .. })
             || matches!(self, LayerContent::TemplateText { .. })
+    }
+
+    pub fn is_shape(&self) -> bool {
+        matches!(self, LayerContent::Shape(_))
     }
 }
 
@@ -200,13 +339,17 @@ impl Layer {
     }
 
     pub fn new_text_layer() -> Self {
+        Self::new_text_layer_with_settings(&TextToolSettings::default())
+    }
+
+    pub fn new_text_layer_with_settings(settings: &TextToolSettings) -> Self {
         let text = CanvasText::new(
             "New Text Layer".to_string(),
-            20.0,
-            FontId::default(),
-            Color32::BLACK,
-            TextHorizontalAlignment::Left,
-            TextVerticalAlignment::Top,
+            settings.font_size,
+            settings.font_id.clone(),
+            settings.color,
+            settings.horizontal_alignment,
+            settings.vertical_alignment,
         );
         let transform_state = TransformableState {
             rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
@@ -222,6 +365,96 @@ impl Layer {
         Self {
             content: LayerContent::Text(text),
             name: "New Text Layer".to_string(),
+            visible: true,
+            locked: false,
+            selected: false,
+            id: next_layer_id(),
+            transform_edit_state,
+            transform_state,
+        }
+    }
+
+    pub fn new_rectangle_shape_layer() -> Self {
+        Self::new_rectangle_shape_layer_with_settings(&ShapeToolSettings::default())
+    }
+
+    pub fn new_rectangle_shape_layer_with_settings(settings: &ShapeToolSettings) -> Self {
+        let mut shape = CanvasShape::rectangle(settings.fill_color);
+        shape.stroke = settings.stroke;
+        let transform_state = TransformableState {
+            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::default(),
+            rotation: 0.0,
+            last_frame_rotation: 0.0,
+            change_in_rotation: None,
+            id: Id::random(),
+        };
+        let transform_edit_state = LayerTransformEditState::from(&transform_state);
+        Self {
+            content: LayerContent::Shape(shape),
+            name: "New Rectangle Shape Layer".to_string(),
+            visible: true,
+            locked: false,
+            selected: false,
+            id: next_layer_id(),
+            transform_edit_state,
+            transform_state,
+        }
+    }
+
+    pub fn new_ellipse_shape_layer() -> Self {
+        Self::new_ellipse_shape_layer_with_settings(&ShapeToolSettings::default())
+    }
+
+    pub fn new_ellipse_shape_layer_with_settings(settings: &ShapeToolSettings) -> Self {
+        let mut shape = CanvasShape::ellipse(settings.fill_color);
+        shape.stroke = settings.stroke;
+        let transform_state = TransformableState {
+            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::default(),
+            rotation: 0.0,
+            last_frame_rotation: 0.0,
+            change_in_rotation: None,
+            id: Id::random(),
+        };
+        let transform_edit_state = LayerTransformEditState::from(&transform_state);
+        Self {
+            content: LayerContent::Shape(shape),
+            name: "New Ellipse Shape Layer".to_string(),
+            visible: true,
+            locked: false,
+            selected: false,
+            id: next_layer_id(),
+            transform_edit_state,
+            transform_state,
+        }
+    }
+
+    pub fn new_line_shape_layer() -> Self {
+        Self::new_line_shape_layer_with_settings(&LineToolSettings::default())
+    }
+
+    pub fn new_line_shape_layer_with_settings(settings: &LineToolSettings) -> Self {
+        let mut shape = CanvasShape::line(settings.color);
+        shape.stroke = Some((Stroke::new(settings.width, settings.color), StrokeKind::Middle));
+        let transform_state = TransformableState {
+            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 2.0)),
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::default(),
+            rotation: 0.0,
+            last_frame_rotation: 0.0,
+            change_in_rotation: None,
+            id: Id::random(),
+        };
+        let transform_edit_state = LayerTransformEditState::from(&transform_state);
+        Self {
+            content: LayerContent::Shape(shape),
+            name: "New Line Shape Layer".to_string(),
             visible: true,
             locked: false,
             selected: false,
@@ -352,6 +585,17 @@ impl<'a> Layers<'a> {
                                     LayerContent::TemplateText { .. } => {
                                         ui.label("Template Text");
                                     }
+                                    LayerContent::Shape(canvas_shape) => match canvas_shape.kind {
+                                        CanvasShapeKind::Rectangle { .. } => {
+                                            ui.label("Rectangle");
+                                        }
+                                        CanvasShapeKind::Ellipse => {
+                                            ui.label("Ellipse");
+                                        }
+                                        CanvasShapeKind::Line => {
+                                            ui.label("Line");
+                                        }
+                                    },
                                 }
 
                                 ui.label(&layer.name);
