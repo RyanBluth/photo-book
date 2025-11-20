@@ -546,20 +546,17 @@ impl<'a> Canvas<'a> {
             Vec2::new(self.available_rect.width(), toolbar_height),
         );
 
-        ui.allocate_new_ui(
-            UiBuilder::new().max_rect(toolbar_rect),
-            |ui| {
-                ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
-                ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
+        ui.allocate_new_ui(UiBuilder::new().max_rect(toolbar_rect), |ui| {
+            ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
+            ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
 
-                egui::Frame::none()
-                    .fill(egui::Color32::from_gray(25))
-                    .inner_margin(8.0)
-                    .show(ui, |ui| {
-                        Toolbar::new(&mut self.state.current_tool).show(ui);
-                    });
-            },
-        );
+            egui::Frame::none()
+                .fill(egui::Color32::from_gray(25))
+                .inner_margin(8.0)
+                .show(ui, |ui| {
+                    Toolbar::new(&mut self.state.current_tool).show(ui);
+                });
+        });
 
         // Adjust available rect to account for toolbar
         let canvas_rect = Rect::from_min_size(
@@ -573,8 +570,8 @@ impl<'a> Canvas<'a> {
         // Adjust the zoom so that the page fits in the available rect
         if !self.state.computed_initial_zoom {
             let page_size = self.state.page.size_pixels() * 1.1;
-            self.state.zoom = (canvas_rect.width() / page_size.x)
-                .min(canvas_rect.height() / page_size.y);
+            self.state.zoom =
+                (canvas_rect.width() / page_size.x).min(canvas_rect.height() / page_size.y);
             self.state.computed_initial_zoom = true;
         }
 
@@ -588,10 +585,10 @@ impl<'a> Canvas<'a> {
         if ui.ctx().pointer_hover_pos().is_some() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
-                    // if input.raw_scroll_delta.y != 0.0 {
-                    let zoom_factor = if input.raw_scroll_delta.y > 0.0 {
+                    // if input.smooth_scroll_delta.y != 0.0 {
+                    let zoom_factor = if input.smooth_scroll_delta.y > 0.0 {
                         1.1
-                    } else if input.raw_scroll_delta.y < 0.0 {
+                    } else if input.smooth_scroll_delta.y < 0.0 {
                         1.0 / 1.1
                     } else {
                         1.0
@@ -695,25 +692,28 @@ impl<'a> Canvas<'a> {
         if let Some(CreatingLayer::Line(ref creating_layer, _)) = self.state.creating_layer {
             // Draw the line being created
             let layer_rect = creating_layer.transform_state.rect;
-    
+
             // Transform the start and end points to screen space
             let start_screen = page_rect.min + layer_rect.min.to_vec2() * self.state.zoom;
             let end_screen = page_rect.min + layer_rect.max.to_vec2() * self.state.zoom;
-    
+
             // Draw line from actual start to end points
-            if let crate::widget::canvas_info::layers::LayerContent::Shape(ref shape) = creating_layer.content {
+            if let crate::widget::canvas_info::layers::LayerContent::Shape(ref shape) =
+                creating_layer.content
+            {
                 if let Some((stroke, _)) = shape.stroke {
                     let zoomed_stroke = Stroke::new(stroke.width * self.state.zoom, stroke.color);
-                    ui.painter().line_segment([start_screen, end_screen], zoomed_stroke);
+                    ui.painter()
+                        .line_segment([start_screen, end_screen], zoomed_stroke);
                 }
             }
         }
-    
+
         // Handle canvas interactions for tool-based creation with click-and-drag
         let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
         let primary_pointer_down = ui.input(|input| input.pointer.primary_down());
         let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
-    
+
         // Start creating layer on mouse down
         if primary_pointer_pressed && self.state.creating_layer.is_none() {
             if let Some(click_pos) = ui.input(|input| input.pointer.press_origin()) {
@@ -725,19 +725,27 @@ impl<'a> Canvas<'a> {
                         Tool::Text | Tool::Rectangle | Tool::Ellipse | Tool::Line => {
                             // Create a new layer at click position with minimal size
                             let mut layer = match self.state.current_tool {
-                                Tool::Text => Layer::new_text_layer_with_settings(&self.state.text_tool_settings),
-                                Tool::Rectangle => Layer::new_rectangle_shape_layer_with_settings(&self.state.rectangle_tool_settings),
-                                Tool::Ellipse => Layer::new_ellipse_shape_layer_with_settings(&self.state.ellipse_tool_settings),
-                                Tool::Line => Layer::new_line_shape_layer_with_settings(&self.state.line_tool_settings),
+                                Tool::Text => Layer::new_text_layer_with_settings(
+                                    &self.state.text_tool_settings,
+                                ),
+                                Tool::Rectangle => Layer::new_rectangle_shape_layer_with_settings(
+                                    &self.state.rectangle_tool_settings,
+                                ),
+                                Tool::Ellipse => Layer::new_ellipse_shape_layer_with_settings(
+                                    &self.state.ellipse_tool_settings,
+                                ),
+                                Tool::Line => Layer::new_line_shape_layer_with_settings(
+                                    &self.state.line_tool_settings,
+                                ),
                                 _ => unreachable!(),
                             };
-    
+
                             // Calculate position relative to page
                             let relative_pos = (click_pos - page_rect.min) / self.state.zoom;
-    
+
                             self.deselect_all_photos();
                             layer.selected = true;
-    
+
                             // For lines, we don't use transform handles - we draw from click to mouse
                             if self.state.current_tool == Tool::Line {
                                 // Start line at click position - store start as min, end as max (same initially)
@@ -747,9 +755,10 @@ impl<'a> Canvas<'a> {
                                     min: start_pos,
                                     max: start_pos,
                                 };
-    
+
                                 // Track that we're creating this line (separate from layers map)
-                                self.state.creating_layer = Some(CreatingLayer::Line(layer, click_pos));
+                                self.state.creating_layer =
+                                    Some(CreatingLayer::Line(layer, click_pos));
                             } else {
                                 // For other tools, use transform widget by adding to layers map
                                 let initial_size = Vec2::new(10.0, 10.0);
@@ -757,21 +766,24 @@ impl<'a> Canvas<'a> {
                                     Pos2::new(relative_pos.x, relative_pos.y),
                                     initial_size,
                                 );
-                                layer.transform_state.active_handle = Some(TransformHandle::BottomRight);
-                                layer.transform_state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
-    
+                                layer.transform_state.active_handle =
+                                    Some(TransformHandle::BottomRight);
+                                layer.transform_state.handle_mode =
+                                    TransformHandleMode::Resize(ResizeMode::Free);
+
                                 let layer_id = layer.id;
                                 self.state.layers.insert(layer_id, layer);
-    
+
                                 // Track that we're creating this layer
-                                self.state.creating_layer = Some(CreatingLayer::Other(layer_id, click_pos));
+                                self.state.creating_layer =
+                                    Some(CreatingLayer::Other(layer_id, click_pos));
                             }
                         }
                     }
                 }
             }
         }
-    
+
         // Update layer size while dragging
         if primary_pointer_down {
             match &mut self.state.creating_layer {
@@ -780,7 +792,7 @@ impl<'a> Canvas<'a> {
                         // Calculate positions relative to page
                         let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
                         let relative_current = (current_pos - page_rect.min) / self.state.zoom;
-    
+
                         // For lines, store the actual endpoints in the rect
                         // We use rect.min as start point and rect.max as end point
                         // Don't use from_two_pos as it normalizes - manually set to preserve order
@@ -797,12 +809,12 @@ impl<'a> Canvas<'a> {
                             // Calculate size based on drag distance
                             let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
                             let relative_current = (current_pos - page_rect.min) / self.state.zoom;
-    
+
                             let size = Vec2::new(
                                 (relative_current.x - relative_start.x).abs().max(10.0),
                                 (relative_current.y - relative_start.y).abs().max(10.0),
                             );
-    
+
                             // Update the rect
                             layer.transform_state.rect = Rect::from_min_size(
                                 Pos2::new(relative_start.x, relative_start.y),
@@ -814,7 +826,7 @@ impl<'a> Canvas<'a> {
                 None => {}
             }
         }
-    
+
         // Finish creating layer on mouse release
         if primary_pointer_released {
             if let Some(creating_layer) = self.state.creating_layer.take() {
@@ -831,22 +843,22 @@ impl<'a> Canvas<'a> {
                         }
                     }
                 }
-    
+
                 // Save history based on tool type
                 let history_kind = match self.state.current_tool {
                     Tool::Text => CanvasHistoryKind::AddText,
                     Tool::Rectangle | Tool::Ellipse | Tool::Line => CanvasHistoryKind::AddShape,
                     _ => CanvasHistoryKind::AddPhoto, // Fallback
                 };
-    
+
                 self.history_manager.save_history(history_kind, self.state);
-    
+
                 // Switch back to select tool
                 self.state.current_tool = Tool::Select;
             }
         }
     }
-    
+
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
         let zoom = (rect.width() / self.state.page.size_pixels().x)
             .min(rect.height() / self.state.page.size_pixels().y);
@@ -1516,14 +1528,22 @@ impl<'a> Canvas<'a> {
                                                 canvas_shape.fill_color,
                                                 canvas_shape
                                                     .stroke
-                                                    .map(|(stroke, _)| Stroke::new(stroke.width * self.state.zoom, stroke.color))
+                                                    .map(|(stroke, _)| {
+                                                        Stroke::new(
+                                                            stroke.width * self.state.zoom,
+                                                            stroke.color,
+                                                        )
+                                                    })
                                                     .unwrap_or(Stroke::NONE),
                                                 canvas_shape
                                                     .stroke
                                                     .map(|(_, kind)| kind.into())
                                                     .unwrap_or(StrokeKind::Outside),
                                             )
-                                            .with_angle_and_pivot(rotation, transformed_rect.left_top()),
+                                            .with_angle_and_pivot(
+                                                rotation,
+                                                transformed_rect.center(),
+                                            ),
                                         );
                                         ui.painter().add(shape);
                                     }
@@ -1538,7 +1558,12 @@ impl<'a> Canvas<'a> {
                                             fill: canvas_shape.fill_color,
                                             stroke: canvas_shape
                                                 .stroke
-                                                .map(|(stroke, _)| Stroke::new(stroke.width * self.state.zoom, stroke.color))
+                                                .map(|(stroke, _)| {
+                                                    Stroke::new(
+                                                        stroke.width * self.state.zoom,
+                                                        stroke.color,
+                                                    )
+                                                })
                                                 .unwrap_or(Stroke::NONE),
                                             angle: rotation,
                                         });
@@ -1546,10 +1571,17 @@ impl<'a> Canvas<'a> {
                                     }
                                     CanvasShapeKind::Line => {
                                         // For lines, draw from actual start to end (stored in rect.min and rect.max)
-                                        let start = transformed_rect.min;
-                                        let end = transformed_rect.max;
+                                        let rotated_rect = transformed_rect
+                                            .rotate_bb_around_center(transformable_state.rotation);
+
+                                        let start = rotated_rect.min;
+                                        let end = rotated_rect.max;
+
                                         if let Some((stroke, _)) = canvas_shape.stroke {
-                                            let zoomed_stroke = Stroke::new(stroke.width * self.state.zoom, stroke.color);
+                                            let zoomed_stroke = Stroke::new(
+                                                stroke.width * self.state.zoom,
+                                                stroke.color,
+                                            );
                                             ui.painter().line_segment([start, end], zoomed_stroke);
                                         }
                                     }
@@ -1695,7 +1727,7 @@ impl<'a> Canvas<'a> {
 
         // Create the text layout with wrapping
         let wrap_width = rect.width();
-        let galley = ui.fonts(|f| {
+        let galley = ui.fonts_mut(|f| {
             f.layout(
                 text.clone(),
                 FontId {

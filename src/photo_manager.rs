@@ -65,12 +65,17 @@ pub struct PhotoMetadata {
     pub grouped_index: usize,
 }
 
+#[derive(Debug, Default)]
+struct ContextCache {
+    texture_cache: HashMap<String, SizedTexture>,
+    pending_textures: HashSet<String>,
+}
+
 #[derive(Debug)]
 pub struct PhotoManager {
     current_grouping: PhotoGrouping,
     current_filter: PhotoQuery,
-    texture_cache: HashMap<String, SizedTexture>,
-    pending_textures: HashSet<String>,
+    caches: Vec<(Context, ContextCache)>,
     thumbnail_existence_cache: HashSet<String>,
     current_query_result: Option<PhotoQueryResult>,
     pub photo_database: PhotoDatabase,
@@ -81,8 +86,7 @@ impl PhotoManager {
         Self {
             current_grouping: PhotoGrouping::default(),
             current_filter: PhotoQuery::default(),
-            texture_cache: HashMap::new(),
-            pending_textures: HashSet::new(),
+            caches: Vec::new(),
             thumbnail_existence_cache: HashSet::new(),
             current_query_result: None,
             photo_database: PhotoDatabase::new(),
@@ -100,11 +104,25 @@ impl PhotoManager {
     pub fn clear(&mut self) {
         self.current_grouping = PhotoGrouping::default();
         self.current_filter = PhotoQuery::default();
-        self.texture_cache.clear();
-        self.pending_textures.clear();
+        self.caches.clear();
         self.thumbnail_existence_cache.clear();
         self.current_query_result = None;
         self.photo_database.clear();
+    }
+
+    pub fn remove_cached_textures_for_context(&mut self, ctx: &Context) {
+        self.caches.retain(|(context, _)| context != ctx);
+    }
+
+    fn get_cache_mut(&mut self, ctx: &Context) -> &mut ContextCache {
+        let index = self.caches.iter().position(|(c, _)| c == ctx);
+        match index {
+            Some(i) => &mut self.caches[i].1,
+            None => {
+                self.caches.push((ctx.clone(), ContextCache::default()));
+                &mut self.caches.last_mut().unwrap().1
+            }
+        }
     }
 
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
@@ -275,11 +293,12 @@ impl PhotoManager {
             return Ok(None);
         }
 
+        let cache = self.get_cache_mut(ctx);
         Self::load_texture(
             &photo.thumbnail_uri(),
             ctx,
-            &mut self.texture_cache,
-            &mut self.pending_textures,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
         )
     }
 
@@ -290,17 +309,19 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         match self.photo_database.get_photo_by_index(at) {
             Some(photo) => {
+                let photo = photo.clone();
                 if !self
                     .thumbnail_existence_cache
                     .contains(&photo.thumbnail_hash)
                 {
                     return Ok(None);
                 }
+                let cache = self.get_cache_mut(ctx);
                 Self::load_texture(
                     &photo.thumbnail_uri(),
                     ctx,
-                    &mut self.texture_cache,
-                    &mut self.pending_textures,
+                    &mut cache.texture_cache,
+                    &mut cache.pending_textures,
                 )
             }
             _ => Ok(None),
@@ -312,11 +333,12 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let cache = self.get_cache_mut(ctx);
         Self::load_texture(
             &photo.uri(),
             ctx,
-            &mut self.texture_cache,
-            &mut self.pending_textures,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
         )
     }
 
@@ -325,11 +347,12 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let cache = self.get_cache_mut(ctx);
         Self::load_texture_blocking(
             &photo.uri(),
             ctx,
-            &mut self.texture_cache,
-            &mut self.pending_textures,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
         )
     }
 
@@ -338,25 +361,30 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let cache = self.get_cache_mut(ctx);
         match Self::load_texture(
             &photo.uri(),
             ctx,
-            &mut self.texture_cache,
-            &mut self.pending_textures,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
         ) {
             Result::Ok(Some(tex)) => Ok(Some(tex)),
-            _ => Ok(self.texture_cache.get(&photo.thumbnail_uri()).copied()),
+            _ => Ok(cache.texture_cache.get(&photo.thumbnail_uri()).copied()),
         }
     }
 
     pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
         match self.photo_database.get_photo_by_index(at) {
-            Some(photo) => Self::load_texture(
-                &photo.uri(),
-                ctx,
-                &mut self.texture_cache,
-                &mut self.pending_textures,
-            ),
+            Some(photo) => {
+                let photo = photo.clone();
+                let cache = self.get_cache_mut(ctx);
+                Self::load_texture(
+                    &photo.uri(),
+                    ctx,
+                    &mut cache.texture_cache,
+                    &mut cache.pending_textures,
+                )
+            }
             _ => Ok(None),
         }
     }
@@ -413,12 +441,14 @@ impl PhotoManager {
                     match texture {
                         Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
                             photo_manager.with_lock_mut(|photo_manager| {
-                                photo_manager.pending_textures.insert(uri)
+                                let cache = photo_manager.get_cache_mut(&ctx);
+                                cache.pending_textures.insert(uri)
                             });
                         }
                         Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
                             photo_manager.with_lock_mut(|photo_manager| {
-                                photo_manager.texture_cache.insert(uri, texture);
+                                let cache = photo_manager.get_cache_mut(&ctx);
+                                cache.texture_cache.insert(uri, texture);
                             });
                         }
                         Result::Err(err) => {
@@ -615,14 +645,29 @@ impl PhotoManager {
                     .to_str()
                     .ok_or(anyhow!("Failed to convert extension to str"))?
                 {
-                    "jpg" | "jpeg" => {
-                        JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
-                            dst_image.buffer(),
-                            dst_width,
-                            dst_height,
-                            ExtendedColorType::Rgb8,
-                        )?;
-                    }
+                    "jpg" | "jpeg" => match dst_image.pixel_type() {
+                        fr::PixelType::U8x4 => {
+                            let buffer = dst_image.buffer();
+                            let rgb_data: Vec<u8> = buffer
+                                .chunks_exact(4)
+                                .flat_map(|chunk| chunk[0..3].iter().copied())
+                                .collect();
+                            JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
+                                &rgb_data,
+                                dst_width,
+                                dst_height,
+                                ExtendedColorType::Rgb8,
+                            )?;
+                        }
+                        _ => {
+                            JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
+                                dst_image.buffer(),
+                                dst_width,
+                                dst_height,
+                                ExtendedColorType::Rgb8,
+                            )?;
+                        }
+                    },
                     "png" => {
                         PngEncoder::new(&mut result_buf).write_image(
                             dst_image.buffer(),

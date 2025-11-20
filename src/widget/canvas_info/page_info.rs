@@ -101,6 +101,15 @@ impl<'a> PageInfo<'a> {
 
                 page.set_unit(page_unit);
             });
+
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                let page = &mut self.state.page;
+                ui.label("PPI:");
+                let new_ppi = ui.text_edit_editable_value_singleline(&mut page.edit_state.ppi);
+                page.set_ppi(new_ppi);
+            });
             ui.separator();
         });
     }

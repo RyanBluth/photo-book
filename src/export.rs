@@ -1,3 +1,4 @@
+use egui::emath::OrderedFloat;
 use egui::{Pos2, Rect};
 use log::{error, info};
 
@@ -6,11 +7,11 @@ use skia_safe::surfaces::raster_n32_premul;
 
 use printpdf::{Mm, Op, PdfDocument, PdfPage, PdfSaveOptions, RawImage, XObjectTransform};
 use std::collections::HashMap;
-use std::default;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::{default, usize};
 
 use tokio::task::spawn_blocking;
 
@@ -119,8 +120,7 @@ impl Exporter {
                 ModalManager::push(ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0));
 
             let show_export_failure_modal =
-                |progress_modal_id: TypedModalId<ProgressModal>,
-                 error: ExportError| {
+                |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
                     let modal_manager: Singleton<ModalManager> = Dependency::get();
                     _ = modal_manager.with_lock_mut(|modal_manager| {
                         modal_manager.dismiss(progress_modal_id);
@@ -185,7 +185,6 @@ impl Exporter {
         directory: &PathBuf,
         page_number: u32,
     ) -> Result<(), ExportError> {
-        /* */
         let directory = PathBuf::from(directory);
 
         let size = canvas_state.page.size_pixels();
@@ -194,18 +193,14 @@ impl Exporter {
         let mut surface = raster_n32_premul((size.x as i32, size.y as i32))
             .ok_or(ExportError::SurfaceCreationError)?;
 
-        let rasterize_options = RasterizeOptions {
-            pixels_per_point: 1.0,
-            frames_before_screenshot: 500,
-        };
-        let mut backend = EguiSkia::new(rasterize_options.pixels_per_point);
+        let mut backend = EguiSkia::new(1.0);
         egui_extras::install_image_loaders(&backend.egui_ctx);
 
         backend.egui_ctx.input_mut(|input| {
             input.max_texture_side = Self::get_max_texture_size();
         });
 
-        let photo_manager = Singleton::new(PhotoManager::new());
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let mut history_manager = CanvasHistoryManager::preview();
 
         let mut canvas = Canvas::new(
@@ -214,35 +209,33 @@ impl Exporter {
             &mut history_manager,
         );
 
-        photo_manager.with_lock_mut(|photo_manager| {
-            for layer in canvas.state.layers.values() {
-                match &layer.content {
-                    LayerContent::Photo(photo)
-                    | LayerContent::TemplatePhoto {
-                        photo: Some(photo), ..
-                    } => loop {
-                        match photo_manager.texture_for_blocking(&photo.photo, &backend.egui_ctx) {
-                            Ok(Some(_)) => {
-                                info!("Texture loaded for {}", photo.photo.uri());
-                                break;
-                            }
-                            Ok(None) => {
-                                continue;
-                            }
-                            Err(error) => {
-                                error!("Error loading texture: {:?}", error);
-                                return Err(ExportError::TextureLoadingError(error.to_string()));
-                            }
+        for layer in canvas.state.layers.values() {
+            match &layer.content {
+                LayerContent::Photo(photo)
+                | LayerContent::TemplatePhoto {
+                    photo: Some(photo), ..
+                } => loop {
+                    let result = photo_manager.with_lock_mut(|photo_manager| {
+                        photo_manager.texture_for_blocking(&photo.photo, &backend.egui_ctx)
+                    });
+                    match result {
+                        Ok(Some(_)) => break,
+                        Ok(None) => continue,
+                        Err(e) => {
+                            panic!(
+                                "Failed to load texture for {} when exporting: {:?}",
+                                photo.photo.uri(),
+                                e
+                            );
                         }
-                    },
-                    LayerContent::TemplatePhoto { photo: None, .. } => {}
-                    LayerContent::Text(_) => {}
-                    LayerContent::TemplateText { .. } => {}
-                    LayerContent::Shape(_) => {},
-                }
+                    }
+                },
+                LayerContent::TemplatePhoto { photo: None, .. } => {}
+                LayerContent::Text(_) => {}
+                LayerContent::TemplateText { .. } => {}
+                LayerContent::Shape(_) => {}
             }
-            Ok(())
-        })?;
+        }
 
         let font_manager: Singleton<FontManager> = Dependency::get();
 
@@ -265,15 +258,16 @@ impl Exporter {
             ..Default::default()
         };
 
-        let mut _output_surface: Option<_> = None;
-        for _ in 0..rasterize_options.frames_before_screenshot {
-            _output_surface = Some(backend.run(input.clone(), |ctx: &egui::Context| {
+        backend.paint_when_ready(
+            surface.canvas(),
+            input.clone(),
+            |ctx: &egui::Context| {
                 egui::CentralPanel::default().show(ctx, |ui| {
                     canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
                 });
-            }));
-        }
-
+            },
+            Some(usize::MAX),
+        );
         backend.paint(surface.canvas());
 
         let data = surface
@@ -288,6 +282,10 @@ impl Exporter {
         output_file
             .write_all(&data)
             .map_err(|e| ExportError::FileError(e.to_string()))?;
+
+        photo_manager.with_lock_mut(|pm| {
+            pm.remove_cached_textures_for_context(&backend.egui_ctx);
+        });
 
         Ok(())
     }

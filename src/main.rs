@@ -138,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
                             },
                             memory_hints: wgpu::MemoryHints::default(),
                             trace: wgpu::Trace::Off,
+                            experimental_features: wgpu::ExperimentalFeatures::default(),
                         }
                     }),
                     ..Default::default()

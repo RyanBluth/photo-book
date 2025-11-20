@@ -1,6 +1,6 @@
 use std::{collections::HashSet, ffi::OsStr, path::PathBuf, sync::Arc};
 
-use egui::{text::Fonts, FontDefinitions, FontFamily, FontId};
+use egui::{FontDefinitions, FontFamily, FontId, epaint::AlphaFromCoverage, text::Fonts};
 use font_kit::source::SystemSource;
 use indexmap::IndexMap;
 
@@ -93,9 +93,10 @@ impl FontManager {
                 }
             }
 
-            let fonts = Fonts::new(1.0, 1024, Default::default(), font_definitions.clone());
+            let mut fonts = Fonts::new(1024, AlphaFromCoverage::default(), font_definitions.clone());
 
             let valid_fonts = fonts
+                .with_pixels_per_point(1.0)
                 .families()
                 .iter()
                 .map(|family| FontId::new(20.0, family.clone()))
