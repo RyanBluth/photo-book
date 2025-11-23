@@ -59,6 +59,7 @@ pub trait RectExt {
     fn center_within(&self, rect: Rect) -> Rect;
     fn fit_and_center_within(&self, rect: Rect) -> Rect;
     fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect;
+    fn default_uv() -> Rect;
 }
 
 impl RectExt for Rect {
@@ -302,6 +303,10 @@ impl RectExt for Rect {
             let new_min = self.center() - new_size / 2.0;
             Rect::from_min_size(new_min, new_size)
         }
+    }
+
+    fn default_uv() -> Rect {
+        Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0))
     }
 }
 
