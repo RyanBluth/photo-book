@@ -2,7 +2,7 @@ use eframe::{
     egui::{self, Button, CursorIcon, Image, Response, Sense, Ui},
     epaint::{Color32, Pos2, Rect, Stroke, Vec2},
 };
-use egui::{Id, StrokeKind};
+use egui::{Id, LayerId, Order, StrokeKind, UiBuilder};
 
 use crate::{
     assets::Asset,
@@ -419,18 +419,18 @@ impl<'a> TransformableWidget<'a> {
 
                                 // Calculate current cursor angle relative to center
                                 let from_center_to_cursor = cursor_pos - center;
-                                let current_cursor_angle = f32::atan2(
-                                    from_center_to_cursor.y,
-                                    from_center_to_cursor.x,
-                                );
+                                let current_cursor_angle =
+                                    f32::atan2(from_center_to_cursor.y, from_center_to_cursor.x);
 
                                 // If this is the first frame of rotation, store the offset
                                 // change_in_rotation = initial_rotation - initial_cursor_angle
                                 if self.state.change_in_rotation.is_none() {
-                                    self.state.change_in_rotation = Some(self.state.rotation - current_cursor_angle);
+                                    self.state.change_in_rotation =
+                                        Some(self.state.rotation - current_cursor_angle);
                                 }
 
-                                self.state.rotation = self.state.change_in_rotation.unwrap() + current_cursor_angle;
+                                self.state.rotation =
+                                    self.state.change_in_rotation.unwrap() + current_cursor_angle;
                                 self.state.active_handle = Some(*handle);
                             }
                         }
@@ -570,64 +570,73 @@ impl<'a> TransformableWidget<'a> {
             Sense::hover(),
         );
 
-        ui.painter().rect(
-            response.rect,
-            4.0,
-            Color32::from_gray(40),
-            Stroke::NONE,
-            StrokeKind::Outside,
-        );
+        ui.scope_builder(
+            UiBuilder::new().layer_id(LayerId {
+                order: Order::Tooltip,
+                id: Id::new("transformable_mode_selector_layer"),
+            }),
+            |ui| {
+                ui.painter().rect(
+                    response.rect,
+                    4.0,
+                    Color32::from_gray(40),
+                    Stroke::NONE,
+                    StrokeKind::Outside,
+                );
 
-        let left_half_rect =
-            Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
+                let left_half_rect =
+                    Rect::from_points(&[response.rect.left_top(), response.rect.center_bottom()]);
 
-        let right_half_rect =
-            Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
+                let right_half_rect =
+                    Rect::from_points(&[response.rect.center_bottom(), response.rect.right_top()]);
 
-        if ui
-            .put(
-                Rect::from_center_size(left_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::resize())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
-                )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
-        }
+                if ui
+                    .put(
+                        Rect::from_center_size(left_half_rect.center(), button_size),
+                        Button::image(
+                            Image::from(Asset::resize())
+                                .tint(Color32::WHITE)
+                                .fit_to_exact_size(button_size * 0.8),
+                        )
+                        .fill(
+                            if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
+                                Color32::from_gray(100)
+                            } else {
+                                Color32::from_gray(50)
+                            },
+                        )
+                        .sense(Sense::click()),
+                    )
+                    .clicked()
+                {
+                    self.state.handle_mode = TransformHandleMode::Resize(ResizeMode::Free);
+                }
 
-        if ui
-            .put(
-                Rect::from_center_size(right_half_rect.center(), button_size),
-                Button::image(
-                    Image::from(Asset::rotate())
-                        .tint(Color32::WHITE)
-                        .fit_to_exact_size(button_size * 0.8),
-                )
-                .fill(
-                    if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                        Color32::from_gray(100)
-                    } else {
-                        Color32::from_gray(50)
-                    },
-                )
-                .sense(Sense::click()),
-            )
-            .clicked()
-        {
-            self.state.handle_mode = TransformHandleMode::Rotate;
-        }
+                if ui
+                    .put(
+                        Rect::from_center_size(right_half_rect.center(), button_size),
+                        Button::image(
+                            Image::from(Asset::rotate())
+                                .tint(Color32::WHITE)
+                                .fit_to_exact_size(button_size * 0.8),
+                        )
+                        .fill(
+                            if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
+                                Color32::from_gray(100)
+                            } else {
+                                Color32::from_gray(50)
+                            },
+                        )
+                        .sense(Sense::click()),
+                    )
+                    .clicked()
+                {
+                    self.state.handle_mode = TransformHandleMode::Rotate;
+                }
 
-        response
+                response
+            },
+        )
+        .inner
     }
 }
