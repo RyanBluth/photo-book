@@ -8,7 +8,7 @@ use crate::{
     assets::Asset,
     cursor_manager::CursorManager,
     dependencies::{Dependency, SingletonFor},
-    utils::RectExt,
+    utils::{IdExt, RectExt},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -70,6 +70,19 @@ pub struct TransformableState {
 }
 
 impl TransformableState {
+    pub fn new(rect: Rect) -> Self {
+        Self {
+            rect,
+            active_handle: None,
+            is_moving: false,
+            handle_mode: TransformHandleMode::Resize(ResizeMode::Free),
+            rotation: 0.0,
+            last_frame_rotation: 0.0,
+            change_in_rotation: None,
+            id: Id::random(),
+        }
+    }
+
     pub fn to_local_space(&self, parent: &TransformableState) -> Self {
         let mut new_rect = self.rect;
         new_rect.set_center(parent.rect.center() - self.rect.center().to_vec2());

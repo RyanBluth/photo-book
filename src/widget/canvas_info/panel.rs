@@ -4,7 +4,7 @@ use egui::InnerResponse;
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
-        canvas::{CanvasState, Tool},
+        canvas::{CanvasState, types::ToolKind},
         canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             layers::CanvasShapeKind,
@@ -94,27 +94,27 @@ impl<'a> CanvasInfo<'a> {
                     }
                 } else {
                     // No layer selected - show create mode controls based on current tool
-                    match self.canvas_state.current_tool {
-                        Tool::Text => {
+                    match self.canvas_state.tool_state.tool_kind() {
+                        ToolKind::Text => {
                             TextToolControl::new(&mut self.canvas_state.text_tool_settings)
                                 .show(ui);
                             ui.separator();
                         }
-                        Tool::Rectangle => {
+                        ToolKind::Rectangle => {
                             ShapeToolControl::new(&mut self.canvas_state.rectangle_tool_settings)
                                 .show(ui);
                             ui.separator();
                         }
-                        Tool::Ellipse => {
+                        ToolKind::Ellipse => {
                             ShapeToolControl::new(&mut self.canvas_state.ellipse_tool_settings)
                                 .show(ui);
                             ui.separator();
                         }
-                        Tool::Line => {
+                        ToolKind::Line => {
                             LineToolControl::new(&mut self.canvas_state.line_tool_settings).show(ui);
                             ui.separator();
                         }
-                        Tool::Select => {
+                        ToolKind::Select => {
                             // No controls to show in select mode when nothing is selected
                         }
                     }

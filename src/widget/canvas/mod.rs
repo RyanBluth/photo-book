@@ -1,520 +1,56 @@
+pub mod selection;
+pub mod state;
+pub mod types;
+use crate::{
+    model::scale_mode::ScaleMode,
+    widget::{
+        canvas::types::{ActiveTool, IdleTool, ToolState},
+        toolbar::ToolbarResponse,
+    },
+};
+
 use eframe::{
-    egui::{self, Context, CursorIcon, Sense, Ui},
+    egui::{
+        self, Align, Context, CornerRadius, CursorIcon, Id, Layout, Margin, Sense, Stroke,
+        StrokeKind, Ui, UiBuilder,
+    },
     emath::Rot2,
-    epaint::{Color32, FontId, Mesh, Pos2, Rect, Shape, TextShape, Vec2},
+    epaint::{Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
 };
 use egui::{
-    Align, CornerRadius, Id, Layout, Margin, RichText, Stroke, StrokeKind, UiBuilder,
-    emath::TSTransform,
-    epaint::{EllipseShape, RectShape},
+    Order,
+    epaint::{ColorMode, PathStroke},
 };
-use indexmap::{IndexMap, indexmap};
+use printpdf::Line;
 
 use crate::{
     cursor_manager::CursorManager,
     debug::DebugSettings,
     dependencies::{Dependency, SingletonFor},
-    id::{LayerId, next_layer_id},
-    model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
-    photo::Photo,
+    id::LayerId,
     photo_manager::PhotoManager,
-    project_settings::ProjectSettingsManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
-    template::{Template, TemplateRegionKind},
-    utils::{IdExt, RectExt, Toggle},
-    widget::canvas_info::layers::{CanvasShapeKind, LineToolSettings},
+    template::TemplateRegionKind,
+    utils::{RectExt, Toggle},
+    widget::canvas_info::layers::{
+        CanvasShapeKind, Layer, LayerContent, TextHorizontalAlignment, TextVerticalAlignment,
+    },
 };
 
 use super::{
     action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind},
     auto_center::AutoCenter,
-    canvas_info::{
-        layers::{
-            CanvasText, Layer, LayerContent, LayerTransformEditState, ShapeToolSettings,
-            TextHorizontalAlignment, TextToolSettings, TextVerticalAlignment,
-        },
-        quick_layout::{self},
-    },
     toolbar::Toolbar,
     transformable::{
-        ResizeMode, TransformHandle, TransformHandleMode, TransformableState, TransformableWidget,
-        TransformableWidgetResponse,
+        ResizeMode, TransformHandleMode, TransformableWidget, TransformableWidgetResponse,
     },
 };
 
-pub enum CanvasResponse {
-    Exit,
-    EnterCropMode {
-        target_layer: LayerId,
-        photo: CanvasPhoto,
-    },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tool {
-    Select,
-    Text,
-    Rectangle,
-    Ellipse,
-    Line,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CreatingLayer {
-    /// Line being created - stored here for live preview
-    Line(Layer, Pos2),
-    /// Other layer being created - stored in layers map with this ID
-    Other(LayerId, Pos2),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CanvasPhoto {
-    pub photo: Photo,
-    // Normalized crop rect
-    pub crop: Rect,
-}
-
-impl CanvasPhoto {
-    pub fn new(photo: Photo) -> Self {
-        Self {
-            photo,
-            crop: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CanvasState {
-    pub layers: IndexMap<LayerId, Layer>,
-    pub zoom: f32,
-    pub offset: Vec2,
-    pub multi_select: Option<MultiSelect>,
-    pub page: EditablePage,
-    pub template: Option<Template>,
-    pub quick_layout_order: Vec<LayerId>,
-    pub last_quick_layout: Option<quick_layout::Layout>,
-    pub canvas_id: egui::Id,
-    pub text_edit_mode: Option<LayerId>,
-    pub current_tool: Tool,
-    pub creating_layer: Option<CreatingLayer>,
-    pub text_tool_settings: TextToolSettings,
-    pub rectangle_tool_settings: ShapeToolSettings,
-    pub ellipse_tool_settings: ShapeToolSettings,
-    pub line_tool_settings: LineToolSettings,
-    computed_initial_zoom: bool,
-}
-
-impl CanvasState {
-    pub fn new() -> Self {
-        Self {
-            layers: IndexMap::new(),
-            zoom: 1.0,
-            offset: Vec2::ZERO,
-            multi_select: None,
-            page: EditablePage::new(Dependency::<ProjectSettingsManager>::get().with_lock(
-                |manager| {
-                    manager
-                        .project_settings
-                        .default_page
-                        .clone()
-                        .unwrap_or_default()
-                },
-            )),
-            template: None,
-            quick_layout_order: Vec::new(),
-            last_quick_layout: None,
-            canvas_id: Id::random(),
-            text_edit_mode: None,
-            current_tool: Tool::Select,
-            creating_layer: None,
-            text_tool_settings: TextToolSettings::default(),
-            rectangle_tool_settings: ShapeToolSettings::default(),
-            ellipse_tool_settings: ShapeToolSettings::default(),
-            line_tool_settings: LineToolSettings::default(),
-            computed_initial_zoom: false,
-        }
-    }
-
-    pub fn with_layers(
-        layers: IndexMap<LayerId, Layer>,
-        page: EditablePage,
-        template: Option<Template>,
-        quick_layout_order: Vec<LayerId>,
-    ) -> Self {
-        Self {
-            layers,
-            zoom: 1.0,
-            offset: Vec2::ZERO,
-            multi_select: None,
-            page,
-            template,
-            quick_layout_order: quick_layout_order,
-            last_quick_layout: None,
-            canvas_id: Id::random(),
-            text_edit_mode: None,
-            current_tool: Tool::Select,
-            creating_layer: None,
-            text_tool_settings: TextToolSettings::default(),
-            rectangle_tool_settings: ShapeToolSettings::default(),
-            ellipse_tool_settings: ShapeToolSettings::default(),
-            line_tool_settings: LineToolSettings::default(),
-            computed_initial_zoom: false,
-        }
-    }
-
-    pub fn clone_with_new_widget_ids(&self) -> Self {
-        let mut clone = self.clone();
-        for layer in clone.layers.values_mut() {
-            layer.transform_state.id = Id::random();
-        }
-        clone
-    }
-
-    pub fn with_photo(photo: Photo) -> Self {
-        let initial_rect = match photo.max_dimension() {
-            crate::photo::MaxPhotoDimension::Width => {
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0, 1000.0 / photo.aspect_ratio()))
-            }
-            crate::photo::MaxPhotoDimension::Height => {
-                Rect::from_min_size(Pos2::ZERO, Vec2::new(1000.0 * photo.aspect_ratio(), 1000.0))
-            }
-        };
-
-        let canvas_photo = CanvasPhoto::new(photo);
-
-        let name: String = canvas_photo.photo.file_name().to_string();
-        let transform_state = TransformableState {
-            rect: initial_rect,
-            active_handle: None,
-            is_moving: false,
-            handle_mode: TransformHandleMode::default(),
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-            id: Id::random(),
-        };
-        let transform_edit_state = LayerTransformEditState::from(&transform_state);
-        let layer = Layer {
-            content: LayerContent::Photo(canvas_photo),
-            name,
-            visible: true,
-            locked: false,
-            selected: false,
-            id: next_layer_id(),
-            transform_edit_state,
-            transform_state,
-        };
-
-        Self {
-            layers: indexmap! { layer.id => layer.clone() },
-            zoom: 1.0,
-            offset: Vec2::ZERO,
-            multi_select: None,
-            page: EditablePage::new(Page::default()),
-            template: None,
-            quick_layout_order: vec![layer.id],
-            last_quick_layout: None,
-            canvas_id: Id::random(),
-            text_edit_mode: None,
-            current_tool: Tool::Select,
-            creating_layer: None,
-            text_tool_settings: TextToolSettings::default(),
-            rectangle_tool_settings: ShapeToolSettings::default(),
-            ellipse_tool_settings: ShapeToolSettings::default(),
-            line_tool_settings: LineToolSettings::default(),
-            computed_initial_zoom: false,
-        }
-    }
-
-    pub fn with_template(template: Template) -> Self {
-        // Add layer for each region in the template
-
-        let mut layers = IndexMap::new();
-        for region in &template.regions {
-            let name = format!("{:?}", region.kind);
-            let transform_state = TransformableState {
-                rect: Rect::from_min_size(
-                    Pos2::new(
-                        region.relative_position.x * template.page.size().x,
-                        region.relative_position.y * template.page.size().y,
-                    ),
-                    Vec2::new(
-                        region.relative_size.x * template.page.size().x,
-                        region.relative_size.y * template.page.size().y,
-                    ),
-                ),
-                active_handle: None,
-                is_moving: false,
-                handle_mode: TransformHandleMode::default(),
-                rotation: 0.0,
-                last_frame_rotation: 0.0,
-                change_in_rotation: None,
-                id: Id::random(),
-            };
-
-            let transform_edit_state = LayerTransformEditState::from(&transform_state);
-
-            match &region.kind {
-                TemplateRegionKind::Image => {
-                    let layer = Layer {
-                        content: LayerContent::TemplatePhoto {
-                            region: region.clone(),
-                            photo: None,
-                            scale_mode: ScaleMode::Fit,
-                        },
-                        name,
-                        visible: true,
-                        locked: false,
-                        selected: false,
-                        id: next_layer_id(),
-                        transform_edit_state,
-                        transform_state,
-                    };
-                    layers.insert(layer.id, layer);
-                }
-                TemplateRegionKind::Text {
-                    sample_text,
-                    font_size,
-                } => {
-                    let layer = Layer {
-                        content: LayerContent::TemplateText {
-                            region: region.clone(),
-                            text: CanvasText::new(
-                                sample_text.clone(),
-                                *font_size,
-                                FontId::default(),
-                                Color32::BLACK,
-                                TextHorizontalAlignment::Left,
-                                TextVerticalAlignment::Top,
-                            ),
-                        },
-                        name,
-                        visible: true,
-                        locked: false,
-                        selected: false,
-                        id: next_layer_id(),
-                        transform_edit_state,
-                        transform_state,
-                    };
-
-                    layers.insert(layer.id, layer);
-                }
-            }
-        }
-
-        let ids = layers.keys().copied().collect::<Vec<_>>();
-
-        Self {
-            layers,
-            zoom: 1.0,
-            offset: Vec2::ZERO,
-            multi_select: None,
-            page: EditablePage::new(template.page.clone()),
-            template: Some(template),
-            quick_layout_order: ids,
-            last_quick_layout: None,
-            canvas_id: Id::random(),
-            text_edit_mode: None,
-            current_tool: Tool::Select,
-            creating_layer: None,
-            text_tool_settings: TextToolSettings::default(),
-            rectangle_tool_settings: ShapeToolSettings::default(),
-            ellipse_tool_settings: ShapeToolSettings::default(),
-            line_tool_settings: LineToolSettings::default(),
-            computed_initial_zoom: false,
-        }
-    }
-
-    pub fn swap_layer_centers_and_bounds(&mut self, layer_id1: LayerId, layer_id2: LayerId) {
-        let original_child_a_rect = self
-            .layers
-            .get(&layer_id1)
-            .unwrap()
-            .transform_state
-            .rect
-            .clone();
-
-        let original_child_b_rect = self
-            .layers
-            .get(&layer_id2)
-            .unwrap()
-            .transform_state
-            .rect
-            .clone();
-
-        self.layers
-            .get_mut(&layer_id1)
-            .unwrap()
-            .transform_state
-            .rect = original_child_a_rect.fit_and_center_within(original_child_b_rect);
-
-        self.layers
-            .get_mut(&layer_id2)
-            .unwrap()
-            .transform_state
-            .rect = original_child_b_rect.fit_and_center_within(original_child_a_rect);
-    }
-
-    fn is_layer_selected(&self, layer_id: &LayerId) -> bool {
-        self.layers.get(layer_id).unwrap().selected
-    }
-
-    fn selected_layers_iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
-        self.layers.values_mut().filter(|layer| layer.selected)
-    }
-
-    pub fn add_photo(&mut self, photo: Photo) {
-        let layer = Layer::with_photo(photo);
-        self.layers.insert(layer.id, layer);
-        self.update_quick_layout_order();
-    }
-
-    pub fn update_quick_layout_order(&mut self) {
-        self.quick_layout_order
-            .retain(|id| self.layers.contains_key(id));
-
-        for layer in &self.layers {
-            if !layer.1.content.is_photo() {
-                continue;
-            }
-            if !self.quick_layout_order.contains(&layer.0) {
-                self.quick_layout_order.push(*layer.0);
-            }
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MultiSelect {
-    transformable_state: TransformableState,
-    selected_layers: Vec<MultiSelectChild>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct MultiSelectChild {
-    transformable_state: TransformableState,
-    id: LayerId,
-}
-
-impl MultiSelect {
-    fn new(layers: &IndexMap<LayerId, Layer>) -> Self {
-        let selected_ids = layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .map(|(id, _)| *id)
-            .collect::<Vec<_>>();
-
-        let rect = Self::compute_rect(layers, &selected_ids);
-        let transformable_state = TransformableState {
-            rect,
-            active_handle: None,
-            is_moving: false,
-            handle_mode: TransformHandleMode::default(),
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-            id: Id::random(),
-        };
-
-        let res = Self {
-            transformable_state: transformable_state.clone(),
-            selected_layers: layers
-                .iter()
-                .filter(|(_, layer)| layer.selected)
-                .map(|(id, transform)| MultiSelectChild {
-                    transformable_state: transform
-                        .transform_state
-                        .to_local_space(&transformable_state),
-                    id: *id,
-                })
-                .collect(),
-        };
-        res
-    }
-
-    fn update_selected<'a>(&'a mut self, layers: &'a IndexMap<LayerId, Layer>) {
-        let selected_layer_ids = layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .map(|(id, _)| *id)
-            .collect::<Vec<_>>();
-
-        let added_layers = layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .filter(|(layer_id, _)| {
-                !self
-                    .selected_layers
-                    .iter()
-                    .any(|child| child.id == **layer_id)
-            })
-            .map(|(id, _)| *id)
-            .collect::<Vec<_>>();
-
-        let removed_layers = self
-            .selected_layers
-            .iter()
-            .filter(|child| !selected_layer_ids.iter().any(|id| child.id == *id))
-            .map(|child| child.id)
-            .collect::<Vec<_>>();
-
-        for layer_id in removed_layers {
-            self.selected_layers.retain(|child| child.id != layer_id);
-        }
-
-        let joined_selected_ids: Vec<usize> = selected_layer_ids
-            .iter()
-            .chain(self.selected_layers.iter().map(|child| &child.id))
-            .copied()
-            .collect();
-
-        let new_rect = Self::compute_rect(layers, &joined_selected_ids);
-
-        self.transformable_state.rect = new_rect;
-
-        for layer in added_layers {
-            self.selected_layers.push(MultiSelectChild {
-                transformable_state: layers
-                    .get(&layer)
-                    .unwrap()
-                    .transform_state
-                    .to_local_space(&self.transformable_state),
-                id: layer,
-            });
-        }
-    }
-}
-
-impl MultiSelect {
-    fn compute_rect(layers: &IndexMap<LayerId, Layer>, selected_layers: &[usize]) -> Rect {
-        let mut min = Vec2::splat(std::f32::MAX);
-        let mut max = Vec2::splat(std::f32::MIN);
-
-        for layer_id in selected_layers {
-            let layer = &layers.get(layer_id).unwrap();
-
-            // TODO: we should be rotating the rect here as well, but that messes things up
-            let rect = layer.transform_state.rect;
-
-            min.x = min.x.min(rect.min.x);
-            min.y = min.y.min(rect.min.y);
-
-            max.x = max.x.max(rect.max.x);
-            max.y = max.y.max(rect.max.y);
-        }
-
-        Rect::from_min_max(min.to_pos2(), max.to_pos2())
-    }
-}
-
-#[derive(Debug, Clone)]
-enum ActionBarAction {
-    SwapCenters(LayerId, LayerId),
-    SwapCentersAndBounds(LayerId, LayerId),
-    SwapQuickLayoutPosition(LayerId, LayerId),
-    Crop(LayerId),
-}
-
+pub use self::{
+    selection::MultiSelect,
+    state::CanvasState,
+    types::{ActionBarAction, CanvasPhoto, CanvasResponse},
+};
 pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     available_rect: Rect,
@@ -550,11 +86,15 @@ impl<'a> Canvas<'a> {
             ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
             ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
 
-            egui::Frame::none()
+            egui::Frame::NONE
                 .fill(egui::Color32::from_gray(25))
                 .inner_margin(8.0)
                 .show(ui, |ui| {
-                    Toolbar::new(&mut self.state.current_tool).show(ui);
+                    if let ToolbarResponse::ToolChanged(tool) =
+                        Toolbar::new(self.state.tool_state.tool_kind()).show(ui)
+                    {
+                        self.state.tool_state = ToolState::Idle(tool.into());
+                    }
                 });
         });
 
@@ -659,7 +199,7 @@ impl<'a> Canvas<'a> {
                 {
                     self.deselect_all_photos();
                 } else if transform_response.mouse_down && primary_pointer_pressed {
-                    self.select_photo(&layer_id, ui.ctx());
+                    self.select_layer(&layer_id, ui.ctx());
                 }
 
                 if primary_pointer_released
@@ -675,7 +215,7 @@ impl<'a> Canvas<'a> {
 
         self.draw_multi_select(ui, page_rect);
 
-        self.draw_creating_layer(ui, page_rect);
+        self.draw_tool(ui, page_rect);
 
         // Add action bar at the bottom
         if self.state.layers.values().any(|layer| layer.selected) {
@@ -687,176 +227,232 @@ impl<'a> Canvas<'a> {
         None
     }
 
-    fn draw_creating_layer(&mut self, ui: &mut Ui, page_rect: Rect) {
-        // Draw creating layer if it's a line (others are drawn via transform widget)
-        if let Some(CreatingLayer::Line(ref creating_layer, _)) = self.state.creating_layer {
-            // Draw the line being created
-            let layer_rect = creating_layer.transform_state.rect;
+    fn draw_tool(&mut self, ui: &mut Ui, page_rect: Rect) {
+        let mouse_pos = if let Some(mouse_pos) = ui.input(|input| input.pointer.interact_pos()) {
+            mouse_pos
+        } else {
+            return;
+        };
 
-            // Transform the start and end points to screen space
-            let start_screen = page_rect.min + layer_rect.min.to_vec2() * self.state.zoom;
-            let end_screen = page_rect.min + layer_rect.max.to_vec2() * self.state.zoom;
+        ui.scope_builder(
+            UiBuilder::new().layer_id(egui::LayerId::new(Order::Tooltip, Id::new("tool"))),
+            |ui| {
+                let tool_state = self.state.tool_state.clone();
+                let new_tool_state = match &tool_state {
+                    ToolState::Idle(tool) => self.handle_tool_idle(ui, tool, mouse_pos),
+                    ToolState::Active(tool) => {
+                        let primary_pointer_released =
+                            ui.input(|input| input.pointer.primary_released());
+                        let primary_pointer_down = ui.input(|input| input.pointer.primary_down());
 
-            // Draw line from actual start to end points
-            if let crate::widget::canvas_info::layers::LayerContent::Shape(ref shape) =
-                creating_layer.content
-            {
-                if let Some((stroke, _)) = shape.stroke {
-                    let zoomed_stroke = Stroke::new(stroke.width * self.state.zoom, stroke.color);
-                    ui.painter()
-                        .line_segment([start_screen, end_screen], zoomed_stroke);
-                }
-            }
-        }
-
-        // Handle canvas interactions for tool-based creation with click-and-drag
-        let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
-        let primary_pointer_down = ui.input(|input| input.pointer.primary_down());
-        let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
-
-        // Start creating layer on mouse down
-        if primary_pointer_pressed && self.state.creating_layer.is_none() {
-            if let Some(click_pos) = ui.input(|input| input.pointer.press_origin()) {
-                if page_rect.contains(click_pos) {
-                    match self.state.current_tool {
-                        Tool::Select => {
-                            // Selection is already handled above
-                        }
-                        Tool::Text | Tool::Rectangle | Tool::Ellipse | Tool::Line => {
-                            // Create a new layer at click position with minimal size
-                            let mut layer = match self.state.current_tool {
-                                Tool::Text => Layer::new_text_layer_with_settings(
-                                    &self.state.text_tool_settings,
-                                ),
-                                Tool::Rectangle => Layer::new_rectangle_shape_layer_with_settings(
-                                    &self.state.rectangle_tool_settings,
-                                ),
-                                Tool::Ellipse => Layer::new_ellipse_shape_layer_with_settings(
-                                    &self.state.ellipse_tool_settings,
-                                ),
-                                Tool::Line => Layer::new_line_shape_layer_with_settings(
-                                    &self.state.line_tool_settings,
-                                ),
-                                _ => unreachable!(),
-                            };
-
-                            // Calculate position relative to page
-                            let relative_pos = (click_pos - page_rect.min) / self.state.zoom;
-
-                            self.deselect_all_photos();
-                            layer.selected = true;
-
-                            // For lines, we don't use transform handles - we draw from click to mouse
-                            if self.state.current_tool == Tool::Line {
-                                // Start line at click position - store start as min, end as max (same initially)
-                                let start_pos = Pos2::new(relative_pos.x, relative_pos.y);
-                                // Don't use from_two_pos as it normalizes - manually set min/max to preserve order
-                                layer.transform_state.rect = Rect {
-                                    min: start_pos,
-                                    max: start_pos,
-                                };
-
-                                // Track that we're creating this line (separate from layers map)
-                                self.state.creating_layer =
-                                    Some(CreatingLayer::Line(layer, click_pos));
-                            } else {
-                                // For other tools, use transform widget by adding to layers map
-                                let initial_size = Vec2::new(10.0, 10.0);
-                                layer.transform_state.rect = Rect::from_min_size(
-                                    Pos2::new(relative_pos.x, relative_pos.y),
-                                    initial_size,
-                                );
-                                layer.transform_state.active_handle =
-                                    Some(TransformHandle::BottomRight);
-                                layer.transform_state.handle_mode =
-                                    TransformHandleMode::Resize(ResizeMode::Free);
-
-                                let layer_id = layer.id;
-                                self.state.layers.insert(layer_id, layer);
-
-                                // Track that we're creating this layer
-                                self.state.creating_layer =
-                                    Some(CreatingLayer::Other(layer_id, click_pos));
-                            }
+                        if primary_pointer_released {
+                            self.handle_tool_active_release(ui, tool, page_rect, mouse_pos)
+                        } else if primary_pointer_down {
+                            self.handle_tool_active_drag(ui, tool, mouse_pos)
+                        } else {
+                            None
                         }
                     }
-                }
-            }
-        }
-
-        // Update layer size while dragging
-        if primary_pointer_down {
-            match &mut self.state.creating_layer {
-                Some(CreatingLayer::Line(creating_layer, start_pos)) => {
-                    if let Some(current_pos) = ui.input(|input| input.pointer.hover_pos()) {
-                        // Calculate positions relative to page
-                        let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
-                        let relative_current = (current_pos - page_rect.min) / self.state.zoom;
-
-                        // For lines, store the actual endpoints in the rect
-                        // We use rect.min as start point and rect.max as end point
-                        // Don't use from_two_pos as it normalizes - manually set to preserve order
-                        creating_layer.transform_state.rect = Rect {
-                            min: Pos2::new(relative_start.x, relative_start.y),
-                            max: Pos2::new(relative_current.x, relative_current.y),
-                        };
-                    }
-                }
-                Some(CreatingLayer::Other(layer_id, start_pos)) => {
-                    // For other shapes, manually handle the drag
-                    if let Some(current_pos) = ui.input(|input| input.pointer.hover_pos()) {
-                        if let Some(layer) = self.state.layers.get_mut(layer_id) {
-                            // Calculate size based on drag distance
-                            let relative_start = (*start_pos - page_rect.min) / self.state.zoom;
-                            let relative_current = (current_pos - page_rect.min) / self.state.zoom;
-
-                            let size = Vec2::new(
-                                (relative_current.x - relative_start.x).abs().max(10.0),
-                                (relative_current.y - relative_start.y).abs().max(10.0),
-                            );
-
-                            // Update the rect
-                            layer.transform_state.rect = Rect::from_min_size(
-                                Pos2::new(relative_start.x, relative_start.y),
-                                size,
-                            );
-                        }
-                    }
-                }
-                None => {}
-            }
-        }
-
-        // Finish creating layer on mouse release
-        if primary_pointer_released {
-            if let Some(creating_layer) = self.state.creating_layer.take() {
-                match creating_layer {
-                    CreatingLayer::Line(layer, _) => {
-                        // Insert the line into the state
-                        let layer_id = layer.id;
-                        self.state.layers.insert(layer_id, layer);
-                    }
-                    CreatingLayer::Other(layer_id, _) => {
-                        // Clear the active handle for shapes
-                        if let Some(layer) = self.state.layers.get_mut(&layer_id) {
-                            layer.transform_state.active_handle = None;
-                        }
-                    }
-                }
-
-                // Save history based on tool type
-                let history_kind = match self.state.current_tool {
-                    Tool::Text => CanvasHistoryKind::AddText,
-                    Tool::Rectangle | Tool::Ellipse | Tool::Line => CanvasHistoryKind::AddShape,
-                    _ => CanvasHistoryKind::AddPhoto, // Fallback
                 };
 
-                self.history_manager.save_history(history_kind, self.state);
+                if let Some(new_tool_state) = new_tool_state {
+                    self.state.tool_state = new_tool_state;
+                }
+            },
+        );
+    }
 
-                // Switch back to select tool
-                self.state.current_tool = Tool::Select;
+    fn handle_tool_idle(
+        &mut self,
+        ui: &mut Ui,
+        tool: &IdleTool,
+        mouse_pos: Pos2,
+    ) -> Option<ToolState> {
+        let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
+
+        if primary_pointer_pressed && self.available_rect.contains(mouse_pos) {
+            Some(match tool {
+                IdleTool::Select => ToolState::Active(ActiveTool::Select {
+                    start_pos: mouse_pos,
+                }),
+                IdleTool::Text => ToolState::Active(ActiveTool::Text {
+                    start_pos: mouse_pos,
+                }),
+                IdleTool::Rectangle => ToolState::Active(ActiveTool::Rectangle {
+                    start_pos: mouse_pos,
+                }),
+                IdleTool::Ellipse => ToolState::Active(ActiveTool::Ellipse {
+                    start_pos: mouse_pos,
+                }),
+                IdleTool::Line => ToolState::Active(ActiveTool::Line {
+                    start_pos: mouse_pos,
+                }),
+            })
+        } else {
+            None
+        }
+    }
+
+    fn handle_tool_active_release(
+        &mut self,
+        ui: &mut Ui,
+        tool: &ActiveTool,
+        page_rect: Rect,
+        mouse_pos: Pos2,
+    ) -> Option<ToolState> {
+        let relative_mouse_pos = self.screen_to_page_pos2(page_rect, &mouse_pos);
+
+        Some(match tool {
+            ActiveTool::Select { start_pos } => {
+                let selection_box = Rect::from_two_pos(*start_pos, mouse_pos);
+                for layer in self.state.layers.values_mut() {
+                    if layer.transform_state.rect.intersects(selection_box) {
+                        layer.selected = true;
+                    } else {
+                        layer.selected = false;
+                    }
+                }
+
+                ToolState::Idle(IdleTool::Select)
+            }
+            ActiveTool::Text { start_pos } => {
+                let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
+
+                let layer = Layer::new_text_layer_with_settings(
+                    &self.state.text_tool_settings,
+                    Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
+                );
+                self.state.layers.insert(layer.id, layer.clone());
+                self.select_layer(&layer.id, ui.ctx());
+                ToolState::Idle(IdleTool::Text)
+            }
+            ActiveTool::Rectangle { start_pos } => {
+                let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
+
+                let layer = Layer::new_rectangle_shape_layer_with_settings(
+                    &self.state.rectangle_tool_settings,
+                    Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
+                );
+                self.state.layers.insert(layer.id, layer.clone());
+                self.select_layer(&layer.id, ui.ctx());
+                ToolState::Idle(IdleTool::Rectangle)
+            }
+            ActiveTool::Ellipse { start_pos } => {
+                let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
+
+                let layer = Layer::new_ellipse_shape_layer_with_settings(
+                    &self.state.ellipse_tool_settings,
+                    Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
+                );
+                self.state.layers.insert(layer.id, layer.clone());
+                self.select_layer(&layer.id, ui.ctx());
+                ToolState::Idle(IdleTool::Ellipse)
+            }
+            ActiveTool::Line { start_pos } => {
+                let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
+
+                let layer = Layer::new_line_shape_layer_with_settings(
+                    &self.state.line_tool_settings,
+                    relative_start_pos,
+                    relative_mouse_pos,
+                );
+
+                self.state.layers.insert(layer.id, layer.clone());
+                self.select_layer(&layer.id, ui.ctx());
+                ToolState::Idle(IdleTool::Line)
+            }
+        })
+    }
+
+    fn handle_tool_active_drag(
+        &mut self,
+        ui: &mut Ui,
+        tool: &ActiveTool,
+        mouse_pos: Pos2,
+    ) -> Option<ToolState> {
+        match tool {
+            ActiveTool::Select { start_pos } => {
+                let selection_box = Rect::from_two_pos(*start_pos, mouse_pos);
+                ui.painter().rect(
+                    selection_box,
+                    0.0,
+                    Color32::from_rgba_unmultiplied(0, 0, 255, 128),
+                    Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 0, 255, 128)),
+                    StrokeKind::Middle,
+                );
+            }
+            ActiveTool::Text { start_pos } => {
+                let stroke = Stroke::new(4.0 * self.state.zoom, Color32::BLACK);
+                let rect = Rect::from_two_pos(*start_pos, mouse_pos);
+                let shape = Shape::dashed_line(
+                    &[
+                        rect.left_top(),
+                        rect.right_top(),
+                        rect.right_bottom(),
+                        rect.left_bottom(),
+                        rect.left_top(),
+                    ],
+                    stroke,
+                    5.0,
+                    2.0,
+                );
+                ui.painter().add(shape);
+            }
+            ActiveTool::Rectangle { start_pos } => {
+                let scaled_stroke = self
+                    .state
+                    .rectangle_tool_settings
+                    .stroke
+                    .map(|stroke| Stroke::new(stroke.0.width * self.state.zoom, stroke.0.color))
+                    .unwrap_or_default();
+                let rect = Rect::from_two_pos(*start_pos, mouse_pos);
+                ui.painter().rect(
+                    rect,
+                    0.0,
+                    self.state.rectangle_tool_settings.fill_color,
+                    scaled_stroke,
+                    self.state
+                        .rectangle_tool_settings
+                        .stroke
+                        .map(|stroke| stroke.1)
+                        .unwrap_or(StrokeKind::Outside),
+                );
+            }
+            ActiveTool::Ellipse { start_pos } => {
+                let scaled_stroke = self
+                    .state
+                    .ellipse_tool_settings
+                    .stroke
+                    .map(|stroke| Stroke::new(stroke.0.width * self.state.zoom, stroke.0.color))
+                    .unwrap_or_default();
+                let rect = Rect::from_two_pos(*start_pos, mouse_pos);
+                ui.painter().add(Shape::Ellipse(EllipseShape {
+                    center: rect.center(),
+                    radius: rect.size() / 2.0,
+                    angle: 0.0,
+                    fill: self.state.ellipse_tool_settings.fill_color,
+                    stroke: scaled_stroke,
+                }));
+            }
+            ActiveTool::Line { start_pos } => {
+                let stroke = PathStroke {
+                    width: self.state.line_tool_settings.width * self.state.zoom,
+                    color: ColorMode::Solid(self.state.line_tool_settings.color),
+                    ..Default::default()
+                };
+
+                ui.painter().line(vec![*start_pos, mouse_pos], stroke);
             }
         }
+        None
+    }
+
+    fn screen_to_page_pos2(&self, page_rect: Rect, pos: &Pos2) -> Pos2 {
+        ((*pos - page_rect.min) / self.state.zoom).to_pos2()
+    }
+
+    fn page_to_screen_pos2(&self, page_rect: Rect, pos: &Pos2) -> Pos2 {
+        page_rect.min + pos.to_vec2() * self.state.zoom
     }
 
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
@@ -1837,21 +1433,22 @@ impl<'a> Canvas<'a> {
                 }
             }
 
-            // Tool switching shortcuts (before transform mode shortcuts)
-            if input.key_pressed(egui::Key::V) {
-                self.state.current_tool = Tool::Select;
-            }
-            if input.key_pressed(egui::Key::T) {
-                self.state.current_tool = Tool::Text;
-            }
-            if input.key_pressed(egui::Key::U) {
-                self.state.current_tool = Tool::Rectangle;
-            }
-            if input.key_pressed(egui::Key::O) {
-                self.state.current_tool = Tool::Ellipse;
-            }
-            if input.key_pressed(egui::Key::L) {
-                self.state.current_tool = Tool::Line;
+            if self.state.tool_state.is_idle() {
+                if input.key_pressed(egui::Key::V) {
+                    self.state.tool_state = ToolState::Idle(IdleTool::Select);
+                }
+                if input.key_pressed(egui::Key::T) {
+                    self.state.tool_state = ToolState::Idle(IdleTool::Text);
+                }
+                if input.key_pressed(egui::Key::U) {
+                    self.state.tool_state = ToolState::Idle(IdleTool::Rectangle);
+                }
+                if input.key_pressed(egui::Key::O) {
+                    self.state.tool_state = ToolState::Idle(IdleTool::Ellipse);
+                }
+                if input.key_pressed(egui::Key::L) {
+                    self.state.tool_state = ToolState::Idle(IdleTool::Line);
+                }
             }
 
             for layer in self.state.selected_layers_iter_mut() {
@@ -1896,7 +1493,7 @@ impl<'a> Canvas<'a> {
         )
     }
 
-    fn select_photo(&mut self, layer_id: &LayerId, ctx: &Context) {
+    fn select_layer(&mut self, layer_id: &LayerId, ctx: &Context) {
         if ctx.input(|input| input.modifiers.ctrl) {
             self.state
                 .layers
@@ -1908,6 +1505,10 @@ impl<'a> Canvas<'a> {
             for (_, layer) in &mut self.state.layers {
                 layer.selected = layer.id == *layer_id;
             }
+        }
+
+        if self.state.is_layer_selected(layer_id) {
+            self.state.tool_state = ToolState::Idle(IdleTool::Select);
         }
     }
 

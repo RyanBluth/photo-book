@@ -67,7 +67,12 @@ impl<'a> ShapeToolControl<'a> {
 
                     match current_kind {
                         Some(kind) => {
-                            self.settings.stroke = Some((Stroke::new(1.0, Color32::BLACK), kind))
+                            if let Some((stroke, _)) = self.settings.stroke {
+                                self.settings.stroke = Some((stroke, kind));
+                            } else {
+                                self.settings.stroke =
+                                    Some((Stroke::new(1.0, Color32::BLACK), kind));
+                            }
                         }
                         None => self.settings.stroke = None,
                     }
@@ -75,8 +80,10 @@ impl<'a> ShapeToolControl<'a> {
             } else {
                 // For lines, always show stroke controls (no "None" option)
                 if self.settings.stroke.is_none() {
-                    self.settings.stroke =
-                        Some((Stroke::new(2.0, self.settings.fill_color), StrokeKind::Middle));
+                    self.settings.stroke = Some((
+                        Stroke::new(2.0, self.settings.fill_color),
+                        StrokeKind::Middle,
+                    ));
                 }
             }
 

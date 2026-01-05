@@ -1,67 +1,67 @@
-use crate::cursor_manager::{self, CursorManager};
+use crate::assets::Asset;
+use crate::cursor_manager::CursorManager;
 use crate::dependencies::{Dependency, SingletonFor};
 use crate::theme::color;
-use crate::widget::canvas::Tool;
-use crate::{assets::Asset, utils::RectExt};
-use eframe::egui::{self, Image, ImageButton, Response, Sense, Ui, Vec2};
-use egui::{Color32, CursorIcon, Rect};
+use crate::widget::canvas::types::ToolKind;
+use eframe::egui::{self, Image, Sense, Ui, Vec2};
+use egui::CursorIcon;
 
-pub struct Toolbar<'a> {
-    current_tool: &'a mut Tool,
+pub struct Toolbar {
+    current_tool: ToolKind,
 }
 
-impl<'a> Toolbar<'a> {
-    pub fn new(current_tool: &'a mut Tool) -> Self {
+impl Toolbar {
+    pub fn new(current_tool: ToolKind) -> Self {
         Self { current_tool }
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> ToolbarResponse {
-        let mut response = ToolbarResponse::None;
-
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
 
             // Select tool
-            if self.tool_button(ui, Asset::icon_select(), Tool::Select, "Select (V)") {
-                *self.current_tool = Tool::Select;
-                response = ToolbarResponse::ToolChanged(Tool::Select);
+            if self.tool_button(ui, Asset::icon_select(), ToolKind::Select, "Select (V)") {
+                return ToolbarResponse::ToolChanged(ToolKind::Select);
             }
 
             // Text tool
-            if self.tool_button(ui, Asset::icon_text(), Tool::Text, "Text (T)") {
-                *self.current_tool = Tool::Text;
-                response = ToolbarResponse::ToolChanged(Tool::Text);
+            if self.tool_button(ui, Asset::icon_text(), ToolKind::Text, "Text (T)") {
+                return ToolbarResponse::ToolChanged(ToolKind::Text);
             }
 
             // Rectangle tool
             if self.tool_button(
                 ui,
                 Asset::icon_rectangle(),
-                Tool::Rectangle,
+                ToolKind::Rectangle,
                 "Rectangle (U)",
             ) {
-                *self.current_tool = Tool::Rectangle;
-                response = ToolbarResponse::ToolChanged(Tool::Rectangle);
+                return ToolbarResponse::ToolChanged(ToolKind::Rectangle);
             }
 
             // Ellipse tool
-            if self.tool_button(ui, Asset::icon_ellipse(), Tool::Ellipse, "Ellipse (O)") {
-                *self.current_tool = Tool::Ellipse;
-                response = ToolbarResponse::ToolChanged(Tool::Ellipse);
+            if self.tool_button(ui, Asset::icon_ellipse(), ToolKind::Ellipse, "Ellipse (O)") {
+                return ToolbarResponse::ToolChanged(ToolKind::Ellipse);
             }
 
             // Line tool
-            if self.tool_button(ui, Asset::icon_line(), Tool::Line, "Line (L)") {
-                *self.current_tool = Tool::Line;
-                response = ToolbarResponse::ToolChanged(Tool::Line);
+            if self.tool_button(ui, Asset::icon_line(), ToolKind::Line, "Line (L)") {
+                return ToolbarResponse::ToolChanged(ToolKind::Line);
             }
-        });
 
-        response
+            ToolbarResponse::None
+        })
+        .inner
     }
 
-    fn tool_button(&self, ui: &mut Ui, icon: egui::ImageSource, tool: Tool, tooltip: &str) -> bool {
-        let is_active = *self.current_tool == tool;
+    fn tool_button(
+        &self,
+        ui: &mut Ui,
+        icon: egui::ImageSource,
+        tool: ToolKind,
+        tooltip: &str,
+    ) -> bool {
+        let is_active = self.current_tool == tool;
 
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
 
@@ -98,5 +98,5 @@ impl<'a> Toolbar<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolbarResponse {
     None,
-    ToolChanged(Tool),
+    ToolChanged(ToolKind),
 }

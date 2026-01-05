@@ -191,7 +191,9 @@ impl CanvasShapeEditState {
 
 impl Default for CanvasShapeEditState {
     fn default() -> Self {
-        Self { stroke_width: EditableValue::new(1.0) }
+        Self {
+            stroke_width: EditableValue::new(1.0),
+        }
     }
 }
 
@@ -339,10 +341,13 @@ impl Layer {
     }
 
     pub fn new_text_layer() -> Self {
-        Self::new_text_layer_with_settings(&TextToolSettings::default())
+        Self::new_text_layer_with_settings(
+            &TextToolSettings::default(),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+        )
     }
 
-    pub fn new_text_layer_with_settings(settings: &TextToolSettings) -> Self {
+    pub fn new_text_layer_with_settings(settings: &TextToolSettings, rect: Rect) -> Self {
         let text = CanvasText::new(
             "New Text Layer".to_string(),
             settings.font_size,
@@ -352,7 +357,7 @@ impl Layer {
             settings.vertical_alignment,
         );
         let transform_state = TransformableState {
-            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+            rect,
             active_handle: None,
             is_moving: false,
             handle_mode: TransformHandleMode::default(),
@@ -375,22 +380,20 @@ impl Layer {
     }
 
     pub fn new_rectangle_shape_layer() -> Self {
-        Self::new_rectangle_shape_layer_with_settings(&ShapeToolSettings::default())
+        Self::new_rectangle_shape_layer_with_settings(
+            &ShapeToolSettings::default(),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+        )
     }
 
-    pub fn new_rectangle_shape_layer_with_settings(settings: &ShapeToolSettings) -> Self {
+    pub fn new_rectangle_shape_layer_with_settings(
+        settings: &ShapeToolSettings,
+        rect: Rect,
+    ) -> Self {
         let mut shape = CanvasShape::rectangle(settings.fill_color);
         shape.stroke = settings.stroke;
-        let transform_state = TransformableState {
-            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
-            active_handle: None,
-            is_moving: false,
-            handle_mode: TransformHandleMode::default(),
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-            id: Id::random(),
-        };
+        shape.edit_state = settings.edit_state.clone();
+        let transform_state = TransformableState::new(rect);
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
             content: LayerContent::Shape(shape),
@@ -405,22 +408,17 @@ impl Layer {
     }
 
     pub fn new_ellipse_shape_layer() -> Self {
-        Self::new_ellipse_shape_layer_with_settings(&ShapeToolSettings::default())
+        Self::new_ellipse_shape_layer_with_settings(
+            &ShapeToolSettings::default(),
+            Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
+        )
     }
 
-    pub fn new_ellipse_shape_layer_with_settings(settings: &ShapeToolSettings) -> Self {
+    pub fn new_ellipse_shape_layer_with_settings(settings: &ShapeToolSettings, rect: Rect) -> Self {
         let mut shape = CanvasShape::ellipse(settings.fill_color);
         shape.stroke = settings.stroke;
-        let transform_state = TransformableState {
-            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 100.0)),
-            active_handle: None,
-            is_moving: false,
-            handle_mode: TransformHandleMode::default(),
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-            id: Id::random(),
-        };
+        shape.edit_state = settings.edit_state.clone();
+        let transform_state = TransformableState::new(rect);
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
             content: LayerContent::Shape(shape),
@@ -434,23 +432,18 @@ impl Layer {
         }
     }
 
-    pub fn new_line_shape_layer() -> Self {
-        Self::new_line_shape_layer_with_settings(&LineToolSettings::default())
-    }
-
-    pub fn new_line_shape_layer_with_settings(settings: &LineToolSettings) -> Self {
+    pub fn new_line_shape_layer_with_settings(
+        settings: &LineToolSettings,
+        start_pos: Pos2,
+        end_pos: Pos2,
+    ) -> Self {
         let mut shape = CanvasShape::line(settings.color);
-        shape.stroke = Some((Stroke::new(settings.width, settings.color), StrokeKind::Middle));
-        let transform_state = TransformableState {
-            rect: Rect::from_min_size(Pos2::ZERO, Vec2::new(100.0, 2.0)),
-            active_handle: None,
-            is_moving: false,
-            handle_mode: TransformHandleMode::default(),
-            rotation: 0.0,
-            last_frame_rotation: 0.0,
-            change_in_rotation: None,
-            id: Id::random(),
-        };
+        shape.stroke = Some((
+            Stroke::new(settings.width, settings.color),
+            StrokeKind::Middle,
+        ));
+        shape.edit_state = settings.edit_state.clone();
+        let transform_state = TransformableState::new(Rect::from_two_pos(start_pos, end_pos));
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
             content: LayerContent::Shape(shape),

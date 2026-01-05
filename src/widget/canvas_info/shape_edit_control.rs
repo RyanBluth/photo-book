@@ -55,6 +55,12 @@ impl<'a> ShapeEditControl<'a> {
                                 };
 
                                 let mut current_kind = shape.stroke.map(|(_, kind)| kind);
+                                let current_width =
+                                    shape.stroke.map(|(stroke, _)| stroke.width).unwrap_or(1.0);
+                                let current_stroke_color = shape
+                                    .stroke
+                                    .map(|(stroke, _)| stroke.color)
+                                    .unwrap_or(Color32::BLACK);
 
                                 ComboBox::from_label("Stoke Kind")
                                     .selected_text(selected_label)
@@ -79,7 +85,10 @@ impl<'a> ShapeEditControl<'a> {
 
                                 match current_kind {
                                     Some(kind) => {
-                                        shape.stroke = Some((Stroke::new(1.0, Color32::BLACK), kind))
+                                        shape.stroke = Some((
+                                            Stroke::new(current_width, current_stroke_color),
+                                            kind,
+                                        ))
                                     }
                                     None => shape.stroke = None,
                                 }

@@ -60,6 +60,7 @@ pub trait RectExt {
     fn fit_and_center_within(&self, rect: Rect) -> Rect;
     fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect;
     fn default_uv() -> Rect;
+    fn intersects(&self, other: Rect) -> bool;
 }
 
 impl RectExt for Rect {
@@ -307,6 +308,13 @@ impl RectExt for Rect {
 
     fn default_uv() -> Rect {
         Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0))
+    }
+
+    fn intersects(&self, other: Rect) -> bool {
+        self.min.x < other.max.x
+            && self.max.x > other.min.x
+            && self.min.y < other.max.y
+            && self.max.y > other.min.y
     }
 }
 
