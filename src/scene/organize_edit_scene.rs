@@ -216,13 +216,11 @@ impl Scene for OrganizeEditScene {
                                 Err(err) => {
                                     error!("Error loading project: {:?}", err);
 
-                                    ModalManager::push(
-                                        BasicModal::new(
-                                            "Error",
-                                            format!("Error loading project: {:?}", err),
-                                            "OK",
-                                        ),
-                                    );
+                                    ModalManager::push(BasicModal::new(
+                                        "Error",
+                                        format!("Error loading project: {:?}", err),
+                                        "OK",
+                                    ));
                                 }
                             }
                         })
@@ -250,13 +248,11 @@ impl Scene for OrganizeEditScene {
                                         Err(err) => {
                                             error!("Error loading project: {:?}", err);
 
-                                            ModalManager::push(
-                                                BasicModal::new(
-                                                    "Error",
-                                                    format!("Error loading project: {:?}", err),
-                                                    "OK",
-                                                ),
-                                            );
+                                            ModalManager::push(BasicModal::new(
+                                                "Error",
+                                                format!("Error loading project: {:?}", err),
+                                                "OK",
+                                            ));
                                         }
                                     }
                                 }
@@ -326,9 +322,11 @@ impl Scene for OrganizeEditScene {
                                     }
                                     None => {
                                         // Show alert
-                                        ModalManager::push(
-                                            BasicModal::new("Error", "Nothing to export", "OK"),
-                                        );
+                                        ModalManager::push(BasicModal::new(
+                                            "Error",
+                                            "Nothing to export",
+                                            "OK",
+                                        ));
                                     }
                                 };
                             }

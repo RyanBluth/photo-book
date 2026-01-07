@@ -8,7 +8,7 @@ use strum::IntoEnumIterator;
 
 use crate::utils::RectExt;
 
-use super::{Margin, LayoutItem};
+use super::{LayoutItem, Margin};
 
 #[derive(Debug, Clone)]
 pub enum StackLayoutDirection {
@@ -286,9 +286,7 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::CenterWeightedGrid {
-                main_axis_sizes,
-            } => {
+            StackLayoutDistribution::CenterWeightedGrid { main_axis_sizes } => {
                 let mut x_offset = 0.0;
                 item_dimensions
                     .iter()

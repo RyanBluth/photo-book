@@ -1,4 +1,4 @@
-use eframe::egui::{include_image, ImageSource};
+use eframe::egui::{ImageSource, include_image};
 
 macro_rules! image_asset {
     ($name:ident, $path:expr_2021) => {

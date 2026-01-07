@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use egui::{Key, Response, Ui};
+use std::collections::HashSet;
 
-use crate::model::editable_value::EditableValue;
 use super::chip_collection::chip_collection;
+use crate::model::editable_value::EditableValue;
 
 /// State for the tag chips widget
 #[derive(Debug, Clone, PartialEq)]
@@ -35,8 +35,6 @@ impl TagChipsResponse {
         self.changed
     }
 }
-
-
 
 /// Tag chips widget for managing tags with a chip-based interface
 pub struct TagChips<'a> {
@@ -88,105 +86,106 @@ impl<'a> TagChips<'a> {
     pub fn show(self, ui: &mut Ui) -> TagChipsResponse {
         let mut changed = false;
 
-        let response = ui.vertical(|ui| {
-            // Show label if provided
-            if let Some(label) = &self.label {
-                ui.label(label);
-                ui.add_space(4.0);
-            }
-
-            // Show available tags as selectable chips (excluding already selected ones)
-            if let Some(available_tags) = self.available_tags {
-                if !available_tags.is_empty() {
-                    ui.label("Available tags:");
+        let response = ui
+            .vertical(|ui| {
+                // Show label if provided
+                if let Some(label) = &self.label {
+                    ui.label(label);
                     ui.add_space(4.0);
+                }
 
-                    let unselected_tags: Vec<String> = available_tags
-                        .iter()
-                        .filter(|tag| !self.selected_tags.contains(*tag))
-                        .cloned()
-                        .collect();
+                // Show available tags as selectable chips (excluding already selected ones)
+                if let Some(available_tags) = self.available_tags {
+                    if !available_tags.is_empty() {
+                        ui.label("Available tags:");
+                        ui.add_space(4.0);
 
-                    if !unselected_tags.is_empty() {
-                        let chip_response = chip_collection(
-                            ui,
-                            &unselected_tags,
-                            None,
-                            false, // not closable
-                            self.spacing,
-                        );
+                        let unselected_tags: Vec<String> = available_tags
+                            .iter()
+                            .filter(|tag| !self.selected_tags.contains(*tag))
+                            .cloned()
+                            .collect();
 
-                        // Handle tag selection
-                        if let Some(clicked_idx) = chip_response.clicked_item() {
-                            if let Some(tag) = unselected_tags.get(clicked_idx) {
-                                self.selected_tags.insert(tag.clone());
-                                changed = true;
+                        if !unselected_tags.is_empty() {
+                            let chip_response = chip_collection(
+                                ui,
+                                &unselected_tags,
+                                None,
+                                false, // not closable
+                                self.spacing,
+                            );
+
+                            // Handle tag selection
+                            if let Some(clicked_idx) = chip_response.clicked_item() {
+                                if let Some(tag) = unselected_tags.get(clicked_idx) {
+                                    self.selected_tags.insert(tag.clone());
+                                    changed = true;
+                                }
+                            }
+                        } else {
+                            ui.label("All available tags are selected");
+                        }
+
+                        // Show selected tags as closable chips
+                        if !self.selected_tags.is_empty() {
+                            ui.add_space(8.0);
+                            ui.label("Selected tags:");
+                            ui.add_space(4.0);
+
+                            let selected_vec: Vec<String> =
+                                self.selected_tags.iter().cloned().collect();
+                            let selected_chip_response = chip_collection(
+                                ui,
+                                &selected_vec,
+                                None,
+                                true, // closable
+                                self.spacing,
+                            );
+
+                            // Handle tag removal
+                            if let Some(removed_idx) = selected_chip_response.closed_item() {
+                                if let Some(tag) = selected_vec.get(removed_idx) {
+                                    self.selected_tags.remove(tag);
+                                    changed = true;
+                                }
                             }
                         }
                     } else {
-                        ui.label("All available tags are selected");
+                        ui.label("No tags available");
                     }
+                }
 
-                    // Show selected tags as closable chips
-                    if !self.selected_tags.is_empty() {
-                        ui.add_space(8.0);
-                        ui.label("Selected tags:");
-                        ui.add_space(4.0);
+                // Show input for adding new tags (only if enabled)
+                if self.show_input {
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label("Add tag:");
 
-                        let selected_vec: Vec<String> = self.selected_tags.iter().cloned().collect();
-                        let selected_chip_response = chip_collection(
-                            ui,
-                            &selected_vec,
-                            None,
-                            true, // closable
-                            self.spacing,
-                        );
+                        let response =
+                            ui.text_edit_singleline(self.state.tag_input.editable_value());
 
-                        // Handle tag removal
-                        if let Some(removed_idx) = selected_chip_response.closed_item() {
-                            if let Some(tag) = selected_vec.get(removed_idx) {
-                                self.selected_tags.remove(tag);
+                        if response.gained_focus() {
+                            self.state.tag_input.begin_editing();
+                        }
+
+                        let should_add_tag = ui.button("Add").clicked()
+                            || (response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
+
+                        if should_add_tag {
+                            self.state.tag_input.end_editing();
+                            let tag = self.state.tag_input.value().trim().to_string();
+                            if !tag.is_empty() && !self.selected_tags.contains(&tag) {
+                                self.selected_tags.insert(tag);
+                                self.state.tag_input = EditableValue::new(String::new());
                                 changed = true;
                             }
                         }
-                    }
-                } else {
-                    ui.label("No tags available");
+                    });
                 }
-            }
+            })
+            .response;
 
-            // Show input for adding new tags (only if enabled)
-            if self.show_input {
-                ui.add_space(8.0);
-                ui.horizontal(|ui| {
-                    ui.label("Add tag:");
-
-                    let response = ui.text_edit_singleline(self.state.tag_input.editable_value());
-
-                    if response.gained_focus() {
-                        self.state.tag_input.begin_editing();
-                    }
-
-                    let should_add_tag = ui.button("Add").clicked() ||
-                        (response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)));
-
-                    if should_add_tag {
-                        self.state.tag_input.end_editing();
-                        let tag = self.state.tag_input.value().trim().to_string();
-                        if !tag.is_empty() && !self.selected_tags.contains(&tag) {
-                            self.selected_tags.insert(tag);
-                            self.state.tag_input = EditableValue::new(String::new());
-                            changed = true;
-                        }
-                    }
-                });
-            }
-        }).response;
-
-        TagChipsResponse {
-            response,
-            changed,
-        }
+        TagChipsResponse { response, changed }
     }
 }
 
@@ -284,7 +283,7 @@ mod tests {
             "Photography".to_string(),
             "Travel".to_string(),
             "Nature".to_string(),
-            "Portrait".to_string()
+            "Portrait".to_string(),
         ];
 
         let mut harness = Harness::new_ui(|ui| {

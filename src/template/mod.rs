@@ -1,7 +1,7 @@
 use egui::{Pos2, Vec2};
 use once_cell::sync::Lazy;
 use savefile_derive::Savefile;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::model::page::Page;
 

@@ -8,8 +8,14 @@ use indexmap::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::{
-    layout::{grid_layout::{GridDistribution, GridLayout}, stack_layout::{StackCrossAxisAlignment, StackLayout, StackLayoutDirection, StackLayoutDistribution}, LayoutItem, Margin},
-    model::page::{Page},
+    layout::{
+        LayoutItem, Margin,
+        grid_layout::{GridDistribution, GridLayout},
+        stack_layout::{
+            StackCrossAxisAlignment, StackLayout, StackLayoutDirection, StackLayoutDistribution,
+        },
+    },
+    model::page::Page,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{
@@ -64,13 +70,25 @@ impl Layout {
         let regions: IndexMap<usize, Rect> = match self {
             Layout::GridLayout => {
                 let stack_items: Vec<LayoutItem> = canvas_state.into();
-                let grid_layout = GridLayout::new(page_size.x, page_size.y, gap, margin, StackLayoutDirection::Vertical);
+                let grid_layout = GridLayout::new(
+                    page_size.x,
+                    page_size.y,
+                    gap,
+                    margin,
+                    StackLayoutDirection::Vertical,
+                );
                 grid_layout.layout(&stack_items)
             }
             Layout::CenteredWeightedGridLayout => {
                 let stack_items: Vec<LayoutItem> = canvas_state.into();
-                let grid_layout = GridLayout::new(page_size.x, page_size.y, gap, margin, StackLayoutDirection::Vertical)
-                    .with_distribution(GridDistribution::CenterWeighted);
+                let grid_layout = GridLayout::new(
+                    page_size.x,
+                    page_size.y,
+                    gap,
+                    margin,
+                    StackLayoutDirection::Vertical,
+                )
+                .with_distribution(GridDistribution::CenterWeighted);
                 grid_layout.layout(&stack_items)
             }
             Layout::VerticalStackLayout => {

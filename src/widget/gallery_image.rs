@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
+    egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
     epaint::{Color32, Vec2},
 };
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};

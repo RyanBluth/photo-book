@@ -206,7 +206,8 @@ impl<'a> FileTree<'a> {
                 FileTreeNode::File(path) => {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
-                    let photo_clone = photo_manager.with_lock(|pm| pm.photo_database.get_photo(path).cloned());
+                    let photo_clone =
+                        photo_manager.with_lock(|pm| pm.photo_database.get_photo(path).cloned());
 
                     let texture_handle = if let Some(photo) = photo_clone {
                         photo_manager.with_lock_mut(|pm| {

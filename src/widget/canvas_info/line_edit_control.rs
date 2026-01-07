@@ -17,8 +17,8 @@ impl<'a> LineEditControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        let _response: egui::InnerResponse<()> = ui.allocate_ui(ui.available_size(), |ui| {
-            match &mut self.layer.content {
+        let _response: egui::InnerResponse<()> =
+            ui.allocate_ui(ui.available_size(), |ui| match &mut self.layer.content {
                 Photo(_) | TemplatePhoto { .. } | Text(_) | TemplateText { .. } => {
                     ui.label("No line layer selected");
                 }
@@ -44,7 +44,6 @@ impl<'a> LineEditControl<'a> {
                         });
                     }
                 }
-            }
-        });
+            });
     }
 }

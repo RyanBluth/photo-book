@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition,
+    NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition, viewer_scene::ViewerScene,
 };
 
 #[derive(Debug, Clone)]
@@ -166,8 +166,6 @@ impl GalleryTreeBehavior<'_> {
                     self.scene_state.file_tree_state.selected_node = None;
                 }
 
-
-
                 UiResponse::None
             }
             GalleryScenePane::PhotoInfo => {
@@ -177,10 +175,18 @@ impl GalleryTreeBehavior<'_> {
                 match gallery_state.selected_images.iter().next() {
                     Some(selected_image) => {
                         let mut photo = photo_manager.with_lock(|photo_manager| {
-                            photo_manager.photo_database.get_photo(selected_image).unwrap().clone()
+                            photo_manager
+                                .photo_database
+                                .get_photo(selected_image)
+                                .unwrap()
+                                .clone()
                         });
 
-                        PhotoInfo::new(SaveOnDropPhoto::new(&mut photo), &mut self.scene_state.photo_info_state).show(ui);
+                        PhotoInfo::new(
+                            SaveOnDropPhoto::new(&mut photo),
+                            &mut self.scene_state.photo_info_state,
+                        )
+                        .show(ui);
                     }
                     _ => {
                         ui.both_centered(|ui| {
@@ -204,7 +210,8 @@ impl GalleryTreeBehavior<'_> {
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
                     photo_manager.with_lock(|photo_manager| {
-                        if let Some(photo) = photo_manager.photo_database.get_photo(&selected_path) {
+                        if let Some(photo) = photo_manager.photo_database.get_photo(&selected_path)
+                        {
                             // Clear current selection
                             self.scene_state.image_gallery_state.selected_images.clear();
                             // Select this photo in the gallery
@@ -223,7 +230,9 @@ impl GalleryTreeBehavior<'_> {
                     // When an image file is double-clicked, open it in the viewer
                     let photo_manager: Singleton<PhotoManager> = Dependency::get();
                     photo_manager.with_lock(|photo_manager| {
-                        if let Some(photo) = photo_manager.photo_database.get_photo(&double_clicked_path) {
+                        if let Some(photo) =
+                            photo_manager.photo_database.get_photo(&double_clicked_path)
+                        {
                             let photo_clone = photo.clone();
                             self.navigator
                                 .push(SceneTransition::Viewer(ViewerScene::new(photo_clone)));
@@ -237,9 +246,12 @@ impl GalleryTreeBehavior<'_> {
                     photo_manager.with_lock_mut(|photo_manager| {
                         // Remove the photo from the database (this will also remove from file collection)
                         photo_manager.photo_database.remove_photo(&removed_path);
-                        
+
                         // If this photo was selected in the gallery, clear the selection
-                        self.scene_state.image_gallery_state.selected_images.remove(&removed_path);
+                        self.scene_state
+                            .image_gallery_state
+                            .selected_images
+                            .remove(&removed_path);
                     });
                 }
 

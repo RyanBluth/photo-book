@@ -23,8 +23,8 @@ impl<'a> TextEditControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        let _response: egui::InnerResponse<()> = ui.allocate_ui(ui.available_size(), |ui| {
-            match &mut self.layer.content {
+        let _response: egui::InnerResponse<()> =
+            ui.allocate_ui(ui.available_size(), |ui| match &mut self.layer.content {
                 Photo(_) | TemplatePhoto { .. } | Shape(_) => {
                     ui.label("No text layer selected");
                 }
@@ -123,7 +123,6 @@ impl<'a> TextEditControl<'a> {
                         });
                     });
                 }
-            }
-        });
+            });
     }
 }

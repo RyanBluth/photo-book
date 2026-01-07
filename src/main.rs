@@ -15,7 +15,7 @@ use dirs::Dirs;
 use log::info;
 use modal::manager::ModalManager;
 use project::Project;
-use scene::{organize_edit_scene::OrganizeEditScene, SceneManager};
+use scene::{SceneManager, organize_edit_scene::OrganizeEditScene};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::runtime;
 
@@ -72,18 +72,20 @@ async fn main() -> anyhow::Result<()> {
     let _enter = rt.enter();
 
     // Start deadlock detection thread
-    std::thread::spawn(move || loop {
-        std::thread::sleep(std::time::Duration::from_secs(3));
-        let deadlocks = parking_lot::deadlock::check_deadlock();
-        if !deadlocks.is_empty() {
-            eprintln!("\n{} deadlock(s) detected!", deadlocks.len());
-            for (i, threads) in deadlocks.iter().enumerate() {
-                eprintln!("\nDeadlock #{}", i);
-                for thread in threads {
-                    eprintln!("Thread ID: {:?}", thread.thread_id());
-                    eprintln!("Backtrace:");
-                    eprintln!("{:?}", thread.backtrace());
-                    eprintln!();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            let deadlocks = parking_lot::deadlock::check_deadlock();
+            if !deadlocks.is_empty() {
+                eprintln!("\n{} deadlock(s) detected!", deadlocks.len());
+                for (i, threads) in deadlocks.iter().enumerate() {
+                    eprintln!("\nDeadlock #{}", i);
+                    for thread in threads {
+                        eprintln!("Thread ID: {:?}", thread.thread_id());
+                        eprintln!("Backtrace:");
+                        eprintln!("{:?}", thread.backtrace());
+                        eprintln!();
+                    }
                 }
             }
         }
@@ -304,9 +306,9 @@ impl eframe::App for PhotoBookApp {
         });
 
         // Check for pending operations from modals
-        if let Some(new_scene) = Dependency::<session::Session>::get().with_lock_mut(|session| {
-            session.check_modals(&self.scene_manager.root_scene)
-        }) {
+        if let Some(new_scene) = Dependency::<session::Session>::get()
+            .with_lock_mut(|session| session.check_modals(&self.scene_manager.root_scene))
+        {
             self.scene_manager.root_scene = new_scene;
         }
 
@@ -314,4 +316,6 @@ impl eframe::App for PhotoBookApp {
             let _ = auto_save_manager.auto_save_if_needed(&self.scene_manager.root_scene);
         });
     }
+
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {}
 }

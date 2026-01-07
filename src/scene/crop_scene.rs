@@ -116,12 +116,20 @@ impl Scene for CropScene {
         let transform_position = self.transform_state.rect.left_top();
         let transform_size = self.transform_state.rect.size();
 
-        self.transform_state.rect.set_left(transform_position.x * scale_factor);
-        self.transform_state.rect.set_top(transform_position.y * scale_factor);
-        
-        self.transform_state.rect.set_width(transform_size.x * scale_factor);
-        self.transform_state.rect.set_height(transform_size.y * scale_factor);
-        
+        self.transform_state
+            .rect
+            .set_left(transform_position.x * scale_factor);
+        self.transform_state
+            .rect
+            .set_top(transform_position.y * scale_factor);
+
+        self.transform_state
+            .rect
+            .set_width(transform_size.x * scale_factor);
+        self.transform_state
+            .rect
+            .set_height(transform_size.y * scale_factor);
+
         self.photo_rect = adjusted_photo_rect;
 
         let mut crop_state = CropState {

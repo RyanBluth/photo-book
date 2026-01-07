@@ -21,7 +21,6 @@ use egui::{
     Order,
     epaint::{ColorMode, PathStroke},
 };
-use printpdf::Line;
 
 use crate::{
     cursor_manager::CursorManager,

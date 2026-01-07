@@ -1,13 +1,17 @@
-use std::collections::HashSet;
 use eframe::egui::{Grid, Widget};
 use egui::{Key, Ui};
+use std::collections::HashSet;
 use strum::IntoEnumIterator;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 use crate::photo::{PhotoMetadataField, PhotoRating, SaveOnDropPhoto};
 use crate::photo_manager::PhotoManager;
 
-use super::{segment_control::SegmentControl, spacer::Spacer, tag_chips::{TagChips, TagChipsState}};
+use super::{
+    segment_control::SegmentControl,
+    spacer::Spacer,
+    tag_chips::{TagChips, TagChipsState},
+};
 
 #[derive(Debug, Clone)]
 pub struct PhotoInfoState {
@@ -26,8 +30,6 @@ impl PhotoInfoState {
     }
 }
 
-
-
 pub struct PhotoInfo<'a> {
     pub photo: SaveOnDropPhoto<'a>,
     pub state: &'a mut PhotoInfoState,
@@ -35,10 +37,7 @@ pub struct PhotoInfo<'a> {
 
 impl<'a> PhotoInfo<'a> {
     pub fn new(photo: SaveOnDropPhoto<'a>, state: &'a mut PhotoInfoState) -> Self {
-        Self { 
-            photo,
-            state,
-        }
+        Self { photo, state }
     }
 }
 
@@ -61,7 +60,7 @@ impl<'a> PhotoInfo<'a> {
                         &mut current_rating,
                     )
                     .ui(ui);
-                    
+
                     if current_rating != self.photo.rating() {
                         self.photo.set_rating(current_rating);
                     }
@@ -77,26 +76,29 @@ impl<'a> PhotoInfo<'a> {
                             self.state.selected_tags = photo_tags.clone();
                             self.state.last_photo_tags = photo_tags.clone();
                         }
-                        
+
                         let photo_manager: Singleton<PhotoManager> = Dependency::get();
                         let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
-                        
-                        let tag_response = TagChips::new(&mut self.state.selected_tags, &mut self.state.tag_chips_state)
-                            .available_tags(&available_tags)
-                            .show_input(true)
-                            .show(ui);
-                        
+
+                        let tag_response = TagChips::new(
+                            &mut self.state.selected_tags,
+                            &mut self.state.tag_chips_state,
+                        )
+                        .available_tags(&available_tags)
+                        .show_input(true)
+                        .show(ui);
+
                         if tag_response.changed() {
                             // Sync changes to photo
                             let current_photo_tags = self.photo.tags();
-                            
+
                             // Remove tags that are no longer selected
                             for tag in &current_photo_tags {
                                 if !self.state.selected_tags.contains(tag) {
                                     self.photo.remove_tag(tag);
                                 }
                             }
-                            
+
                             // Add new tags that are selected but not in photo
                             for tag in &self.state.selected_tags {
                                 if !current_photo_tags.contains(tag) {

@@ -140,8 +140,7 @@ mod tests {
         let selected = Some(&items[1]);
 
         let mut harness = Harness::new_ui(|ui| {
-            let response =
-                chip_collection(ui, &items, selected, false, 4.0);
+            let response = chip_collection(ui, &items, selected, false, 4.0);
 
             assert!(response.clicked_item().is_none());
             assert!(response.closed_item().is_none());
@@ -266,13 +265,7 @@ mod tests {
         ];
         let mut harness = Harness::new_ui(|ui| {
             ui.set_max_width(300.0);
-            chip_collection(
-                ui,
-                &items,
-                Some(&items[2]),
-                false,
-                4.0,
-            );
+            chip_collection(ui, &items, Some(&items[2]), false, 4.0);
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_wrapping");
@@ -288,13 +281,7 @@ mod tests {
         // Single item
         let items = vec!["Single"];
         let mut harness = Harness::new_ui(|ui| {
-            chip_collection(
-                ui,
-                &items,
-                Some(&items[0]),
-                true,
-                4.0,
-            );
+            chip_collection(ui, &items, Some(&items[0]), true, 4.0);
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_single");

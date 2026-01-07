@@ -1,7 +1,6 @@
 pub mod grid_layout;
 pub mod stack_layout;
 
-
 #[derive(Debug, Clone)]
 pub struct LayoutItem {
     pub aspect_ratio: f32,

@@ -444,7 +444,7 @@ impl FileTree {
     /// # use photobook_rs::file_tree::FileTree;
     /// let mut tree = FileTree::new(Path::new("project"));
     /// tree.insert(Path::new("project/src/main.rs"));
-    /// 
+    ///
     /// // Remove the file
     /// let removed = tree.remove(Path::new("project/src/main.rs"));
     /// assert!(removed);
@@ -454,7 +454,7 @@ impl FileTree {
             // Cannot remove the root itself, but we can indicate it was found
             return true;
         }
-        
+
         self.root.remove(path_to_remove)
     }
 }
@@ -863,7 +863,7 @@ impl FileTreeCollection {
     pub fn remove(&mut self, path_to_remove: &Path) -> bool {
         // Clear the flattened trees so they can be recomputed
         self.flattened_file_trees = None;
-        
+
         // Determine the root component of the path to find which tree it belongs to
         let root_component_of_path_to_remove = path_to_remove
             .components()
@@ -874,7 +874,7 @@ impl FileTreeCollection {
         for i in 0..self.file_trees.len() {
             if self.file_trees[i].root.path() == &root_component_of_path_to_remove {
                 let removed = self.file_trees[i].remove(path_to_remove);
-                
+
                 if removed {
                     // Check if the tree is now empty (only contains the root with no children)
                     match &self.file_trees[i].root {
@@ -897,7 +897,7 @@ impl FileTreeCollection {
                 break;
             }
         }
-        
+
         false
     }
 }

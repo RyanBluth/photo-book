@@ -2,14 +2,13 @@ use std::fmt::Display;
 
 use egui::{Id, Key, Rect, Ui, Vec2};
 use egui_tiles::UiResponse;
-use indexmap::{indexmap, IndexMap};
+use indexmap::{IndexMap, indexmap};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
-    id::{next_layer_id, next_page_id, LayerId, PageId},
-
+    id::{LayerId, PageId, next_layer_id, next_page_id},
     model::edit_state::EditablePage,
     photo_manager::PhotoManager,
     scene::crop_scene::CropScene,
@@ -28,8 +27,8 @@ use crate::{
 };
 
 use super::{
-    crop_scene::CropSceneResponse, viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene,
-    ScenePopResponse, SceneResponse, SceneTransition::Viewer,
+    NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse, SceneTransition::Viewer,
+    crop_scene::CropSceneResponse, viewer_scene::ViewerScene,
 };
 
 use crate::widget::canvas::CanvasResponse;
@@ -267,11 +266,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             CanvasScenePane::Gallery => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
-                let response = ImageGallery::show(
-                    ui,
-                    &mut self.scene_state.gallery_state,
-                    None
-                );
+                let response = ImageGallery::show(ui, &mut self.scene_state.gallery_state, None);
 
                 // Handle primary action (double-click)
                 if let Some(photo) = response.primary_action_photo {
@@ -319,8 +314,6 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 if let Some(photo) = response.secondary_action_photo {
                     self.navigator.push(Viewer(ViewerScene::new(photo.clone())));
                 }
-
-
             }
             CanvasScenePane::Canvas => {
                 if !self.scene_state.has_pages() {

@@ -1,5 +1,5 @@
-use egui::Vec2;
 use super::{editable_value::EditableValue, unit::Unit};
+use egui::Vec2;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Page {
@@ -11,14 +11,24 @@ pub struct Page {
 
 impl Page {
     pub fn new(width: f32, height: f32, ppi: i32, unit: Unit) -> Self {
-        Self { width, height, ppi, unit }
+        Self {
+            width,
+            height,
+            ppi,
+            unit,
+        }
     }
 
     pub fn with_size_inches(width: f32, height: f32) -> Self {
         let ppi = 300;
         let unit = Unit::Inches;
 
-        Self { width, height, ppi, unit }
+        Self {
+            width,
+            height,
+            ppi,
+            unit,
+        }
     }
 
     fn a4() -> Self {

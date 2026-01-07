@@ -1,4 +1,3 @@
-
 use eframe::egui::{self, Pos2, Rect, Ui, Vec2};
 use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
@@ -31,14 +30,11 @@ pub struct Crop<'a> {
 
 impl<'a> Crop<'a> {
     pub fn new(crop_state: &'a mut CropState) -> Self {
-        Self {
-            crop_state,
-        }
+        Self { crop_state }
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
-        ui.painter()
-            .rect_filled(ui.max_rect(), 0.0, Color32::BLACK);
+        ui.painter().rect_filled(ui.max_rect(), 0.0, Color32::BLACK);
 
         let texture = Dependency::<PhotoManager>::get()
             .with_lock_mut(|photo_manager| {
