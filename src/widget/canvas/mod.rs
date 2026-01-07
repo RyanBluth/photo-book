@@ -81,7 +81,7 @@ impl<'a> Canvas<'a> {
             Vec2::new(self.available_rect.width(), toolbar_height),
         );
 
-        ui.allocate_new_ui(UiBuilder::new().max_rect(toolbar_rect), |ui| {
+        ui.scope_builder(UiBuilder::new().max_rect(toolbar_rect), |ui| {
             ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
             ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
 
@@ -450,6 +450,7 @@ impl<'a> Canvas<'a> {
         ((*pos - page_rect.min) / self.state.zoom).to_pos2()
     }
 
+    #[allow(dead_code)]
     fn page_to_screen_pos2(&self, page_rect: Rect, pos: &Pos2) -> Pos2 {
         page_rect.min + pos.to_vec2() * self.state.zoom
     }
@@ -544,7 +545,7 @@ impl<'a> Canvas<'a> {
                     self.state.zoom,
                     true,
                     true,
-                    |ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
+                    |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
                         // Apply transformation to the transformable_state of each layer in the multi select
                         for child_id in child_ids_content {
                             let layer: &mut Layer = self.state.layers.get_mut(&child_id).unwrap();
@@ -989,11 +990,11 @@ impl<'a> Canvas<'a> {
                     ended_moving: false,
                     ended_resizing: false,
                     ended_rotating: false,
-                    inner: (),
-                    began_moving: false,
-                    began_resizing: false,
-                    began_rotating: false,
-                    clicked: response.clicked(),
+                    _inner: (),
+                    _began_moving: false,
+                    _began_resizing: false,
+                    _began_rotating: false,
+                    _clicked: response.clicked(),
                     double_clicked: response.double_clicked(),
                 })
             }
@@ -1093,11 +1094,11 @@ impl<'a> Canvas<'a> {
                     ended_moving: false,
                     ended_resizing: false,
                     ended_rotating: false,
-                    inner: (),
-                    began_moving: false,
-                    began_resizing: false,
-                    began_rotating: false,
-                    clicked: response.clicked(),
+                    _inner: (),
+                    _began_moving: false,
+                    _began_resizing: false,
+                    _began_rotating: false,
+                    _clicked: response.clicked(),
                     double_clicked: response.double_clicked(),
                 })
             }
@@ -1511,6 +1512,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn deselect_photo(&mut self, layer_id: &LayerId) {
         self.state.layers.get_mut(layer_id).unwrap().selected = false;
         self.history_manager
@@ -1594,7 +1596,7 @@ impl<'a> Canvas<'a> {
                 .collect::<String>();
 
             match ui
-                .allocate_new_ui(UiBuilder::new().max_rect(bar_rect), |ui| {
+                .scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
                     AutoCenter::new(format!("action_bar_{}", action_bar_id))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| ActionBar::with_items(actions).show(ui))

@@ -1,6 +1,4 @@
-use egui::emath::OrderedFloat;
 use egui::{Pos2, Rect};
-use log::{error, info};
 
 use skia_safe::EncodedImageFormat;
 use skia_safe::surfaces::raster_n32_premul;
@@ -11,18 +9,18 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::{default, usize};
+use std::usize;
 
 use tokio::task::spawn_blocking;
 
-use smol_egui_skia::{EguiSkia, RasterizeOptions};
+use smol_egui_skia::EguiSkia;
 
 use thiserror::Error;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
 
 use crate::font_manager::FontManager;
-use crate::modal::ModalActionResponse;
+
 use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
@@ -36,6 +34,7 @@ pub enum ExportError {
     #[error("Failed to create surface")]
     SurfaceCreationError,
     #[error("Error loading texture: {0}")]
+    #[allow(dead_code)]
     TextureLoadingError(String),
     #[error("Failed to encode image")]
     ImageEncodingError,
@@ -180,6 +179,7 @@ impl Exporter {
         task_id
     }
 
+    #[allow(deprecated)]
     fn export_page(
         mut canvas_state: CanvasState,
         directory: &PathBuf,
@@ -272,7 +272,7 @@ impl Exporter {
 
         let data = surface
             .image_snapshot()
-            .encode_to_data(EncodedImageFormat::JPEG)
+            .encode(None, EncodedImageFormat::JPEG, 100)
             .ok_or(ExportError::ImageEncodingError)?;
 
         let image_path = directory.join(format!("page_{}.jpg", page_number));

@@ -14,7 +14,7 @@ use crate::{
         unit::Unit as AppUnit,
     },
     photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
-    photo_manager::{self, PhotoManager},
+    photo_manager::PhotoManager,
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::{CanvasScene, CanvasSceneState},
@@ -641,7 +641,7 @@ impl Into<OrganizeEditScene> for Project {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct CanvasPage {
+pub struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
     pub template: Option<Template>,
@@ -649,22 +649,29 @@ struct CanvasPage {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Page {
-    width: f32,
-    height: f32,
-    ppi: i32,
-    unit: Unit,
+pub struct Template {
+    pub name: String,
+    pub page: Page,
+    pub regions: Vec<TemplateRegion>,
+}
+
+#[derive(Debug, Clone, Savefile)]
+pub struct Page {
+    pub width: f32,
+    pub height: f32,
+    pub ppi: i32,
+    pub unit: Unit,
 }
 
 #[derive(Debug, Clone, PartialEq, Copy, Savefile)]
-enum Unit {
+pub enum Unit {
     Pixels,
     Inches,
     Centimeters,
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Photo {
+pub struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
     #[savefile_versions = "2.."]
@@ -672,7 +679,7 @@ struct Photo {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Layer {
+pub struct Layer {
     pub content: LayerContent,
     pub name: String,
     pub visible: bool,
@@ -684,40 +691,33 @@ struct Layer {
 }
 
 #[derive(Debug, Clone, Savefile)]
-enum ScaleMode {
+pub enum ScaleMode {
     Fit,
     Fill,
     Stretch,
 }
 
 #[derive(Debug, Clone, Savefile)]
-pub struct Template {
-    pub name: String,
-    pub page: Page,
-    pub regions: Vec<TemplateRegion>,
-}
-
-#[derive(Debug, Clone, Savefile)]
-struct TemplateRegion {
+pub struct TemplateRegion {
     pub relative_position: Pos2,
     pub relative_size: Vec2,
     pub kind: TemplateRegionKind,
 }
 
 #[derive(Debug, PartialEq, Clone, Savefile)]
-enum TemplateRegionKind {
+pub enum TemplateRegionKind {
     Image,
     Text { sample_text: String, font_size: f32 },
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct CanvasPhoto {
+pub struct CanvasPhoto {
     pub photo: Photo,
     pub crop: Rect,
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct CanvasText {
+pub struct CanvasText {
     pub text: String,
     pub font_size: f32,
     pub font_id: FontId,
@@ -727,21 +727,21 @@ struct CanvasText {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct CanvasShape {
+pub struct CanvasShape {
     pub kind: CanvasShapeKind,
     pub fill_color: Color32,
     pub stroke: Option<(Stroke, StrokeKind)>,
 }
 
 #[derive(Debug, Clone, Savefile)]
-enum CanvasShapeKind {
+pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
     Line,
 }
 
 #[derive(Debug, Clone, Savefile)]
-enum LayerContent {
+pub enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
     TemplatePhoto {
@@ -875,9 +875,9 @@ impl Into<AppPage> for Page {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Vec2 {
-    x: f32,
-    y: f32,
+pub struct Vec2 {
+    pub x: f32,
+    pub y: f32,
 }
 
 impl Into<Vec2> for egui::Vec2 {
@@ -899,11 +899,11 @@ impl Into<egui::Vec2> for Vec2 {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Rect {
-    min_x: f32,
-    min_y: f32,
-    max_x: f32,
-    max_y: f32,
+pub struct Rect {
+    pub min_x: f32,
+    pub min_y: f32,
+    pub max_x: f32,
+    pub max_y: f32,
 }
 
 impl Into<Rect> for egui::Rect {
@@ -927,11 +927,11 @@ impl Into<egui::Rect> for Rect {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Color32 {
-    r: u8,
-    g: u8,
-    b: u8,
-    a: u8,
+pub struct Color32 {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
 }
 
 impl Into<Color32> for egui::Color32 {
@@ -952,9 +952,9 @@ impl Into<egui::Color32> for Color32 {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Pos2 {
-    x: f32,
-    y: f32,
+pub struct Pos2 {
+    pub x: f32,
+    pub y: f32,
 }
 
 impl Into<Pos2> for egui::Pos2 {
@@ -1006,7 +1006,7 @@ impl From<FontId> for egui::FontId {
 }
 
 #[derive(Debug, Clone, Savefile)]
-struct Stroke {
+pub struct Stroke {
     pub color: Color32,
     pub width: f32,
 }
@@ -1030,7 +1030,7 @@ impl Into<egui::Stroke> for Stroke {
 }
 
 #[derive(Debug, Clone, Savefile)]
-enum StrokeKind {
+pub enum StrokeKind {
     Inside,
     Middle,
     Outside,

@@ -4,9 +4,9 @@ use crate::theme::color::ACTION_BAR;
 
 #[derive(Debug, Clone)]
 pub enum ActionItemKind {
-    Icon(ImageSource<'static>),
+    _Icon(ImageSource<'static>),
     Text(String),
-    IconText {
+    _IconText {
         icon: ImageSource<'static>,
         text: String,
     },
@@ -28,7 +28,7 @@ pub enum ActionBarResponse<T: Clone> {
 }
 
 impl<T: Clone> ActionBar<T> {
-    pub fn new() -> Self {
+    pub fn _new() -> Self {
         Self { items: Vec::new() }
     }
 
@@ -36,7 +36,7 @@ impl<T: Clone> ActionBar<T> {
         Self { items }
     }
 
-    pub fn add_item(&mut self, item: ActionItem<T>) {
+    pub fn _add_item(&mut self, item: ActionItem<T>) {
         self.items.push(item);
     }
 
@@ -50,7 +50,7 @@ impl<T: Clone> ActionBar<T> {
                     for item in &self.items {
                         ui.add_space(10.0);
                         match &item.kind {
-                            ActionItemKind::Icon(icon) => {
+                            ActionItemKind::_Icon(icon) => {
                                 if ui.add(Button::image(icon.clone())).clicked() {
                                     return ActionBarResponse::Clicked(item.action.clone());
                                 }
@@ -60,7 +60,7 @@ impl<T: Clone> ActionBar<T> {
                                     return ActionBarResponse::Clicked(item.action.clone());
                                 }
                             }
-                            ActionItemKind::IconText { icon, text } => {
+                            ActionItemKind::_IconText { icon, text } => {
                                 if ui.add(Button::image_and_text(icon.clone(), text)).clicked() {
                                     return ActionBarResponse::Clicked(item.action.clone());
                                 }

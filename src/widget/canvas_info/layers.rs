@@ -135,7 +135,7 @@ pub struct CanvasShape {
 }
 
 impl CanvasShape {
-    pub fn new(kind: CanvasShapeKind, color: Color32, rect: Rect) -> Self {
+    pub fn new(kind: CanvasShapeKind, color: Color32, _rect: Rect) -> Self {
         Self {
             kind,
             fill_color: color,
@@ -485,6 +485,7 @@ impl HistoricallyEqual for Layer {
     }
 }
 
+#[allow(dead_code)]
 pub enum LayersResponse {
     SelectedLayer(LayerId),
     None,
@@ -516,12 +517,12 @@ impl<'a> Layers<'a> {
         let mut to = None;
 
         ui.vertical(|ui| {
-            let (_response, dropped_payload) =
-                ui.dnd_drop_zone::<usize, ()>(egui::Frame::none(), |ui| {
+            let (_response, _dropped_payload) =
+                ui.dnd_drop_zone::<usize, ()>(egui::Frame::NONE, |ui| {
                     for (idx, (layer_id, layer)) in self.layers.iter().rev().enumerate() {
                         let item_id = Id::new(("layer_list", idx));
 
-                        let row = ui.horizontal(|ui| {
+                        let _row = ui.horizontal(|ui| {
                             ui.set_height(60.0);
 
                             if layer.selected {

@@ -1,10 +1,6 @@
 use std::{collections::HashSet, ffi::OsStr, path::PathBuf, sync::Arc};
 
-use egui::{
-    FontDefinitions, FontFamily, FontId,
-    epaint::{AlphaFromCoverage, TextOptions},
-    text::Fonts,
-};
+use egui::{FontDefinitions, FontFamily, FontId, epaint::TextOptions, text::Fonts};
 use font_kit::source::SystemSource;
 use indexmap::IndexMap;
 
@@ -135,8 +131,11 @@ impl FontManager {
 
 pub struct FontInfo {
     pub family: String,
+    #[allow(dead_code)]
     pub weight: u16,
+    #[allow(dead_code)]
     pub weighted_name: String,
+    #[allow(dead_code)]
     pub full_name: String,
     pub file_path: PathBuf,
 }

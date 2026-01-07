@@ -165,7 +165,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum PrimaryComponentKind {
+enum _PrimaryComponentKind {
     Gallery = 0,
     Viewer = 1,
     Canvas = 2,
@@ -174,16 +174,16 @@ enum PrimaryComponentKind {
 }
 
 struct PhotoBookApp {
-    log: Arc<StringLog>,
+    _log: Arc<StringLog>,
     loaded_fonts: bool,
     scene_manager: SceneManager,
     loaded_initial_scene: bool,
 }
 
 impl PhotoBookApp {
-    fn new(log: Arc<StringLog>) -> Self {
+    fn new(_log: Arc<StringLog>) -> Self {
         Self {
-            log,
+            _log,
             loaded_fonts: false,
             scene_manager: SceneManager::default(),
             loaded_initial_scene: false,
@@ -292,6 +292,10 @@ impl eframe::App for PhotoBookApp {
             cursor_manager.begin_frame(ctx);
         });
 
+        // TODO: egui deprecates show() in favor of show_inside(), but show_inside() is for nested UIs.
+        // This is a top-level panel, so show() with ctx is still the correct approach.
+        // Silencing this warning until the egui API is updated or clarified.
+        #[allow(deprecated)]
         egui::CentralPanel::default().show(ctx, |ui| {
             self.scene_manager.ui(ui);
 
@@ -317,5 +321,5 @@ impl eframe::App for PhotoBookApp {
         });
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {}
+    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
 }

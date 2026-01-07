@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{ComboBox, RichText, Vec2};
+use egui::{ComboBox, RichText};
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -16,7 +16,7 @@ pub struct PageInfoState<'a> {
 }
 
 impl PageInfoState<'_> {
-    pub fn new(page: &mut EditablePage) -> PageInfoState {
+    pub fn new(page: &mut EditablePage) -> PageInfoState<'_> {
         PageInfoState { page }
     }
 }

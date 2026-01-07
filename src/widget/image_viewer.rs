@@ -38,7 +38,7 @@ pub enum Request {
 
 pub struct ImageViewerResponse {
     pub request: Option<Request>,
-    pub response: Response,
+    pub _response: Response,
 }
 
 pub struct ImageViewer<'a> {
@@ -61,7 +61,7 @@ impl<'a> ImageViewer<'a> {
 
         let mut viewer_response = ImageViewerResponse {
             request: None,
-            response,
+            _response: response,
         };
 
         if ui.input(|input| input.key_pressed(Key::Escape)) {

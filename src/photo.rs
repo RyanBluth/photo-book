@@ -25,7 +25,6 @@ use eframe::{
 use chrono::{DateTime, Utc};
 use exif::{In, Reader, Tag, Value};
 use fxhash::hash64;
-use log::error;
 use serde::{Deserialize, Serialize};
 use strum_macros::EnumIter;
 

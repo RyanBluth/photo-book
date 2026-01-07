@@ -105,21 +105,21 @@ pub struct TransformableWidget<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TransformableWidgetResponseAction {
+pub enum _TransformableWidgetResponseAction {
     PushHistory,
 }
 
 #[derive(Debug, Clone)]
 pub struct TransformableWidgetResponse<Inner> {
-    pub inner: Inner,
-    pub began_moving: bool,
-    pub began_resizing: bool,
-    pub began_rotating: bool,
+    pub _inner: Inner,
+    pub _began_moving: bool,
+    pub _began_resizing: bool,
+    pub _began_rotating: bool,
     pub ended_moving: bool,
     pub ended_resizing: bool,
     pub ended_rotating: bool,
     pub mouse_down: bool,
-    pub clicked: bool,
+    pub _clicked: bool,
     pub double_clicked: bool,
 }
 
@@ -482,12 +482,12 @@ impl<'a> TransformableWidget<'a> {
         }
 
         TransformableWidgetResponse {
-            inner: inner_response,
-            began_moving: !initial_is_moving && self.state.is_moving,
-            began_resizing: initial_active_handle.is_none()
+            _inner: inner_response,
+            _began_moving: !initial_is_moving && self.state.is_moving,
+            _began_resizing: initial_active_handle.is_none()
                 && self.state.active_handle.is_some()
                 && matches!(initial_mode, TransformHandleMode::Resize(_)),
-            began_rotating: initial_active_handle.is_none()
+            _began_rotating: initial_active_handle.is_none()
                 && self.state.active_handle.is_some()
                 && matches!(initial_mode, TransformHandleMode::Rotate),
             ended_moving: initial_is_moving && !self.state.is_moving,
@@ -498,7 +498,7 @@ impl<'a> TransformableWidget<'a> {
                 && self.state.active_handle.is_none()
                 && matches!(initial_mode, TransformHandleMode::Rotate),
             mouse_down: interact_response.is_pointer_button_down_on(),
-            clicked: interact_response.clicked(),
+            _clicked: interact_response.clicked(),
             double_clicked: interact_response.double_clicked(),
         }
     }

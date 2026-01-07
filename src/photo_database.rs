@@ -44,6 +44,7 @@ impl<K: Hash + Eq + Clone, V: Hash + Eq + Clone> BidirectionalHashMap<K, V> {
         self.forward.get(key)
     }
 
+    #[allow(dead_code)]
     pub fn get_left_mut(&mut self, key: &K) -> Option<&mut V> {
         self.forward.get_mut(key)
     }
@@ -52,6 +53,7 @@ impl<K: Hash + Eq + Clone, V: Hash + Eq + Clone> BidirectionalHashMap<K, V> {
         self.backward.get(value)
     }
 
+    #[allow(dead_code)]
     pub fn get_right_mut(&mut self, value: &V) -> Option<&mut K> {
         self.backward.get_mut(value)
     }
@@ -128,17 +130,20 @@ impl PhotoDatabase {
             .map(|index| &self.photos[*index])
     }
 
+    #[allow(dead_code)]
     pub fn get_photo_mut(&mut self, path: &PathBuf) -> Option<&mut Photo> {
         self.path_map
             .get_right(path)
             .map(|index| &mut self.photos[*index])
     }
 
+    #[allow(dead_code)]
     pub fn get_photo_by_index(&mut self, index: usize) -> Option<&Photo> {
         self.ensure_sorted();
         self.photos.get(index)
     }
 
+    #[allow(dead_code)]
     pub fn get_photo_by_index_mut(&mut self, index: usize) -> Option<&mut Photo> {
         self.ensure_sorted();
         self.photos.get_mut(index)
@@ -277,6 +282,7 @@ impl PhotoDatabase {
         result
     }
 
+    #[allow(dead_code)]
     fn index_of_photo(&self, path: &PathBuf) -> Option<usize> {
         self.path_map.get_right(path).copied()
     }
@@ -356,12 +362,14 @@ impl PhotoDatabase {
     }
 
     /// Get photo by index with sorting applied
+    #[allow(dead_code)]
     pub fn get_photo_by_index_sorted(&self, index: usize) -> Option<&Photo> {
         // For now, just return by index - sorting will be handled by PhotoManager
         self.photos.get(index)
     }
 
     /// Get the index of a photo by its path
+    #[allow(dead_code)]
     pub fn get_photo_index(&mut self, path: &PathBuf) -> Option<usize> {
         self.ensure_sorted();
         self.path_map.get_right(path).copied()
@@ -568,7 +576,7 @@ impl Default for PhotoQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::photo::{PhotoMetadata, PhotoMetadataField, PhotoMetadataFieldLabel};
+    use crate::photo::{PhotoMetadata, PhotoMetadataField};
     use chrono::{DateTime, Utc};
     use std::path::PathBuf;
 

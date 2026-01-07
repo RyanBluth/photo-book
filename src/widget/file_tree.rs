@@ -36,7 +36,7 @@ pub struct FileTree<'a> {
 
 #[derive(Debug, Clone)]
 pub struct FileTreeResponse {
-    pub response: Response,
+    pub _response: Response,
 
     pub selected: Option<PathBuf>,
 
@@ -129,7 +129,7 @@ impl<'a> FileTree<'a> {
         });
 
         FileTreeResponse {
-            response: outer_response,
+            _response: outer_response,
             selected: selected_path_this_frame,
             double_clicked: double_clicked_path_this_frame,
             removed: removed_path_this_frame,

@@ -5,9 +5,8 @@ use eframe::{
     epaint::Vec2,
 };
 
-use egui::{Button, Color32, Image, Layout, Rect, Slider, containers::menu::MenuConfig};
+use egui::{Color32, Image, Layout, Slider, containers::menu::MenuConfig};
 use egui_extras::Column;
-use exif::doc::news;
 
 use crate::{
     assets::Asset,
@@ -38,7 +37,9 @@ impl Default for ImageGalleryState {
 }
 
 pub struct ImageGallery<'a> {
+    #[allow(dead_code)]
     photo_manager: Singleton<PhotoManager>,
+    #[allow(dead_code)]
     state: &'a mut ImageGalleryState,
 }
 
@@ -76,7 +77,7 @@ impl<'a> ImageGallery<'a> {
             photo_manager.with_lock_mut(|photo_manager| photo_manager.grouped_photos());
 
         if has_photos {
-            let initial_available_rect = ui.available_rect_before_wrap();
+            let _initial_available_rect = ui.available_rect_before_wrap();
 
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {

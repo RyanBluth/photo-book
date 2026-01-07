@@ -22,7 +22,7 @@ use crate::{
             },
             quick_layout::{self},
         },
-        transformable::{ResizeMode, TransformHandle, TransformHandleMode, TransformableState},
+        transformable::{TransformHandleMode, TransformableState},
     },
 };
 

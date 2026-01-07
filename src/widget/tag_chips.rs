@@ -26,7 +26,7 @@ impl Default for TagChipsState {
 
 /// Response from the tag chips widget
 pub struct TagChipsResponse {
-    pub response: Response,
+    pub _response: Response,
     pub changed: bool,
 }
 
@@ -71,13 +71,13 @@ impl<'a> TagChips<'a> {
     }
 
     /// Set a label for the widget
-    pub fn label(mut self, label: impl Into<String>) -> Self {
+    pub fn _label(mut self, label: impl Into<String>) -> Self {
         self.label = Some(label.into());
         self
     }
 
     /// Set spacing between chips
-    pub fn spacing(mut self, spacing: f32) -> Self {
+    pub fn _spacing(mut self, spacing: f32) -> Self {
         self.spacing = spacing;
         self
     }
@@ -185,7 +185,10 @@ impl<'a> TagChips<'a> {
             })
             .response;
 
-        TagChipsResponse { response, changed }
+        TagChipsResponse {
+            _response: response,
+            changed,
+        }
     }
 }
 
@@ -202,7 +205,7 @@ mod tests {
 
         let mut harness = Harness::new_ui(|ui| {
             let response = TagChips::new(&mut selected_tags, &mut state)
-                .label("Tags")
+                ._label("Tags")
                 .show_input(true)
                 .show(ui);
 
@@ -246,8 +249,8 @@ mod tests {
             let response = TagChips::new(&mut selected_tags, &mut state)
                 .available_tags(&available_tags)
                 .show_input(true)
-                .label("Test Tags")
-                .spacing(6.0)
+                ._label("Test Tags")
+                ._spacing(6.0)
                 .show(ui);
 
             assert!(!response.changed());
@@ -268,7 +271,7 @@ mod tests {
         let mut harness = Harness::new_ui(|ui| {
             TagChips::new(&mut selected_tags, &mut state)
                 .available_tags(&available_tags)
-                .label("Tags")
+                ._label("Tags")
                 .show_input(true)
                 .show(ui);
         });

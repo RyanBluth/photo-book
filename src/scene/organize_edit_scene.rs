@@ -5,7 +5,7 @@ use log::{error, info};
 
 use crate::{
     auto_persisting::AutoPersisting,
-    config::{Config, ConfigModification},
+    config::Config,
     cursor_manager::CursorManager,
     debug::DebugSettings,
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -17,8 +17,7 @@ use crate::{
         page_settings::PageSettingsModal,
     },
     model::photo_grouping::PhotoGrouping,
-    photo_manager::{self, PhotoManager},
-    project::Project,
+    photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
     session::{Session, SessionError},
     utils::{Either, Toggle},
@@ -400,12 +399,12 @@ impl Scene for OrganizeEditScene {
             // TODO: Is there a more elegant way to do this?
             match scene_response {
                 SceneResponse::Push(transition) => match transition {
-                    SceneTransition::Gallery(scene) => {
+                    SceneTransition::_Gallery(scene) => {
                         *self.organize.write().unwrap() = scene;
                         self.show_organize();
                         SceneResponse::None
                     }
-                    SceneTransition::Canvas(mut scene) => {
+                    SceneTransition::_Canvas(mut scene) => {
                         scene.state.gallery_state = self
                             .organize
                             .read()

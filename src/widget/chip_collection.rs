@@ -3,7 +3,7 @@ use std::fmt::Display;
 use super::chip::{chip_selectable, chip_selectable_closable};
 use egui::{Response, Ui, Widget};
 
-pub struct ChipCollection<'a, T: ToString> {
+pub struct _ChipCollection<'a, T: ToString> {
     items: &'a [T],
     selected_item: Option<&'a T>,
     closable: bool,
@@ -11,7 +11,7 @@ pub struct ChipCollection<'a, T: ToString> {
 }
 
 pub struct ChipCollectionResponse {
-    pub response: Response,
+    pub _response: Response,
     pub clicked_item: Option<usize>,
     pub closed_item: Option<usize>,
 }
@@ -26,8 +26,8 @@ impl ChipCollectionResponse {
     }
 }
 
-impl<'a, T: PartialEq + ToString> ChipCollection<'a, T> {
-    pub fn new(items: &'a [T]) -> Self {
+impl<'a, T: PartialEq + ToString> _ChipCollection<'a, T> {
+    pub fn _new(items: &'a [T]) -> Self {
         Self {
             items,
             selected_item: None,
@@ -36,23 +36,23 @@ impl<'a, T: PartialEq + ToString> ChipCollection<'a, T> {
         }
     }
 
-    pub fn selected(mut self, selected: Option<&'a T>) -> Self {
+    pub fn _selected(mut self, selected: Option<&'a T>) -> Self {
         self.selected_item = selected;
         self
     }
 
-    pub fn closable(mut self, closable: bool) -> Self {
+    pub fn _closable(mut self, closable: bool) -> Self {
         self.closable = closable;
         self
     }
 
-    pub fn spacing(mut self, spacing: f32) -> Self {
+    pub fn _spacing(mut self, spacing: f32) -> Self {
         self.spacing = spacing;
         self
     }
 }
 
-impl<'a, T: PartialEq + Display> Widget for ChipCollection<'a, T> {
+impl<'a, T: PartialEq + Display> Widget for _ChipCollection<'a, T> {
     fn ui(self, ui: &mut Ui) -> Response {
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = self.spacing;
@@ -109,7 +109,7 @@ pub fn chip_collection<T: PartialEq + ToString>(
         .response;
 
     ChipCollectionResponse {
-        response,
+        _response: response,
         clicked_item,
         closed_item,
     }
@@ -169,10 +169,10 @@ mod tests {
         let selected_item = Some(&items[0]);
 
         let mut harness = Harness::new_ui(|ui| {
-            let collection = ChipCollection::new(&items)
-                .selected(selected_item)
-                .closable(true)
-                .spacing(6.0);
+            let collection = _ChipCollection::_new(&items)
+                ._selected(selected_item)
+                ._closable(true)
+                ._spacing(6.0);
             let response = ui.add(collection);
             assert!(!response.clicked());
         });
@@ -204,7 +204,7 @@ mod tests {
             // Test that methods exist and return expected types
             let _clicked_item: Option<usize> = response.clicked_item();
             let _closed_item: Option<usize> = response.closed_item();
-            let _underlying_response: &Response = &response.response;
+            let _underlying_response: &Response = &response._response;
         });
 
         harness.run();

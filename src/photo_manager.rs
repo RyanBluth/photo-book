@@ -24,9 +24,7 @@ use crate::{
     dirs::Dirs,
     model::photo_grouping::PhotoGrouping,
     photo::{Photo, PhotoRating},
-    photo_database::{
-        PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoQueryResultIterator, PhotoSortCriteria,
-    },
+    photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
 };
 
 use anyhow::{Ok, anyhow};
@@ -43,6 +41,7 @@ use crate::utils;
 
 const THUMBNAIL_SIZE: f32 = 512.0;
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub enum PhotoLoadResult {
     Pending(PathBuf),
@@ -50,6 +49,7 @@ pub enum PhotoLoadResult {
 }
 
 impl PhotoLoadResult {
+    #[allow(dead_code)]
     pub fn path(&self) -> &PathBuf {
         match self {
             PhotoLoadResult::Pending(path) => path,
@@ -58,6 +58,7 @@ impl PhotoLoadResult {
     }
 }
 
+#[allow(dead_code)]
 pub struct PhotoMetadata {
     pub rating: Option<PhotoRating>,
     pub date_time: Option<DateTime<Utc>>,
@@ -302,6 +303,7 @@ impl PhotoManager {
         )
     }
 
+    #[allow(dead_code)]
     pub fn tumbnail_texture_at(
         &mut self,
         at: usize,
@@ -373,6 +375,7 @@ impl PhotoManager {
         }
     }
 
+    #[allow(dead_code)]
     pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
         match self.photo_database.get_photo_by_index(at) {
             Some(photo) => {
@@ -411,6 +414,7 @@ impl PhotoManager {
         }
     }
 
+    #[allow(dead_code)]
     fn index_for_photo(&mut self, photo: &Photo) -> Option<usize> {
         self.photo_database.get_photo_index(&photo.path)
     }
@@ -738,6 +742,7 @@ impl PhotoManager {
         self.current_filter = filter;
     }
 
+    #[allow(dead_code)]
     pub fn clear_current_filter(&mut self) {
         self.current_filter = PhotoQuery::default();
     }

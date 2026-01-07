@@ -17,7 +17,7 @@ pub struct AlignmentInfoState<'a> {
 }
 
 impl AlignmentInfoState<'_> {
-    pub fn new(page_size: Vec2, layers: Vec<&mut Layer>) -> AlignmentInfoState {
+    pub fn new(page_size: Vec2, layers: Vec<&mut Layer>) -> AlignmentInfoState<'_> {
         AlignmentInfoState { page_size, layers }
     }
 }
@@ -46,7 +46,7 @@ impl Display for Alignment {
 }
 
 impl Alignment {
-    fn icon(&self) -> ImageSource {
+    fn icon(&self) -> ImageSource<'_> {
         match self {
             Alignment::Left => Asset::horizontal_align_left(),
             Alignment::CenterHorizontal => Asset::horizontal_align_center(),
@@ -74,7 +74,7 @@ impl Display for Distruibution {
 }
 
 impl Distruibution {
-    fn icon(&self) -> ImageSource {
+    fn icon(&self) -> ImageSource<'_> {
         match self {
             Distruibution::Horizontal => Asset::distribute_horizontal(),
             Distruibution::Vertical => Asset::distribute_vertical(),

@@ -4,7 +4,6 @@ use eframe::egui::{self};
 use egui::{Rect, Vec2};
 
 use indexmap::IndexMap;
-use strum::IntoEnumIterator;
 
 use super::{
     LayoutItem, Margin,
@@ -52,7 +51,7 @@ impl GridLayout {
         self
     }
 
-    pub fn with_direction(mut self, direction: StackLayoutDirection) -> Self {
+    pub fn _with_direction(mut self, direction: StackLayoutDirection) -> Self {
         self.direction = direction;
         self
     }

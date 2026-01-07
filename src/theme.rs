@@ -5,6 +5,6 @@ pub mod color {
     pub const PLACEHOLDER: Color32 = Color32::from_rgb(50, 50, 50);
     pub const ACTION_BAR: Color32 = Color32::from_rgb(30, 30, 30);
     pub const SELECTED_TOOL_BACKGROUND: Color32 = Color32::from_rgb(255, 255, 255);
-    pub const SELECTED_TOOL_TINT: Color32 = Color32::from_rgb(255, 255, 255);
+    pub const _SELECTED_TOOL_TINT: Color32 = Color32::from_rgb(255, 255, 255);
     pub const HOVER_TOOL_BACKGROUND: Color32 = Color32::from_rgb(50, 50, 50);
 }

@@ -59,7 +59,7 @@ impl Toolbar {
         ui: &mut Ui,
         icon: egui::ImageSource,
         tool: ToolKind,
-        tooltip: &str,
+        _tooltip: &str,
     ) -> bool {
         let is_active = self.current_tool == tool;
 

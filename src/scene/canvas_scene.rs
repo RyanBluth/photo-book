@@ -10,7 +10,6 @@ use crate::{
     history::{HistoricallyEqual, UndoRedoStack},
     id::{LayerId, PageId, next_layer_id, next_page_id},
     model::edit_state::EditablePage,
-    photo_manager::PhotoManager,
     scene::crop_scene::CropScene,
     utils::{IdExt, RectExt},
     widget::{
@@ -512,8 +511,8 @@ pub enum CanvasHistoryKind {
     Transform,
     AddPhoto,
     DeletePhoto,
-    Select,
-    Page, // TODO Add specific cases for things within the page settings
+    _Select,
+    _Page, // TODO Add specific cases for things within the page settings
     AddText,
     EditText,
     SelectLayer,
@@ -528,8 +527,8 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::Transform => write!(f, "Move"),
             CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
             CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
-            CanvasHistoryKind::Select => write!(f, "Select"),
-            CanvasHistoryKind::Page => write!(f, "Page"),
+            CanvasHistoryKind::_Select => write!(f, "Select"),
+            CanvasHistoryKind::_Page => write!(f, "Page"),
             CanvasHistoryKind::AddText => write!(f, "Add Text"),
             CanvasHistoryKind::EditText => write!(f, "Edit Text"),
             CanvasHistoryKind::SelectLayer => write!(f, "Select Layer"),
@@ -580,7 +579,7 @@ impl CanvasHistoryManager {
         }
     }
 
-    pub fn is_at_end(&self) -> bool {
+    pub fn _is_at_end(&self) -> bool {
         self.stack.index == self.stack.history.len()
     }
 
@@ -611,12 +610,12 @@ impl CanvasHistoryManager {
         canvas_state.page = history.page;
     }
 
-    pub fn apply_index(&mut self, index: usize, canvas_state: &mut CanvasState) {
+    pub fn _apply_index(&mut self, index: usize, canvas_state: &mut CanvasState) {
         let history = &self.stack.history[index];
         self.apply_history(history.1.clone(), canvas_state);
     }
 
-    pub fn capturing_history<T>(
+    pub fn _capturing_history<T>(
         &mut self,
         kind: CanvasHistoryKind,
         canvas_state: &mut CanvasState,

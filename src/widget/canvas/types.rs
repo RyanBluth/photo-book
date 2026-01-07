@@ -96,11 +96,11 @@ impl ToolState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum CreatingLayer {
+pub enum _CreatingLayer {
     /// Line being created - stored here for live preview
-    Line(Layer, Pos2),
+    _Line(Layer, Pos2),
     /// Other layer being created - stored in layers map with this ID
-    Other(LayerId, Pos2),
+    _Other(LayerId, Pos2),
 }
 
 #[derive(Debug, Clone, PartialEq)]

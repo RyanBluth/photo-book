@@ -5,7 +5,6 @@ use savefile_derive::Savefile;
 
 use crate::{
     dependencies::{Dependency, SingletonFor},
-    photo_manager::PhotoManager,
     project::{PROJECT_VERSION, Project, ProjectError},
     scene::organize_edit_scene::OrganizeEditScene,
     session::Session,

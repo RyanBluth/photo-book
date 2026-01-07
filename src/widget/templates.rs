@@ -143,7 +143,7 @@ impl TemplatePreview {
                             StrokeKind::Outside,
                         );
 
-                        ui.allocate_ui_at_rect(region_rect, |ui| {
+                        ui.scope_builder(egui::UiBuilder::new().max_rect(region_rect), |ui| {
                             ui.label(
                                 RichText::new(sample_text.clone())
                                     .font(FontId::proportional(*font_size * scale)),

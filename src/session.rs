@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use egui::modal;
 use log::error;
 
 use crate::{
@@ -8,7 +7,6 @@ use crate::{
     config::{Config, ConfigModification},
     dependencies::{Dependency, Singleton, SingletonFor},
     modal::{
-        ModalActionResponse,
         manager::{ModalManager, TypedModalId},
         save_warning::{SaveWarningModal, SaveWarningResponse, SaveWarningSource},
     },
@@ -23,23 +21,24 @@ pub enum PendingOperation {
     LoadProject(Option<PathBuf>),
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum SessionError {
-    ProjectError(ProjectError),
+    _ProjectError(ProjectError),
     DialogCancelled,
-    DialogError(native_dialog::Error),
+    _DialogError(native_dialog::Error),
     WaitingForUserInput,
 }
 
 impl From<ProjectError> for SessionError {
     fn from(err: ProjectError) -> Self {
-        SessionError::ProjectError(err)
+        SessionError::_ProjectError(err)
     }
 }
 
 impl From<native_dialog::Error> for SessionError {
     fn from(err: native_dialog::Error) -> Self {
-        SessionError::DialogError(err)
+        SessionError::_DialogError(err)
     }
 }
 

@@ -28,91 +28,89 @@ impl<'a> TransformControl<'a> {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let _response = ui.allocate_ui(ui.available_size(), |ui| {
-            if self.state.layer.content.is_template() {
-                ui.set_enabled(false);
-            }
+            let is_template = self.state.layer.content.is_template();
 
-            self.state
-                .layer
-                .transform_edit_state
-                .update(&self.state.layer.transform_state);
+            ui.add_enabled_ui(!is_template, |ui| {
+                self.state
+                    .layer
+                    .transform_edit_state
+                    .update(&self.state.layer.transform_state);
 
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
-                ui.style_mut().spacing.text_edit_width = 80.0;
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
+                    ui.style_mut().spacing.text_edit_width = 80.0;
 
-                ui.label(RichText::new("Position").heading());
+                    ui.label(RichText::new("Position").heading());
 
-                ui.horizontal(|ui| {
-                    ui.label("x:");
+                    ui.horizontal(|ui| {
+                        ui.label("x:");
 
-                    let new_x = ui.text_edit_editable_value_singleline(
-                        &mut self.state.layer.transform_edit_state.x,
-                    );
+                        let new_x = ui.text_edit_editable_value_singleline(
+                            &mut self.state.layer.transform_edit_state.x,
+                        );
 
-                    let current_left = self.state.layer.transform_state.rect.left_top().x;
+                        let current_left = self.state.layer.transform_state.rect.left_top().x;
 
-                    self.state.layer.transform_state.rect = self
-                        .state
-                        .layer
-                        .transform_state
-                        .rect
-                        .translate(Vec2::new(new_x - current_left, 0.0));
+                        self.state.layer.transform_state.rect = self
+                            .state
+                            .layer
+                            .transform_state
+                            .rect
+                            .translate(Vec2::new(new_x - current_left, 0.0));
 
-                    ui.label("y:");
+                        ui.label("y:");
 
-                    let new_y = ui.text_edit_editable_value_singleline(
-                        &mut self.state.layer.transform_edit_state.y,
-                    );
+                        let new_y = ui.text_edit_editable_value_singleline(
+                            &mut self.state.layer.transform_edit_state.y,
+                        );
 
-                    let current_top = self.state.layer.transform_state.rect.left_top().y;
+                        let current_top = self.state.layer.transform_state.rect.left_top().y;
 
-                    self.state.layer.transform_state.rect = self
-                        .state
-                        .layer
-                        .transform_state
-                        .rect
-                        .translate(Vec2::new(0.0, new_y - current_top));
-                });
+                        self.state.layer.transform_state.rect = self
+                            .state
+                            .layer
+                            .transform_state
+                            .rect
+                            .translate(Vec2::new(0.0, new_y - current_top));
+                    });
 
-                ui.separator();
+                    ui.separator();
 
-                ui.label(RichText::new("Size").heading());
+                    ui.label(RichText::new("Size").heading());
 
-                ui.horizontal(|ui| {
-                    ui.label("Width:");
+                    ui.horizontal(|ui| {
+                        ui.label("Width:");
 
-                    let new_width = ui.text_edit_editable_value_singleline(
-                        &mut self.state.layer.transform_edit_state.width,
-                    );
+                        let new_width = ui.text_edit_editable_value_singleline(
+                            &mut self.state.layer.transform_edit_state.width,
+                        );
 
-                    self.state.layer.transform_state.rect.set_width(new_width);
+                        self.state.layer.transform_state.rect.set_width(new_width);
 
-                    ui.label("Height:");
+                        ui.label("Height:");
 
-                    let new_height = ui.text_edit_editable_value_singleline(
-                        &mut self.state.layer.transform_edit_state.height,
-                    );
+                        let new_height = ui.text_edit_editable_value_singleline(
+                            &mut self.state.layer.transform_edit_state.height,
+                        );
 
-                    self.state.layer.transform_state.rect.set_height(new_height);
-                });
+                        self.state.layer.transform_state.rect.set_height(new_height);
+                    });
 
-                ui.separator();
+                    ui.separator();
 
-                ui.label(RichText::new("Rotation").heading());
+                    ui.label(RichText::new("Rotation").heading());
 
-                ui.horizontal(|ui| {
-                    ui.label("Degrees:");
+                    ui.horizontal(|ui| {
+                        ui.label("Degrees:");
 
-                    let new_rotation = ui.text_edit_editable_value_singleline(
-                        &mut self.state.layer.transform_edit_state.rotation,
-                    );
+                        let new_rotation = ui.text_edit_editable_value_singleline(
+                            &mut self.state.layer.transform_edit_state.rotation,
+                        );
 
-                    self.state.layer.transform_state.rotation = new_rotation.to_radians();
+                        self.state.layer.transform_state.rotation = new_rotation.to_radians();
+                    });
                 });
             });
-
-            ui.set_enabled(true);
         });
     }
 }

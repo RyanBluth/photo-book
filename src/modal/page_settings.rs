@@ -1,6 +1,5 @@
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    modal::ModalResponse,
     model::edit_state::EditablePage,
     project_settings::ProjectSettingsManager,
     widget::canvas_info::page_info::{PageInfo, PageInfoState},

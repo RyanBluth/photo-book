@@ -1,6 +1,5 @@
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
-    modal::ModalResponse,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     widget::photo_filter::{PhotoFilter, PhotoFilterState},
@@ -9,6 +8,7 @@ use crate::{
 use super::{Modal, ModalActionResponse};
 
 /// Modal wrapper for the photo filter widget
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct PhotoFilterModal {
     filter_state: PhotoFilterState,
@@ -18,6 +18,7 @@ pub struct PhotoFilterModal {
 
 impl PhotoFilterModal {
     /// Create a new photo filter modal with default state
+    #[allow(dead_code)]
     pub fn new() -> Self {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
@@ -30,6 +31,7 @@ impl PhotoFilterModal {
     }
 
     /// Create a new photo filter modal with existing query
+    #[allow(dead_code)]
     pub fn with_query(query: PhotoQuery) -> Self {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
@@ -55,11 +57,13 @@ impl PhotoFilterModal {
     }
 
     /// Get the current filter query
+    #[allow(dead_code)]
     pub fn get_query(&self) -> PhotoQuery {
         self.filter_state.to_query()
     }
 
     /// Check if the filter has been modified from its initial state
+    #[allow(dead_code)]
     pub fn is_modified(&self) -> bool {
         if let Some(ref initial) = self.initial_query {
             &self.filter_state.to_query() != initial

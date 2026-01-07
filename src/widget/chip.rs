@@ -9,6 +9,7 @@ pub struct Chip<'a> {
 
 #[derive(Clone)]
 pub struct ChipResponse {
+    #[allow(dead_code)]
     pub response: Response,
     pub clicked: bool,
     pub close_clicked: bool,
@@ -154,6 +155,7 @@ impl<'a> Widget for Chip<'a> {
     }
 }
 
+#[allow(dead_code)]
 pub fn chip(ui: &mut Ui, text: &str) -> ChipResponse {
     let chip = Chip::new(text);
     let response = ui.add(chip);
@@ -161,7 +163,7 @@ pub fn chip(ui: &mut Ui, text: &str) -> ChipResponse {
     ChipResponse {
         clicked: response.clicked(),
         close_clicked: false,
-        response,
+        response: response,
     }
 }
 
@@ -176,6 +178,7 @@ pub fn chip_selectable(ui: &mut Ui, text: &str, selected: bool) -> ChipResponse 
     }
 }
 
+#[allow(dead_code)]
 pub fn chip_closable(ui: &mut Ui, text: &str) -> ChipResponse {
     let chip = Chip::new(text).closable(true);
     let response = ui.add(chip);

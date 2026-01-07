@@ -30,20 +30,20 @@ pub enum ScenePopResponse {
 }
 
 pub enum SceneTransition {
-    OrganizeEdit(OrganizeEditScene),
-    Gallery(GalleryScene),
+    _OrganizeEdit(OrganizeEditScene),
+    _Gallery(GalleryScene),
     Viewer(ViewerScene),
-    Canvas(CanvasScene),
+    _Canvas(CanvasScene),
     Crop(CropScene),
 }
 
 impl SceneTransition {
     pub fn scene(self) -> Box<dyn Scene> {
         match self {
-            SceneTransition::OrganizeEdit(scene) => Box::new(scene),
-            SceneTransition::Gallery(scene) => Box::new(scene),
+            SceneTransition::_OrganizeEdit(scene) => Box::new(scene),
+            SceneTransition::_Gallery(scene) => Box::new(scene),
             SceneTransition::Viewer(scene) => Box::new(scene),
-            SceneTransition::Canvas(scene) => Box::new(scene),
+            SceneTransition::_Canvas(scene) => Box::new(scene),
             SceneTransition::Crop(scene) => Box::new(scene),
         }
     }
@@ -52,10 +52,10 @@ impl SceneTransition {
 impl PartialEq for SceneTransition {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (SceneTransition::OrganizeEdit(_), SceneTransition::OrganizeEdit(_)) => true,
-            (SceneTransition::Gallery(_), SceneTransition::Gallery(_)) => true,
+            (SceneTransition::_OrganizeEdit(_), SceneTransition::_OrganizeEdit(_)) => true,
+            (SceneTransition::_Gallery(_), SceneTransition::_Gallery(_)) => true,
             (SceneTransition::Viewer(_), SceneTransition::Viewer(_)) => true,
-            (SceneTransition::Canvas(_), SceneTransition::Canvas(_)) => true,
+            (SceneTransition::_Canvas(_), SceneTransition::_Canvas(_)) => true,
             (SceneTransition::Crop(_), SceneTransition::Crop(_)) => true,
             _ => false,
         }
@@ -65,7 +65,7 @@ impl PartialEq for SceneTransition {
 pub trait Scene: Send + Sync {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse;
 
-    fn popped(&mut self, popped_scene_response: ScenePopResponse) {}
+    fn popped(&mut self, _popped_scene_response: ScenePopResponse) {}
 }
 
 pub struct SceneManager {
@@ -89,7 +89,7 @@ impl SceneManager {
         self.scenes.pop();
     }
 
-    pub fn swap(&mut self, scene: SceneTransition) {
+    pub fn _swap(&mut self, scene: SceneTransition) {
         self.scenes.pop();
         self.scenes.push(scene.scene());
     }
@@ -116,7 +116,7 @@ impl SceneManager {
         }
     }
 
-    pub fn root_scene(&self) -> &OrganizeEditScene {
+    pub fn _root_scene(&self) -> &OrganizeEditScene {
         &self.root_scene
     }
 }
@@ -157,17 +157,17 @@ impl Navigator {
     }
 }
 
-pub struct CanvasSceneState {
+pub struct _CanvasSceneState {
     canvas_state: CanvasState,
 }
 
-impl CanvasSceneState {
-    fn new(canvas_state: CanvasState) -> Self {
+impl _CanvasSceneState {
+    fn _new(canvas_state: CanvasState) -> Self {
         Self { canvas_state }
     }
 }
 
-pub enum SceneState {
+pub enum _SceneState {
     Gallery {
         state: ImageGalleryState,
     },

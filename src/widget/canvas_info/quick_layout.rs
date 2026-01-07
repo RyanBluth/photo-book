@@ -1,11 +1,11 @@
 use std::usize;
 
 use eframe::egui::{self};
-use egui::{Pos2, Rect, Sense, Slider, Vec2};
+use egui::{Rect, Sense, Slider, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
-use strum::IntoEnumIterator;
+// use strum::IntoEnumIterator;
 
 use crate::{
     layout::{
@@ -15,7 +15,7 @@ use crate::{
             StackCrossAxisAlignment, StackLayout, StackLayoutDirection, StackLayoutDistribution,
         },
     },
-    model::page::Page,
+    // model::page::Page,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{
@@ -24,14 +24,16 @@ use crate::{
     },
 };
 
-use super::layers::{Layer, LayerContent};
+use super::layers::LayerContent;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 struct QuickLayoutRegion {
     absolute_rect: Rect,
     id: usize,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 enum QuickLayoutFillMode {
     Fill,

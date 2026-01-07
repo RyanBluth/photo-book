@@ -26,7 +26,7 @@ impl StringLog {
         }
     }
 
-    pub fn for_each<F>(&self, func: F)
+    pub fn _for_each<F>(&self, func: F)
     where
         F: FnMut(&String),
     {

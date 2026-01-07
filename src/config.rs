@@ -25,7 +25,7 @@ pub struct Config {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct RecentProject {
+struct _RecentProject {
     path: PathBuf,
     last_opened_or_created: u64,
 }

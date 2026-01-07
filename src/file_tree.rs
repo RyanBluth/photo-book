@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fmt::{self, Display},
     iter::Peekable,
     path::{Components, Path, PathBuf},
@@ -557,7 +556,7 @@ impl FileTreeIterator {
 
                         loop {
                             match current {
-                                FileTreeNode::Directory(child_path, child_children) => {
+                                FileTreeNode::Directory(_child_path, child_children) => {
                                     // If this directory has exactly one child directory, continue the chain
                                     if child_children.len() == 1 {
                                         match &child_children[0] {
@@ -579,7 +578,8 @@ impl FileTreeIterator {
                         if skipped_nodes.len() > 0 {
                             // Get the last node to find its children
                             if let Some(last_node) = skipped_nodes.last() {
-                                if let FileTreeNode::Directory(last_path, last_children) = last_node
+                                if let FileTreeNode::Directory(_last_path, last_children) =
+                                    last_node
                                 {
                                     // Create a new path that combines all paths in the chain
                                     for node in &skipped_nodes {

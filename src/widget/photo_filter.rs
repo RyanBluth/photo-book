@@ -30,7 +30,7 @@ impl Default for PhotoFilterState {
 }
 
 impl PhotoFilterState {
-    pub fn new() -> Self {
+    pub fn _new() -> Self {
         Self::default()
     }
 
@@ -69,10 +69,12 @@ impl PhotoFilterState {
 /// Response from the photo filter widget
 pub struct PhotoFilterResponse {
     pub response: Response,
-    changed: bool,
+    #[allow(dead_code)]
+    pub(crate) changed: bool,
 }
 
 impl PhotoFilterResponse {
+    #[allow(dead_code)]
     pub fn changed(&self) -> bool {
         self.changed
     }
@@ -451,7 +453,7 @@ mod tests {
         assert_eq!(filter.count_active_filters(), 2);
     }
 
-    fn test_photo_filter_visual_snapshots() {
+    fn _test_photo_filter_visual_snapshots() {
         // Comprehensive filter widget test with all features
         let mut state = PhotoFilterState::default();
         state.enabled_ratings.clear();

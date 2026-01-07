@@ -1,5 +1,3 @@
-use crate::modal::ModalResponse;
-
 use super::{Modal, ModalActionResponse};
 pub struct BasicModal {
     title: String,

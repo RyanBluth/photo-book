@@ -25,7 +25,7 @@ pub trait ModalResponse: Send + Any {
 pub enum ModalActionResponse {
     Cancel,
     Confirm,
-    Close,
+    _Close,
 }
 
 impl ModalResponse for ModalActionResponse {

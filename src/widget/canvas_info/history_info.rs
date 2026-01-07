@@ -2,7 +2,6 @@ use eframe::egui::{self};
 use egui::RichText;
 
 use egui_extras::{Column, TableBuilder};
-use strum::IntoEnumIterator;
 
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
@@ -15,7 +14,7 @@ pub struct HistoryInfoState<'a> {
 }
 
 impl HistoryInfoState<'_> {
-    pub fn new(history_manager: &mut CanvasHistoryManager) -> HistoryInfoState {
+    pub fn new(history_manager: &mut CanvasHistoryManager) -> HistoryInfoState<'_> {
         HistoryInfoState { history_manager }
     }
 }

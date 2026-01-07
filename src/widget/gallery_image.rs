@@ -54,7 +54,7 @@ impl Widget for GalleryImage {
 
                 let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
-                ui.allocate_new_ui(UiBuilder::new().max_rect(rect), |ui| {
+                ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
                     ui.painter()

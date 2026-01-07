@@ -1,13 +1,11 @@
-use std::{
-    any::Any,
-    path::{Path, PathBuf},
-};
+use std::{any::Any, path::PathBuf};
 
-use crate::modal::{Modal, ModalActionResponse, ModalResponse};
+use crate::modal::{Modal, ModalResponse};
 
 #[derive(Debug, Clone)]
 pub enum SaveWarningSource {
     NewProject,
+    #[allow(dead_code)]
     LoadProject(Option<PathBuf>),
 }
 

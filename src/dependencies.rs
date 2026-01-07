@@ -21,6 +21,7 @@ macro_rules! singleton {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! dependency {
     ($type:ty, $init: expr_2021) => {
         impl DependencyFor<$type> for Dependency<$type> {
@@ -38,6 +39,7 @@ pub struct Singleton<T> {
 }
 
 impl<T> Singleton<T> {
+    #[allow(dead_code)]
     pub fn new(value: T) -> Self {
         Self {
             lock: Arc::new(RwLock::new(value)),
@@ -62,7 +64,7 @@ impl<T> Clone for Singleton<T> {
     }
 }
 
-#[cfg(not(target_feature = "debug_dependency_locks"))]
+#[cfg(not(feature = "debug_dependency_locks"))]
 impl<T> Singleton<T> {
     pub fn with_lock<R>(&self, op: impl FnOnce(&RwLockReadGuard<'_, T>) -> R) -> R {
         op(&self.lock.read())
@@ -73,6 +75,7 @@ impl<T> Singleton<T> {
     }
 }
 
+#[allow(dead_code)]
 pub trait DependencyFor<T> {
     fn get() -> T;
 }
@@ -107,19 +110,23 @@ singleton!(SESSION, Session, Session::new());
 
 singleton!(DEBUG_SETTINGS, DebugSettings, DebugSettings::default());
 
+#[allow(unused_imports)]
 use backtrace::Backtrace;
+#[allow(unused_imports)]
 use once_cell::sync::Lazy;
+#[allow(unused_imports)]
 use parking_lot::Mutex;
+#[allow(unused_imports)]
 use std::collections::HashMap;
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LockType {
     Read,
     Write,
 }
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 #[derive(Debug, Clone)]
 struct LockInfo {
     pub lock_type: LockType,
@@ -128,16 +135,16 @@ struct LockInfo {
     pub thread_id: std::thread::ThreadId,
 }
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 pub static ACTIVE_LOCKS: Lazy<Mutex<HashMap<(std::thread::ThreadId, usize), LockInfo>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 pub struct LockGuard<'a, T> {
     pub singleton: &'a Singleton<T>,
 }
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 impl<'a, T> LockGuard<'a, T> {
     pub fn new(singleton: &'a Singleton<T>) -> Self {
         let lock_id = singleton.lock_id();
@@ -162,14 +169,14 @@ impl<'a, T> LockGuard<'a, T> {
     }
 }
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 impl<'a, T> Drop for LockGuard<'a, T> {
     fn drop(&mut self) {
         self.singleton.unregister_lock();
     }
 }
 
-#[cfg(target_feature = "debug_dependency_locks")]
+#[cfg(feature = "debug_dependency_locks")]
 impl<T> Singleton<T> {
     fn lock_id(&self) -> usize {
         Arc::as_ptr(&self.lock) as usize

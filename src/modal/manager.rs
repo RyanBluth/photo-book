@@ -1,12 +1,11 @@
 use std::{
     any::Any,
     collections::HashMap,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 
-use egui::{Color32, Layout, Response, Vec2};
+use egui::{Color32, Layout, Vec2};
 use indexmap::IndexMap;
-use parking_lot::lock_api::GuardNoSend;
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -14,7 +13,7 @@ use crate::{
     modal::ModalResponse,
 };
 
-use super::{Modal, ModalActionResponse};
+use super::Modal;
 
 #[derive(Debug)]
 pub struct TypedModalId<T: Modal> {
@@ -102,7 +101,7 @@ impl ModalManager {
         Ok(())
     }
 
-    pub fn read<T: Modal + 'static, R>(
+    pub fn _read<T: Modal + 'static, R>(
         &self,
         id: &TypedModalId<T>,
         f: impl FnOnce(&T) -> R,

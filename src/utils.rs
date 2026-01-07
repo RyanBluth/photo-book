@@ -45,11 +45,11 @@ where
 
 pub trait RectExt {
     fn rotate_bb_around_point(&self, angle: f32, point: Pos2) -> Rect;
-    fn constrain_to(&self, rect: Rect) -> Rect;
+    fn _constrain_to(&self, rect: Rect) -> Rect;
     fn rotate_bb_around_center(&self, angle: f32) -> Rect;
     fn to_local_space(&self, parent: Rect) -> Rect;
     fn to_world_space(&self, parent: Rect) -> Rect;
-    fn scale(&self, scale: f32) -> Rect;
+    fn _scale(&self, scale: f32) -> Rect;
     fn translate_left_to(&self, new_left: f32) -> Rect;
     fn translate_right_to(&self, new_right: f32) -> Rect;
     fn translate_top_to(&self, new_top: f32) -> Rect;
@@ -59,12 +59,12 @@ pub trait RectExt {
     fn center_within(&self, rect: Rect) -> Rect;
     fn fit_and_center_within(&self, rect: Rect) -> Rect;
     fn with_aspect_ratio(&self, aspect_ratio: f32) -> Rect;
-    fn default_uv() -> Rect;
-    fn intersects(&self, other: Rect) -> bool;
+    fn _default_uv() -> Rect;
+    fn _intersects(&self, other: Rect) -> bool;
 }
 
 impl RectExt for Rect {
-    fn constrain_to(&self, rect: Rect) -> Rect {
+    fn _constrain_to(&self, rect: Rect) -> Rect {
         let mut constrained = *self;
         if constrained.left() < rect.left() {
             constrained = constrained.translate(Vec2::new(rect.left() - constrained.left(), 0.0));
@@ -204,7 +204,7 @@ impl RectExt for Rect {
         world
     }
 
-    fn scale(&self, scale: f32) -> Rect {
+    fn _scale(&self, scale: f32) -> Rect {
         let center = self.center();
         let half_size = self.size() / 2.0;
         let new_half_size = half_size * scale;
@@ -306,11 +306,11 @@ impl RectExt for Rect {
         }
     }
 
-    fn default_uv() -> Rect {
+    fn _default_uv() -> Rect {
         Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(1.0, 1.0))
     }
 
-    fn intersects(&self, other: Rect) -> bool {
+    fn _intersects(&self, other: Rect) -> bool {
         self.min.x < other.max.x
             && self.max.x > other.min.x
             && self.min.y < other.max.y
@@ -429,7 +429,7 @@ impl<Left, Right> Either<Left, Right> {
         }
     }
 
-    pub fn is_right(&self) -> bool {
+    pub fn _is_right(&self) -> bool {
         match self {
             Either::Left(_) => false,
             Either::Right(_) => true,
