@@ -376,10 +376,24 @@ impl<'a> Canvas<'a> {
             ActiveTool::Line { start_pos } => {
                 let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
 
+                let end_pos = ui.input(|input| {
+                    if input.modifiers.shift {
+                        // Snap to 45 degrees
+                        let angle = (relative_mouse_pos - relative_start_pos).angle();
+                        let angle = (angle / std::f32::consts::FRAC_PI_4).round()
+                            * std::f32::consts::FRAC_PI_4;
+                        relative_start_pos
+                            + Vec2::new(angle.cos(), angle.sin()).normalized()
+                                * (relative_mouse_pos - relative_start_pos).length()
+                    } else {
+                        relative_mouse_pos
+                    }
+                });
+
                 let layer = Layer::new_line_shape_layer_with_settings(
                     &self.state.line_tool_settings,
                     relative_start_pos,
-                    relative_mouse_pos,
+                    end_pos,
                 );
 
                 self.state.layers.insert(layer.id, layer.clone());
@@ -466,7 +480,21 @@ impl<'a> Canvas<'a> {
                     ..Default::default()
                 };
 
-                ui.painter().line(vec![*start_pos, mouse_pos], stroke);
+                let end_pos = ui.input(|input| {
+                    if input.modifiers.shift {
+                        // Snap to 45 degrees
+                        let angle = (mouse_pos - *start_pos).angle();
+                        let angle = (angle / std::f32::consts::FRAC_PI_4).round()
+                            * std::f32::consts::FRAC_PI_4;
+                        *start_pos
+                            + Vec2::new(angle.cos(), angle.sin()).normalized()
+                                * (mouse_pos - *start_pos).length()
+                    } else {
+                        mouse_pos
+                    }
+                });
+
+                ui.painter().line(vec![*start_pos, end_pos], stroke);
             }
         }
         None
