@@ -431,37 +431,26 @@ impl PhotoManager {
                 Ok(Some(*texture))
             }
             None => {
-                let uri = uri.to_string();
-                let ctx = ctx.clone();
-                spawn_blocking(move || {
-                    let texture: Result<egui::load::TexturePoll, egui::load::LoadError> = ctx
-                        .try_load_texture(
-                            &uri,
-                            eframe::egui::TextureOptions::default(),
-                            eframe::egui::SizeHint::Scale(OrderedFloat(1.0)),
-                        );
+                let texture = ctx.try_load_texture(
+                    uri,
+                    eframe::egui::TextureOptions::default(),
+                    eframe::egui::SizeHint::Scale(OrderedFloat(1.0)),
+                );
 
-                    let photo_manager = Dependency::<PhotoManager>::get();
-                    match texture {
-                        Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let cache = photo_manager.get_cache_mut(&ctx);
-                                cache.pending_textures.insert(uri)
-                            });
-                        }
-                        Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
-                            photo_manager.with_lock_mut(|photo_manager| {
-                                let cache = photo_manager.get_cache_mut(&ctx);
-                                cache.texture_cache.insert(uri, texture);
-                            });
-                        }
-                        Result::Err(err) => {
-                            error!("Failed to load texture {:?}", err);
-                        }
+                match texture {
+                    Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
+                        pending_textures.insert(uri.to_string());
+                        Ok(None)
                     }
-                });
-
-                Ok(None)
+                    Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                        texture_cache.insert(uri.to_string(), texture);
+                        Ok(Some(texture))
+                    }
+                    Result::Err(err) => {
+                        error!("Failed to load texture {:?}", err);
+                        Err(anyhow!(err))
+                    }
+                }
             }
         }
     }

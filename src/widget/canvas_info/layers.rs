@@ -349,7 +349,7 @@ impl Layer {
 
     pub fn new_text_layer_with_settings(settings: &TextToolSettings, rect: Rect) -> Self {
         let text = CanvasText::new(
-            "New Text Layer".to_string(),
+            String::new(),
             settings.font_size,
             settings.font_id.clone(),
             settings.color,
@@ -369,7 +369,7 @@ impl Layer {
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
             content: LayerContent::Text(text),
-            name: "New Text Layer".to_string(),
+            name: String::new(),
             visible: true,
             locked: false,
             selected: false,

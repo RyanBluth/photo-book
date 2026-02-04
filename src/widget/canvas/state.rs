@@ -39,7 +39,7 @@ pub struct CanvasState {
     pub quick_layout_order: Vec<LayerId>,
     pub last_quick_layout: Option<quick_layout::Layout>,
     pub canvas_id: egui::Id,
-    pub text_edit_mode: Option<LayerId>,
+    pub text_edit_mode: TextEditMode,
     pub tool_state: ToolState,
     pub text_tool_settings: TextToolSettings,
     pub rectangle_tool_settings: ShapeToolSettings,
@@ -68,7 +68,7 @@ impl CanvasState {
             quick_layout_order: Vec::new(),
             last_quick_layout: None,
             canvas_id: Id::random(),
-            text_edit_mode: None,
+            text_edit_mode: TextEditMode::None,
             tool_state: ToolState::Idle(IdleTool::Select),
             text_tool_settings: TextToolSettings::default(),
             rectangle_tool_settings: ShapeToolSettings::default(),
@@ -94,7 +94,7 @@ impl CanvasState {
             quick_layout_order: quick_layout_order,
             last_quick_layout: None,
             canvas_id: Id::random(),
-            text_edit_mode: None,
+            text_edit_mode: TextEditMode::None,
             tool_state: ToolState::Idle(IdleTool::Select),
             text_tool_settings: TextToolSettings::default(),
             rectangle_tool_settings: ShapeToolSettings::default(),
@@ -157,7 +157,7 @@ impl CanvasState {
             quick_layout_order: vec![layer.id],
             last_quick_layout: None,
             canvas_id: Id::random(),
-            text_edit_mode: None,
+            text_edit_mode: TextEditMode::None,
             tool_state: ToolState::Idle(IdleTool::Select),
             text_tool_settings: TextToolSettings::default(),
             rectangle_tool_settings: ShapeToolSettings::default(),
@@ -255,7 +255,7 @@ impl CanvasState {
             quick_layout_order: ids,
             last_quick_layout: None,
             canvas_id: Id::random(),
-            text_edit_mode: None,
+            text_edit_mode: TextEditMode::None,
             tool_state: ToolState::Idle(IdleTool::Select),
             text_tool_settings: TextToolSettings::default(),
             rectangle_tool_settings: ShapeToolSettings::default(),
@@ -320,6 +320,22 @@ impl CanvasState {
             if !self.quick_layout_order.contains(&layer.0) {
                 self.quick_layout_order.push(*layer.0);
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TextEditMode {
+    None,
+    BeginEditing(LayerId),
+    Editing(LayerId),
+}
+
+impl TextEditMode {
+    pub fn is_editing(&self, layer_id: &LayerId) -> bool {
+        match self {
+            TextEditMode::None => false,
+            TextEditMode::BeginEditing(id) | TextEditMode::Editing(id) => id == layer_id,
         }
     }
 }

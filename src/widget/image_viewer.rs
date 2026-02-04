@@ -156,31 +156,32 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         ui.input(|i| {
-            if i.pointer.hover_pos().is_some() && i.smooth_scroll_delta.y != 0.0 {
-                let mouse_pos = i.pointer.hover_pos().unwrap();
+            if let Some(mouse_pos) = i.pointer.hover_pos() {
+                for event in &i.events {
+                    if let egui::Event::MouseWheel { delta, .. } = event {
+                        if delta.y == 0.0 {
+                            continue;
+                        }
 
-                let rel_mouse_pos_before = image_rect.center() - mouse_pos;
+                        let rel_mouse_pos_before = image_rect.center() - mouse_pos;
 
-                let mut scale_delta = 1.0;
+                        let scale_delta = if delta.y > 0.0 { 1.1 } else { 0.9 };
 
-                if i.smooth_scroll_delta.y > 0.0 {
-                    scale_delta = 1.1;
-                } else if i.smooth_scroll_delta.y < 0.0 {
-                    scale_delta = 0.9;
+                        self.state.scale *= scale_delta;
+
+                        let scaled_width_diff =
+                            image_rect.width() * self.state.scale - image_rect.width();
+                        let scaled_height_diff =
+                            image_rect.height() * self.state.scale - image_rect.height();
+
+                        image_rect = image_rect
+                            .expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5));
+
+                        let rel_mouse_pos_after = rel_mouse_pos_before * scale_delta;
+
+                        self.state.offset += rel_mouse_pos_after - rel_mouse_pos_before;
+                    }
                 }
-
-                self.state.scale *= scale_delta;
-
-                let scaled_width_diff = image_rect.width() * self.state.scale - image_rect.width();
-                let scaled_height_diff =
-                    image_rect.height() * self.state.scale - image_rect.height();
-
-                image_rect = image_rect
-                    .expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5));
-
-                let rel_mouse_pos_after = rel_mouse_pos_before * scale_delta;
-
-                self.state.offset += rel_mouse_pos_after - rel_mouse_pos_before;
             } else {
                 let scaled_width_diff = image_rect.width() * self.state.scale - image_rect.width();
                 let scaled_height_diff =

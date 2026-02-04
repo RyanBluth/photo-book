@@ -4,7 +4,10 @@ pub mod types;
 use crate::{
     model::scale_mode::ScaleMode,
     widget::{
-        canvas::types::{ActiveTool, IdleTool, ToolState},
+        canvas::{
+            state::TextEditMode,
+            types::{ActiveTool, IdleTool, ToolState},
+        },
         toolbar::ToolbarResponse,
     },
 };
@@ -50,6 +53,10 @@ pub use self::{
     state::CanvasState,
     types::{ActionBarAction, CanvasPhoto, CanvasResponse},
 };
+
+const DASH_SIZE: f32 = 4.0;
+const DASH_LINE_STROKE: f32 = 2.0;
+
 pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     available_rect: Rect,
@@ -121,36 +128,46 @@ impl<'a> Canvas<'a> {
 
         ui.set_clip_rect(canvas_rect);
 
-        if ui.ctx().pointer_hover_pos().is_some() {
+        if self.can_zoom() && ui.ctx().pointer_hover_pos().is_some() {
             if is_pointer_on_canvas {
                 ui.input(|input| {
-                    // if input.smooth_scroll_delta.y != 0.0 {
-                    let zoom_factor = if input.smooth_scroll_delta.y > 0.0 {
-                        1.1
-                    } else if input.smooth_scroll_delta.y < 0.0 {
-                        1.0 / 1.1
-                    } else {
-                        1.0
-                    };
-                    let new_zoom = self.state.zoom * zoom_factor;
+                    for event in &input.events {
+                        if let egui::Event::MouseWheel { delta, unit, .. } = event {
+                            let scroll_delta = match unit {
+                                egui::MouseWheelUnit::Point => delta.y,
+                                egui::MouseWheelUnit::Line => {
+                                    delta.y * 20.0 // Approximate line height
+                                }
+                                egui::MouseWheelUnit::Page => delta.y * canvas_rect.height(),
+                            };
 
-                    if let Some(pointer_pos) = input.pointer.hover_pos() {
-                        let current_page_rect: Rect = Rect::from_center_size(
-                            canvas_rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * self.state.zoom,
-                        );
-                        let old_pointer_to_page = pointer_pos - current_page_rect.center();
-                        let new_page_rect: Rect = Rect::from_center_size(
-                            canvas_rect.center() + self.state.offset,
-                            self.state.page.size_pixels() * new_zoom,
-                        );
-                        let new_pointer_to_page = pointer_pos - new_page_rect.center();
+                            if scroll_delta == 0.0 {
+                                continue;
+                            }
 
-                        // Corrected offset calculation
-                        self.state.offset += old_pointer_to_page
-                            - new_pointer_to_page * (new_zoom / self.state.zoom);
+                            let zoom_factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
 
-                        self.state.zoom = new_zoom;
+                            let new_zoom = self.state.zoom * zoom_factor;
+
+                            if let Some(pointer_pos) = input.pointer.hover_pos() {
+                                let current_page_rect: Rect = Rect::from_center_size(
+                                    canvas_rect.center() + self.state.offset,
+                                    self.state.page.size_pixels() * self.state.zoom,
+                                );
+                                let old_pointer_to_page = pointer_pos - current_page_rect.center();
+                                let new_page_rect: Rect = Rect::from_center_size(
+                                    canvas_rect.center() + self.state.offset,
+                                    self.state.page.size_pixels() * new_zoom,
+                                );
+                                let new_pointer_to_page = pointer_pos - new_page_rect.center();
+
+                                // Corrected offset calculation
+                                self.state.offset += old_pointer_to_page
+                                    - new_pointer_to_page * (new_zoom / self.state.zoom);
+
+                                self.state.zoom = new_zoom;
+                            }
+                        }
                     }
                 });
             }
@@ -271,9 +288,16 @@ impl<'a> Canvas<'a> {
 
         if primary_pointer_pressed && self.available_rect.contains(mouse_pos) {
             Some(match tool {
-                IdleTool::Select => ToolState::Active(ActiveTool::Select {
-                    start_pos: mouse_pos,
-                }),
+                IdleTool::Select => {
+                    let is_layer_selected = self.state.layers.values().any(|layer| layer.selected);
+                    if is_layer_selected {
+                        return None;
+                    }
+
+                    ToolState::Active(ActiveTool::Select {
+                        start_pos: mouse_pos,
+                    })
+                }
                 IdleTool::Text => ToolState::Active(ActiveTool::Text {
                     start_pos: mouse_pos,
                 }),
@@ -303,7 +327,8 @@ impl<'a> Canvas<'a> {
 
         Some(match tool {
             ActiveTool::Select { start_pos } => {
-                let selection_box = Rect::from_two_pos(*start_pos, mouse_pos);
+                let selection_box =
+                    self.screen_to_page_rect(page_rect, Rect::from_two_pos(*start_pos, mouse_pos));
                 for layer in self.state.layers.values_mut() {
                     if layer.transform_state.rect.intersects(selection_box) {
                         layer.selected = true;
@@ -323,7 +348,8 @@ impl<'a> Canvas<'a> {
                 );
                 self.state.layers.insert(layer.id, layer.clone());
                 self.select_layer(&layer.id, ui.ctx());
-                ToolState::Idle(IdleTool::Text)
+                self.state.text_edit_mode = TextEditMode::BeginEditing(layer.id);
+                ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Rectangle { start_pos } => {
                 let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
@@ -334,7 +360,7 @@ impl<'a> Canvas<'a> {
                 );
                 self.state.layers.insert(layer.id, layer.clone());
                 self.select_layer(&layer.id, ui.ctx());
-                ToolState::Idle(IdleTool::Rectangle)
+                ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Ellipse { start_pos } => {
                 let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
@@ -345,7 +371,7 @@ impl<'a> Canvas<'a> {
                 );
                 self.state.layers.insert(layer.id, layer.clone());
                 self.select_layer(&layer.id, ui.ctx());
-                ToolState::Idle(IdleTool::Ellipse)
+                ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Line { start_pos } => {
                 let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
@@ -358,7 +384,7 @@ impl<'a> Canvas<'a> {
 
                 self.state.layers.insert(layer.id, layer.clone());
                 self.select_layer(&layer.id, ui.ctx());
-                ToolState::Idle(IdleTool::Line)
+                ToolState::Idle(IdleTool::Select)
             }
         })
     }
@@ -381,7 +407,7 @@ impl<'a> Canvas<'a> {
                 );
             }
             ActiveTool::Text { start_pos } => {
-                let stroke = Stroke::new(4.0 * self.state.zoom, Color32::BLACK);
+                let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
                 let rect = Rect::from_two_pos(*start_pos, mouse_pos);
                 let shape = Shape::dashed_line(
                     &[
@@ -392,8 +418,8 @@ impl<'a> Canvas<'a> {
                         rect.left_top(),
                     ],
                     stroke,
-                    5.0,
-                    2.0,
+                    DASH_SIZE,
+                    DASH_SIZE,
                 );
                 ui.painter().add(shape);
             }
@@ -453,6 +479,21 @@ impl<'a> Canvas<'a> {
     #[allow(dead_code)]
     fn page_to_screen_pos2(&self, page_rect: Rect, pos: &Pos2) -> Pos2 {
         page_rect.min + pos.to_vec2() * self.state.zoom
+    }
+
+    fn screen_to_page_rect(&self, page_rect: Rect, rect: Rect) -> Rect {
+        Rect::from_two_pos(
+            self.screen_to_page_pos2(page_rect, &rect.min),
+            self.screen_to_page_pos2(page_rect, &rect.max),
+        )
+    }
+
+    #[allow(dead_code)]
+    fn page_to_screen_rect(&self, page_rect: Rect, rect: Rect) -> Rect {
+        Rect::from_two_pos(
+            self.page_to_screen_pos2(page_rect, &rect.min),
+            self.page_to_screen_pos2(page_rect, &rect.max),
+        )
     }
 
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
@@ -788,10 +829,13 @@ impl<'a> Canvas<'a> {
                 let mut transform_state = layer.transform_state.clone();
 
                 // Check if this layer is being edited
-                let is_editing = self.state.text_edit_mode == Some(*layer_id);
+                let is_editing = self.state.text_edit_mode.is_editing(layer_id);
 
                 // Make a mutable copy of the text content that we can modify
                 let mut text_content = text.clone();
+
+                // Get mutable reference to text edit mode so we can modify it
+                let text_edit_mode = &mut self.state.text_edit_mode;
 
                 let transform_response: TransformableWidgetResponse<()> =
                     TransformableWidget::new(&mut transform_state).show(
@@ -802,6 +846,21 @@ impl<'a> Canvas<'a> {
                         true,
                         |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
                             if is_editing {
+                                let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
+                                let shape = Shape::dashed_line(
+                                    &[
+                                        transformed_rect.left_top(),
+                                        transformed_rect.right_top(),
+                                        transformed_rect.right_bottom(),
+                                        transformed_rect.left_bottom(),
+                                        transformed_rect.left_top(),
+                                    ],
+                                    stroke,
+                                    DASH_SIZE,
+                                    DASH_SIZE,
+                                );
+                                ui.painter().add(shape);
+
                                 Self::draw_editing_text(
                                     ui,
                                     &mut text_content.text,
@@ -811,7 +870,8 @@ impl<'a> Canvas<'a> {
                                     text_content.color,
                                     text_content.horizontal_alignment,
                                     text_content.vertical_alignment,
-                                    Some(layer.id),
+                                    layer.id,
+                                    text_edit_mode,
                                 );
                             } else {
                                 Self::draw_text(
@@ -831,24 +891,13 @@ impl<'a> Canvas<'a> {
 
                 // Double-click to enter edit mode
                 if transform_response.double_clicked && !is_editing {
-                    self.state.text_edit_mode = Some(*layer_id);
+                    self.state.text_edit_mode = TextEditMode::BeginEditing(*layer_id);
                 }
 
-                // Check for exiting edit mode
-                if is_editing {
-                    ui.ctx().data(|data| {
-                        // Check if we need to exit edit mode
-                        if let Some(exit_layer_id) = data.get_temp::<LayerId>(Id::new(format!(
-                            "exit_text_edit_mode_{}",
-                            layer.id
-                        ))) {
-                            if exit_layer_id == *layer_id {
-                                self.state.text_edit_mode = None;
-                                self.history_manager
-                                    .save_history(CanvasHistoryKind::EditText, self.state);
-                            }
-                        }
-                    });
+                // Check if we exited edit mode
+                if is_editing && self.state.text_edit_mode == TextEditMode::None {
+                    self.history_manager
+                        .save_history(CanvasHistoryKind::EditText, self.state);
                 }
 
                 layer.transform_state = transform_state;
@@ -1007,7 +1056,7 @@ impl<'a> Canvas<'a> {
                 );
 
                 // Check if this layer is being edited
-                let is_editing = self.state.text_edit_mode == Some(*layer_id);
+                let is_editing = self.state.text_edit_mode.is_editing(&layer_id);
 
                 // Create a mutable copy of the text content to work with
                 let mut text_content = text.clone();
@@ -1022,6 +1071,21 @@ impl<'a> Canvas<'a> {
                 );
 
                 if is_editing {
+                    let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
+                    let shape = Shape::dashed_line(
+                        &[
+                            rect.left_top(),
+                            rect.right_top(),
+                            rect.right_bottom(),
+                            rect.left_bottom(),
+                            rect.left_top(),
+                        ],
+                        stroke,
+                        DASH_SIZE,
+                        DASH_SIZE,
+                    );
+                    ui.painter().add(shape);
+
                     Self::draw_editing_text(
                         ui,
                         &mut text_content.text,
@@ -1031,7 +1095,8 @@ impl<'a> Canvas<'a> {
                         text_content.color,
                         text_content.horizontal_alignment,
                         text_content.vertical_alignment,
-                        Some(layer.id),
+                        layer.id,
+                        &mut self.state.text_edit_mode,
                     );
                 } else {
                     Self::draw_text(
@@ -1060,7 +1125,7 @@ impl<'a> Canvas<'a> {
 
                 // Double-click to enter edit mode
                 if response.double_clicked() && !is_editing {
-                    self.state.text_edit_mode = Some(*layer_id);
+                    self.state.text_edit_mode = TextEditMode::BeginEditing(*layer_id);
                 }
 
                 // Check for exiting edit mode
@@ -1071,7 +1136,7 @@ impl<'a> Canvas<'a> {
                             data.get_temp::<LayerId>(Id::new("exit_text_edit_mode"))
                         {
                             if exit_layer_id == *layer_id {
-                                self.state.text_edit_mode = None;
+                                self.state.text_edit_mode = TextEditMode::None;
                                 self.history_manager
                                     .save_history(CanvasHistoryKind::EditText, self.state);
                             }
@@ -1241,7 +1306,8 @@ impl<'a> Canvas<'a> {
         color: Color32,
         horizontal_alignment: TextHorizontalAlignment,
         vertical_alignment: TextVerticalAlignment,
-        layer_id: Option<LayerId>,
+        layer_id: LayerId,
+        text_edit_mode: &mut TextEditMode,
     ) {
         let horizontal_alignment = match horizontal_alignment {
             TextHorizontalAlignment::Left => Align::Min,
@@ -1286,12 +1352,17 @@ impl<'a> Canvas<'a> {
 
                 let response = ui.add(text_edit);
 
+                if *text_edit_mode == TextEditMode::BeginEditing(layer_id) {
+                    *text_edit_mode = TextEditMode::Editing(layer_id);
+                    response.request_focus();
+                }
+
                 // If user presses Enter or clicks outside, exit edit mode
                 if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    ui.ctx().data_mut(|data| {
-                        data.insert_temp(Id::new("exit_text_edit_mode"), layer_id);
-                    });
+                    *text_edit_mode = TextEditMode::None;
                 }
+
+                text_edit_mode
             });
         });
     }
@@ -1375,8 +1446,11 @@ impl<'a> Canvas<'a> {
 
             // Clear the selected photo or exit text edit mode
             if input.key_pressed(egui::Key::Escape) {
-                if self.state.text_edit_mode.is_some() {
-                    self.state.text_edit_mode = None;
+                if matches!(
+                    self.state.text_edit_mode,
+                    TextEditMode::Editing(_) | TextEditMode::BeginEditing(_)
+                ) {
+                    self.state.text_edit_mode = TextEditMode::None;
                 } else {
                     self.deselect_all_photos();
                 }
@@ -1525,6 +1599,10 @@ impl<'a> Canvas<'a> {
         }
         self.history_manager
             .save_history(CanvasHistoryKind::DeselectLayer, self.state);
+    }
+
+    fn can_zoom(&self) -> bool {
+        matches!(self.state.tool_state, ToolState::Idle(_))
     }
 
     fn show_action_bar(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
