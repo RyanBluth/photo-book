@@ -120,10 +120,16 @@ impl CanvasText {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum LineSlope {
+    Positive,
+    Negative,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
-    Line,
+    Line { start: Pos2, end: Pos2 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -162,9 +168,9 @@ impl CanvasShape {
         }
     }
 
-    pub fn line(color: Color32) -> Self {
+    pub fn line(color: Color32, start: Pos2, end: Pos2) -> Self {
         Self {
-            kind: CanvasShapeKind::Line,
+            kind: CanvasShapeKind::Line { start, end },
             fill_color: color,
             stroke: Some((Stroke::new(2.0, color), StrokeKind::Middle)),
             edit_state: CanvasShapeEditState::default(),
@@ -437,7 +443,7 @@ impl Layer {
         start_pos: Pos2,
         end_pos: Pos2,
     ) -> Self {
-        let mut shape = CanvasShape::line(settings.color);
+        let mut shape = CanvasShape::line(settings.color, start_pos, end_pos);
         shape.stroke = Some((
             Stroke::new(settings.width, settings.color),
             StrokeKind::Middle,
@@ -586,7 +592,7 @@ impl<'a> Layers<'a> {
                                         CanvasShapeKind::Ellipse => {
                                             ui.label("Ellipse");
                                         }
-                                        CanvasShapeKind::Line => {
+                                        CanvasShapeKind::Line { .. } => {
                                             ui.label("Line");
                                         }
                                     },

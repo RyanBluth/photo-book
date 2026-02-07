@@ -247,7 +247,12 @@ impl Project {
                                                 CanvasShapeKind::Rectangle { corner_radius }
                                             }
                                             AppCanvasShapeKind::Ellipse => CanvasShapeKind::Ellipse,
-                                            AppCanvasShapeKind::Line => CanvasShapeKind::Line,
+                                            AppCanvasShapeKind::Line { start, end } => {
+                                                CanvasShapeKind::Line {
+                                                    start: start.into(),
+                                                    end: end.into(),
+                                                }
+                                            }
                                         },
                                         fill_color: canvas_shape.fill_color.into(),
                                         stroke: canvas_shape
@@ -537,7 +542,12 @@ impl Into<OrganizeEditScene> for Project {
                                                 AppCanvasShapeKind::Rectangle { corner_radius }
                                             }
                                             CanvasShapeKind::Ellipse => AppCanvasShapeKind::Ellipse,
-                                            CanvasShapeKind::Line => AppCanvasShapeKind::Line,
+                                            CanvasShapeKind::Line { start, end } => {
+                                                AppCanvasShapeKind::Line {
+                                                    start: start.into(),
+                                                    end: end.into(),
+                                                }
+                                            }
                                         },
                                         fill_color: canvas_shape.fill_color.into(),
                                         stroke: canvas_shape.stroke.as_ref().map(
@@ -737,7 +747,7 @@ pub struct CanvasShape {
 pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
-    Line,
+    Line { start: Pos2, end: Pos2 },
 }
 
 #[derive(Debug, Clone, Savefile)]

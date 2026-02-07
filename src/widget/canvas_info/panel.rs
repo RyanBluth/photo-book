@@ -84,7 +84,7 @@ impl<'a> CanvasInfo<'a> {
                         if matches!(layer.content, LayerContent::Text(_)) {
                             TextEditControl::new(layer).show(ui);
                             ui.separator();
-                        } else if matches!(&layer.content, LayerContent::Shape(shape) if shape.kind == CanvasShapeKind::Line) {
+                        } else if matches!(&layer.content, LayerContent::Shape(shape) if matches!(shape.kind, CanvasShapeKind::Line { .. })) {
                             LineEditControl::new(layer).show(ui);
                             ui.separator();
                         } else if matches!(layer.content, LayerContent::Shape(_)) {

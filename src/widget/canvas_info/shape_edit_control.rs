@@ -24,7 +24,7 @@ impl<'a> ShapeEditControl<'a> {
                     ui.label("No shape layer selected");
                 }
                 Shape(shape) => {
-                    let is_line = matches!(shape.kind, CanvasShapeKind::Line);
+                    let is_line = matches!(shape.kind, CanvasShapeKind::Line { .. });
 
                     ui.vertical(|ui| {
                         ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 5.0);

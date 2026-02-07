@@ -318,6 +318,23 @@ impl RectExt for Rect {
     }
 }
 
+pub trait Vec2Ext {
+    fn rotate_around(self, other: Vec2, angle: f32) -> Vec2;
+}
+
+impl Vec2Ext for Vec2 {
+    fn rotate_around(self, other: Vec2, angle: f32) -> Vec2 {
+        let angle = angle.to_radians();
+        let cos = angle.cos();
+        let sin = angle.sin();
+        let x = self.x - other.x;
+        let y = self.y - other.y;
+        let new_x = x * cos - y * sin + other.x;
+        let new_y = x * sin + y * cos + other.y;
+        Vec2::new(new_x, new_y)
+    }
+}
+
 pub trait Toggle {
     fn toggle(&mut self);
 }
