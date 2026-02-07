@@ -32,7 +32,8 @@ use crate::{
             CanvasShape as AppCanvasShape, CanvasShapeEditState,
             CanvasShapeKind as AppCanvasShapeKind, CanvasText as AppCanvasText,
             CanvasTextEditState, Layer as AppLayer, LayerContent as AppLayerContent,
-            LayerTransformEditState, TextHorizontalAlignment as AppTextHorizontalAlignment,
+            LayerTransformEditState, LineSlope as AppLineSlope,
+            TextHorizontalAlignment as AppTextHorizontalAlignment,
             TextVerticalAlignment as AppTextVerticalAlignment,
         },
         transformable::{ResizeMode, TransformHandleMode::Resize, TransformableState},
@@ -247,10 +248,9 @@ impl Project {
                                                 CanvasShapeKind::Rectangle { corner_radius }
                                             }
                                             AppCanvasShapeKind::Ellipse => CanvasShapeKind::Ellipse,
-                                            AppCanvasShapeKind::Line { start, end } => {
+                                            AppCanvasShapeKind::Line { slope } => {
                                                 CanvasShapeKind::Line {
-                                                    start: start.into(),
-                                                    end: end.into(),
+                                                    slope: slope.into(),
                                                 }
                                             }
                                         },
@@ -542,10 +542,9 @@ impl Into<OrganizeEditScene> for Project {
                                                 AppCanvasShapeKind::Rectangle { corner_radius }
                                             }
                                             CanvasShapeKind::Ellipse => AppCanvasShapeKind::Ellipse,
-                                            CanvasShapeKind::Line { start, end } => {
+                                            CanvasShapeKind::Line { slope } => {
                                                 AppCanvasShapeKind::Line {
-                                                    start: start.into(),
-                                                    end: end.into(),
+                                                    slope: slope.into(),
                                                 }
                                             }
                                         },
@@ -747,7 +746,31 @@ pub struct CanvasShape {
 pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
-    Line { start: Pos2, end: Pos2 },
+    Line { slope: LineSlope },
+}
+
+#[derive(Debug, Clone, Savefile)]
+pub enum LineSlope {
+    Positive,
+    Negative,
+}
+
+impl Into<AppLineSlope> for LineSlope {
+    fn into(self) -> AppLineSlope {
+        match self {
+            LineSlope::Positive => AppLineSlope::Positive,
+            LineSlope::Negative => AppLineSlope::Negative,
+        }
+    }
+}
+
+impl Into<LineSlope> for AppLineSlope {
+    fn into(self) -> LineSlope {
+        match self {
+            AppLineSlope::Positive => LineSlope::Positive,
+            AppLineSlope::Negative => LineSlope::Negative,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Savefile)]

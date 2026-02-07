@@ -319,19 +319,18 @@ impl RectExt for Rect {
 }
 
 pub trait Vec2Ext {
-    fn rotate_around(self, other: Vec2, angle: f32) -> Vec2;
+    fn rotate_around(&self, center: Vec2, angle: f32) -> Vec2;
 }
 
 impl Vec2Ext for Vec2 {
-    fn rotate_around(self, other: Vec2, angle: f32) -> Vec2 {
-        let angle = angle.to_radians();
+    fn rotate_around(&self, center: Vec2, angle: f32) -> Vec2 {
+        let x = self.x - center.x;
+        let y = self.y - center.y;
         let cos = angle.cos();
         let sin = angle.sin();
-        let x = self.x - other.x;
-        let y = self.y - other.y;
-        let new_x = x * cos - y * sin + other.x;
-        let new_y = x * sin + y * cos + other.y;
-        Vec2::new(new_x, new_y)
+        let new_x = x * cos - y * sin;
+        let new_y = x * sin + y * cos;
+        Vec2::new(new_x + center.x, new_y + center.y)
     }
 }
 

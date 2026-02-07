@@ -129,7 +129,7 @@ pub enum LineSlope {
 pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
-    Line { start: Pos2, end: Pos2 },
+    Line { slope: LineSlope },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -168,11 +168,17 @@ impl CanvasShape {
         }
     }
 
-    pub fn line(color: Color32, start: Pos2, end: Pos2) -> Self {
+    pub fn line(color: Color32, width: f32, start: Pos2, end: Pos2) -> Self {
+        let slope = if end.y <= start.y {
+            LineSlope::Positive
+        } else {
+            LineSlope::Negative
+        };
+        println!("Slope = {:?}", slope);
         Self {
-            kind: CanvasShapeKind::Line { start, end },
+            kind: CanvasShapeKind::Line { slope },
             fill_color: color,
-            stroke: Some((Stroke::new(2.0, color), StrokeKind::Middle)),
+            stroke: Some((Stroke::new(width, color), StrokeKind::Middle)),
             edit_state: CanvasShapeEditState::default(),
         }
     }
@@ -443,7 +449,7 @@ impl Layer {
         start_pos: Pos2,
         end_pos: Pos2,
     ) -> Self {
-        let mut shape = CanvasShape::line(settings.color, start_pos, end_pos);
+        let mut shape = CanvasShape::line(settings.color, settings.width, start_pos, end_pos);
         shape.stroke = Some((
             Stroke::new(settings.width, settings.color),
             StrokeKind::Middle,
@@ -453,7 +459,7 @@ impl Layer {
         let transform_edit_state = LayerTransformEditState::from(&transform_state);
         Self {
             content: LayerContent::Shape(shape),
-            name: "New Line Shape Layer".to_string(),
+            name: "Line".to_string(),
             visible: true,
             locked: false,
             selected: false,

@@ -3,11 +3,13 @@ pub mod state;
 pub mod types;
 use crate::{
     model::scale_mode::ScaleMode,
+    utils::Vec2Ext,
     widget::{
         canvas::{
             state::TextEditMode,
             types::{ActiveTool, IdleTool, ToolState},
         },
+        canvas_info::layers::LineSlope,
         toolbar::ToolbarResponse,
     },
 };
@@ -19,11 +21,13 @@ use eframe::{
     },
     emath::Rot2,
     epaint::{Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
+    glow::STATIC_READ,
 };
 use egui::{
-    Order,
+    Align2, Order,
     epaint::{ColorMode, PathStroke},
 };
+use wgpu::Color;
 
 use crate::{
     cursor_manager::CursorManager,
@@ -376,7 +380,7 @@ impl<'a> Canvas<'a> {
             ActiveTool::Line { start_pos } => {
                 let relative_start_pos = self.screen_to_page_pos2(page_rect, start_pos);
 
-                let end_pos = ui.input(|input| {
+                let relative_end_pos = ui.input(|input| {
                     if input.modifiers.shift {
                         // Snap to 45 degrees
                         let angle = (relative_mouse_pos - relative_start_pos).angle();
@@ -390,10 +394,18 @@ impl<'a> Canvas<'a> {
                     }
                 });
 
+                let (relative_start_pos, relative_end_pos) = {
+                    if relative_start_pos.x > relative_end_pos.x {
+                        (relative_end_pos, relative_start_pos)
+                    } else {
+                        (relative_start_pos, relative_end_pos)
+                    }
+                };
+
                 let layer = Layer::new_line_shape_layer_with_settings(
                     &self.state.line_tool_settings,
                     relative_start_pos,
-                    end_pos,
+                    relative_end_pos,
                 );
 
                 self.state.layers.insert(layer.id, layer.clone());
@@ -1157,19 +1169,10 @@ impl<'a> Canvas<'a> {
                 }
 
                 // Check for exiting edit mode
-                if is_editing {
-                    ui.ctx().data(|data| {
-                        // Check if we need to exit edit mode
-                        if let Some(exit_layer_id) =
-                            data.get_temp::<LayerId>(Id::new("exit_text_edit_mode"))
-                        {
-                            if exit_layer_id == *layer_id {
-                                self.state.text_edit_mode = TextEditMode::None;
-                                self.history_manager
-                                    .save_history(CanvasHistoryKind::EditText, self.state);
-                            }
-                        }
-                    });
+                if is_editing && !self.state.text_edit_mode.is_editing(&layer_id) {
+                    self.state.text_edit_mode = TextEditMode::None;
+                    self.history_manager
+                        .save_history(CanvasHistoryKind::EditText, self.state);
                 }
 
                 if layer.selected {
@@ -1258,20 +1261,51 @@ impl<'a> Canvas<'a> {
                                         });
                                         ui.painter().add(shape);
                                     }
-                                    CanvasShapeKind::Line => {
-                                        // For lines, draw from actual start to end (stored in rect.min and rect.max)
-                                        let rotated_rect = transformed_rect
-                                            .rotate_bb_around_center(transformable_state.rotation);
-
-                                        let start = rotated_rect.min;
-                                        let end = rotated_rect.max;
-
+                                    CanvasShapeKind::Line { ref slope } => {
                                         if let Some((stroke, _)) = canvas_shape.stroke {
+                                            let rotation = transformable_state.rotation;
                                             let zoomed_stroke = Stroke::new(
                                                 stroke.width * self.state.zoom,
                                                 stroke.color,
                                             );
-                                            ui.painter().line_segment([start, end], zoomed_stroke);
+                                            let (rotated_start, rotated_end) = match slope {
+                                                LineSlope::Positive => (
+                                                    transformed_rect
+                                                        .left_bottom()
+                                                        .to_vec2()
+                                                        .rotate_around(
+                                                            transformed_rect.center().to_vec2(),
+                                                            rotation,
+                                                        ),
+                                                    transformed_rect
+                                                        .right_top()
+                                                        .to_vec2()
+                                                        .rotate_around(
+                                                            transformed_rect.center().to_vec2(),
+                                                            rotation,
+                                                        ),
+                                                ),
+                                                LineSlope::Negative => (
+                                                    transformed_rect
+                                                        .left_top()
+                                                        .to_vec2()
+                                                        .rotate_around(
+                                                            transformed_rect.center().to_vec2(),
+                                                            rotation,
+                                                        ),
+                                                    transformed_rect
+                                                        .right_bottom()
+                                                        .to_vec2()
+                                                        .rotate_around(
+                                                            transformed_rect.center().to_vec2(),
+                                                            rotation,
+                                                        ),
+                                                ),
+                                            };
+                                            ui.painter().line_segment(
+                                                [rotated_start.to_pos2(), rotated_end.to_pos2()],
+                                                zoomed_stroke,
+                                            );
                                         }
                                     }
                                 }
