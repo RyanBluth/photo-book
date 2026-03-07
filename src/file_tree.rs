@@ -271,6 +271,15 @@ impl FileTreeNode {
         }
         fmt::Result::Ok(())
     }
+
+    pub fn sort(&mut self) {
+        if let FileTreeNode::Directory(_, children) = self {
+            children.sort_by_key(|child| child.path().clone());
+            for child in children {
+                child.sort();
+            }
+        }
+    }
 }
 
 /// Creates a `FileTreeNode` from a `&Path`.
@@ -455,6 +464,10 @@ impl FileTree {
         }
 
         self.root.remove(path_to_remove)
+    }
+
+    pub fn sort(&mut self) {
+        self.root.sort();
     }
 }
 
@@ -715,6 +728,7 @@ impl Iterator for FileTreeIterator {
 pub struct FileTreeCollection {
     file_trees: Vec<FileTree>,
     flattened_file_trees: Option<Arc<Vec<FlattenedTreeItem>>>,
+    sorted: bool,
 }
 
 impl FileTreeCollection {
@@ -731,6 +745,7 @@ impl FileTreeCollection {
         FileTreeCollection {
             file_trees: Vec::new(),
             flattened_file_trees: None,
+            sorted: true,
         }
     }
 
@@ -739,6 +754,7 @@ impl FileTreeCollection {
         match &self.flattened_file_trees {
             Some(flattened_file_trees) => flattened_file_trees.clone(),
             None => {
+                self.sort();
                 let flattened_file_trees = self.iter().collect();
                 self.flattened_file_trees = Some(Arc::new(flattened_file_trees));
                 self.flattened_file_trees.as_ref().unwrap().clone()
@@ -776,6 +792,7 @@ impl FileTreeCollection {
     /// assert_eq!(collection.trees().len(), 2);
     /// ```
     pub fn insert(&mut self, path_to_insert: &Path) {
+        self.sorted = false;
         // Clear the flattened trees so they can be recomputed
         self.flattened_file_trees = None;
         // Determine the root component of the path to decide which tree it belongs to.
@@ -801,6 +818,7 @@ impl FileTreeCollection {
             new_tree.insert(path_to_insert);
             self.file_trees.push(new_tree);
         }
+        self.sort();
     }
 
     /// Gets a reference to the slice of `FileTree`s in this collection.
@@ -876,6 +894,7 @@ impl FileTreeCollection {
                 let removed = self.file_trees[i].remove(path_to_remove);
 
                 if removed {
+                    self.sorted = false;
                     // Check if the tree is now empty (only contains the root with no children)
                     match &self.file_trees[i].root {
                         FileTreeNode::Directory(_, children) if children.is_empty() => {
@@ -892,6 +911,7 @@ impl FileTreeCollection {
                         }
                         _ => {}
                     }
+                    self.sort();
                     return true;
                 }
                 break;
@@ -899,6 +919,16 @@ impl FileTreeCollection {
         }
 
         false
+    }
+
+    pub fn sort(&mut self) {
+        if !self.sorted {
+            self.file_trees.sort_by_key(|tree| tree.root.path().clone());
+            for tree in &mut self.file_trees {
+                tree.sort();
+            }
+            self.sorted = true;
+        }
     }
 }
 
