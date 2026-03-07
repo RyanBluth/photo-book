@@ -885,7 +885,7 @@ impl<'a> Canvas<'a> {
                         active && !is_preview && !is_editing, // Disable transform controls when editing
                         true,
                         |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                            if is_editing {
+                            if is_editing && !is_preview {
                                 let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
                                 let shape = Shape::dashed_line(
                                     &[
@@ -1420,7 +1420,7 @@ impl<'a> Canvas<'a> {
                 }
 
                 // If user presses Enter or clicks outside, exit edit mode
-                if response.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                if response.lost_focus() {
                     *text_edit_mode = TextEditMode::None;
                 }
 
