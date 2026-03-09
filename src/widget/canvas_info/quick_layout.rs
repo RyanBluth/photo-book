@@ -1,21 +1,8 @@
-use std::usize;
-
-use eframe::egui::{self};
-use egui::{Rect, Sense, Slider, Vec2};
-
+use eframe::egui::{self, Sense, Slider, Vec2};
 use egui_extras::Column;
-use indexmap::IndexMap;
-// use strum::IntoEnumIterator;
 
 use crate::{
-    layout::{
-        LayoutItem, Margin,
-        grid_layout::{GridDistribution, GridLayout},
-        stack_layout::{
-            StackCrossAxisAlignment, StackLayout, StackLayoutDirection, StackLayoutDistribution,
-        },
-    },
-    // model::page::Page,
+    layout::{LayoutItem, LayoutNode, apply_layout_node, template},
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{
@@ -26,124 +13,19 @@ use crate::{
 
 use super::layers::LayerContent;
 
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
-struct QuickLayoutRegion {
-    absolute_rect: Rect,
-    id: usize,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
-enum QuickLayoutFillMode {
-    Fill,
-    Margin(f32),
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct QuickLayoutState {
     gap: f32,
     margin: f32,
-    last_layout: Option<Layout>,
+    last_layout: Option<LayoutNode>,
 }
 
-impl<'a> QuickLayoutState {
+impl QuickLayoutState {
     pub fn new() -> QuickLayoutState {
         QuickLayoutState {
             gap: 50.0,
             margin: 100.0,
             last_layout: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Layout {
-    GridLayout,
-    CenteredWeightedGridLayout,
-    VerticalStackLayout,
-    HorizontalStackLayout,
-}
-
-impl Layout {
-    pub fn apply(&self, canvas_state: &mut CanvasState, gap: f32, margin: f32) {
-        let page_size = canvas_state.page.value.size_pixels();
-
-        let regions: IndexMap<usize, Rect> = match self {
-            Layout::GridLayout => {
-                let stack_items: Vec<LayoutItem> = canvas_state.into();
-                let grid_layout = GridLayout::new(
-                    page_size.x,
-                    page_size.y,
-                    gap,
-                    margin,
-                    StackLayoutDirection::Vertical,
-                );
-                grid_layout.layout(&stack_items)
-            }
-            Layout::CenteredWeightedGridLayout => {
-                let stack_items: Vec<LayoutItem> = canvas_state.into();
-                let grid_layout = GridLayout::new(
-                    page_size.x,
-                    page_size.y,
-                    gap,
-                    margin,
-                    StackLayoutDirection::Vertical,
-                )
-                .with_distribution(GridDistribution::CenterWeighted);
-                grid_layout.layout(&stack_items)
-            }
-            Layout::VerticalStackLayout => {
-                let stack_layout = StackLayout {
-                    width: page_size.x,
-                    height: page_size.y,
-                    gap: gap,
-                    margin: Margin {
-                        top: margin,
-                        right: margin,
-                        bottom: margin,
-                        left: margin,
-                    },
-                    direction: StackLayoutDirection::Vertical,
-                    alignment: StackCrossAxisAlignment::Center,
-                    distribution: StackLayoutDistribution::Center,
-                    x: 0.0,
-                    y: 0.0,
-                };
-
-                let items: Vec<LayoutItem> = canvas_state.into();
-                stack_layout.layout(&items)
-            }
-            Layout::HorizontalStackLayout => {
-                let stack_layout = StackLayout {
-                    width: page_size.x,
-                    height: page_size.y,
-                    gap: gap,
-                    margin: Margin {
-                        top: margin,
-                        right: margin,
-                        bottom: margin,
-                        left: margin,
-                    },
-                    direction: StackLayoutDirection::Horizontal,
-                    alignment: StackCrossAxisAlignment::Center,
-                    distribution: StackLayoutDistribution::Center,
-                    x: 0.0,
-                    y: 0.0,
-                };
-
-                let items: Vec<LayoutItem> = canvas_state.into();
-                stack_layout.layout(&items)
-            }
-        };
-
-        for layer_id in canvas_state.quick_layout_order.iter() {
-            canvas_state
-                .layers
-                .get_mut(layer_id)
-                .unwrap()
-                .transform_state
-                .rect = regions[layer_id];
         }
     }
 }
@@ -197,7 +79,7 @@ impl<'a> QuickLayout<'a> {
 
         let num_rows = available_layouts.len();
 
-        let mut selected_layout: Option<Layout> = None;
+        let mut selected_layout: Option<LayoutNode> = None;
 
         ui.vertical(|ui| {
             let mut new_gap = self.state.gap;
@@ -213,9 +95,9 @@ impl<'a> QuickLayout<'a> {
                 ui.add(Slider::new(&mut new_margin, 0.0..=100.0));
             });
 
-            if let Some(last_layout) = self.state.last_layout {
+            if let Some(ref last_layout) = self.state.last_layout {
                 if new_gap != self.state.gap || new_margin != self.state.margin {
-                    last_layout.apply(self.canvas_state, new_gap, new_margin);
+                    apply_layout_node(last_layout, self.canvas_state, new_gap, new_margin);
                 }
             }
 
@@ -228,18 +110,22 @@ impl<'a> QuickLayout<'a> {
                 .column(Column::exact(spacer_width))
                 .body(|body| {
                     body.rows(row_height, num_rows, |mut row| {
-                        let offest = row.index() * num_columns;
+                        let offset = row.index() * num_columns;
                         for i in 0..num_columns {
-                            if offest + i >= num_rows {
+                            if offset + i >= num_rows {
                                 break;
                             }
 
-                            let _index = offest + i;
-                            let layout = available_layouts.get(offest + i).unwrap();
+                            let layout = &available_layouts[offset + i];
 
                             let mut canvas_state = self.canvas_state.clone_with_new_widget_ids();
 
-                            layout.apply(&mut canvas_state, self.state.gap, self.state.margin);
+                            apply_layout_node(
+                                layout,
+                                &mut canvas_state,
+                                self.state.gap,
+                                self.state.margin,
+                            );
 
                             row.col(|ui| {
                                 let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
@@ -266,32 +152,36 @@ impl<'a> QuickLayout<'a> {
         });
 
         if let Some(selected_layout) = selected_layout {
-            selected_layout.apply(self.canvas_state, self.state.gap, self.state.margin);
-            self.canvas_state.last_quick_layout = Some(selected_layout);
+            apply_layout_node(
+                &selected_layout,
+                self.canvas_state,
+                self.state.gap,
+                self.state.margin,
+            );
+            self.canvas_state.last_quick_layout = Some(selected_layout.clone());
             self.state.last_layout = Some(selected_layout);
             self.history_manager
                 .save_history(CanvasHistoryKind::QuickLayout, self.canvas_state);
         }
     }
 
-    fn available_layouts(&self) -> Vec<Layout> {
+    fn available_layouts(&self) -> Vec<LayoutNode> {
+        use std::sync::LazyLock;
+
+        static PRESETS: LazyLock<Vec<template::LayoutPreset>> = LazyLock::new(|| {
+            template::load_presets(include_str!("../../../layouts/presets.ron"))
+        });
+
         let n = self.canvas_state.quick_layout_order.len();
 
         if n == 0 {
             return vec![];
         }
 
-        let mut layouts: Vec<Layout> = vec![];
-
-        if n >= 3 {
-            layouts.push(Layout::GridLayout);
-            layouts.push(Layout::CenteredWeightedGridLayout);
-        }
-
-        layouts.push(Layout::VerticalStackLayout);
-        layouts.push(Layout::HorizontalStackLayout);
-
-        layouts
+        PRESETS
+            .iter()
+            .filter_map(|preset| preset.resolve(n))
+            .collect()
     }
 }
 

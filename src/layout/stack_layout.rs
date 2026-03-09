@@ -1,8 +1,4 @@
-use std::usize;
-
-use eframe::egui::{self};
-use egui::{Pos2, Rect, Vec2};
-
+use eframe::egui::{Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 
 use crate::utils::RectExt;
@@ -15,19 +11,21 @@ pub enum StackLayoutDirection {
     Horizontal,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum StackCrossAxisAlignment {
-    _Start,
+    Start,
     Center,
-    _End,
+    End,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum StackLayoutDistribution {
-    _Start,
+    Start,
     Center,
-    _End,
-    _EqualSpacing,
+    End,
+    EqualSpacing,
     Grid,
     CenterWeightedGrid { main_axis_sizes: Vec<f32> },
 }
@@ -82,8 +80,23 @@ impl StackLayout {
         };
 
         let distributed: IndexMap<usize, Rect> = match &self.distribution {
-            StackLayoutDistribution::_Start => top_left_rects,
+            StackLayoutDistribution::Start => top_left_rects,
             StackLayoutDistribution::Center => {
+                let height_diff = (height_less_margin - total_scaled_height) / 2.0;
+                top_left_rects
+                    .iter()
+                    .map(|(id, rect)| {
+                        (
+                            *id,
+                            Rect::from_min_size(
+                                Pos2::new(rect.min.x, rect.min.y + height_diff),
+                                rect.size(),
+                            ),
+                        )
+                    })
+                    .collect()
+            }
+            StackLayoutDistribution::End => {
                 let height_diff = height_less_margin - total_scaled_height;
                 top_left_rects
                     .iter()
@@ -98,22 +111,7 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::_End => {
-                let height_diff = height_less_margin - total_scaled_height;
-                top_left_rects
-                    .iter()
-                    .map(|(id, rect)| {
-                        (
-                            *id,
-                            Rect::from_min_size(
-                                Pos2::new(rect.min.x, rect.min.y + height_diff),
-                                rect.size(),
-                            ),
-                        )
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::_EqualSpacing => {
+            StackLayoutDistribution::EqualSpacing => {
                 let total_item_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
                 let remaining_space = height_less_margin - total_item_height;
                 let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
@@ -147,8 +145,7 @@ impl StackLayout {
                     .collect()
             }
             StackLayoutDistribution::CenterWeightedGrid { main_axis_sizes } => {
-                let _total_item_height = main_axis_sizes.iter().sum::<f32>();
-                let mut y_offset = 0.0; //(height_less_margin - total_item_height) / 2.0;
+                let mut y_offset = 0.0;
                 item_dimensions
                     .iter()
                     .enumerate()
@@ -167,7 +164,7 @@ impl StackLayout {
         };
 
         let aligned = match self.alignment {
-            StackCrossAxisAlignment::_Start => distributed,
+            StackCrossAxisAlignment::Start => distributed,
             StackCrossAxisAlignment::Center => distributed
                 .iter()
                 .map(|(id, rect)| {
@@ -176,7 +173,7 @@ impl StackLayout {
                     (*id, rect)
                 })
                 .collect(),
-            StackCrossAxisAlignment::_End => distributed
+            StackCrossAxisAlignment::End => distributed
                 .iter()
                 .map(|(id, rect)| {
                     let x = width_less_margin - rect.width();
@@ -227,7 +224,7 @@ impl StackLayout {
         };
 
         let distributed: IndexMap<usize, Rect> = match &self.distribution {
-            StackLayoutDistribution::_Start => top_left_rects,
+            StackLayoutDistribution::Start => top_left_rects,
             StackLayoutDistribution::Center => {
                 let width_diff = (width_less_margin - total_scaled_width) / 2.0;
                 top_left_rects
@@ -241,7 +238,7 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::_End => {
+            StackLayoutDistribution::End => {
                 let width_diff = width_less_margin - total_scaled_width;
                 top_left_rects
                     .iter()
@@ -254,7 +251,7 @@ impl StackLayout {
                     })
                     .collect()
             }
-            StackLayoutDistribution::_EqualSpacing => {
+            StackLayoutDistribution::EqualSpacing => {
                 let total_item_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
                 let remaining_space = width_less_margin - total_item_width;
                 let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
@@ -305,7 +302,7 @@ impl StackLayout {
         };
 
         let aligned = match self.alignment {
-            StackCrossAxisAlignment::_Start => distributed,
+            StackCrossAxisAlignment::Start => distributed,
             StackCrossAxisAlignment::Center => distributed
                 .iter()
                 .map(|(id, rect)| {
@@ -315,7 +312,7 @@ impl StackLayout {
                     (*id, rect)
                 })
                 .collect(),
-            StackCrossAxisAlignment::_End => distributed
+            StackCrossAxisAlignment::End => distributed
                 .iter()
                 .map(|(id, rect)| {
                     let y = self.height - rect.height();

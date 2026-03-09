@@ -1,0 +1,47 @@
+[
+    // Grid (centered weighted)
+    (min_photos: 3, node: Leaf(layout: CenteredWeightedGrid, count: "N")),
+
+    // Vertical stack
+    (min_photos: 1, node: Leaf(layout: VerticalStack, count: "N")),
+
+    // Horizontal stack
+    (min_photos: 1, node: Leaf(layout: HorizontalStack, count: "N")),
+
+    // Top/Bottom split
+    (min_photos: 2, node: VSplit(children: [
+        (weight: 1.0, node: Leaf(layout: HorizontalStack, count: "ceil(N / 2)")),
+        (weight: 1.0, node: Leaf(layout: HorizontalStack, count: "floor(N / 2)")),
+    ])),
+
+    // Left/Right split
+    (min_photos: 2, node: HSplit(children: [
+        (weight: 1.0, node: Leaf(layout: VerticalStack, count: "ceil(N / 2)")),
+        (weight: 1.0, node: Leaf(layout: VerticalStack, count: "floor(N / 2)")),
+    ])),
+
+    // Feature left + grid right
+    (min_photos: 3, node: HSplit(children: [
+        (weight: 2.0, node: Leaf(layout: VerticalStack, count: "1")),
+        (weight: 1.0, node: Leaf(layout: CenteredWeightedGrid, count: "N - 1")),
+    ])),
+
+    // Feature top + bottom row
+    (min_photos: 3, node: VSplit(children: [
+        (weight: 2.0, node: Leaf(layout: HorizontalStack, count: "1")),
+        (weight: 1.0, node: Leaf(layout: HorizontalStack, count: "N - 1")),
+    ])),
+
+    // Top row + feature center + bottom row
+    (min_photos: 5, node: VSplit(children: [
+        (weight: 1.0, node: Leaf(layout: HorizontalStack, count: "floor((N - 1) / 2)")),
+        (weight: 2.0, node: Leaf(layout: HorizontalStack, count: "1")),
+        (weight: 1.0, node: Leaf(layout: HorizontalStack, count: "N - 1 - floor((N - 1) / 2)")),
+    ])),
+
+    // Left 2-row + right feature
+    (min_photos: 5, node: HSplit(children: [
+        (weight: 1.0, node: Leaf(layout: CenteredWeightedGrid, count: "N - 1")),
+        (weight: 1.0, node: Leaf(layout: VerticalStack, count: "1")),
+    ])),
+]

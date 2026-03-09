@@ -7,6 +7,7 @@ use indexmap::{IndexMap, indexmap};
 use crate::{
     dependencies::{Dependency, SingletonFor},
     id::{LayerId, next_layer_id},
+    layout::LayoutNode,
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     project_settings::ProjectSettingsManager,
@@ -14,13 +15,10 @@ use crate::{
     utils::{IdExt, RectExt},
     widget::{
         canvas::types::{IdleTool, ToolState},
-        canvas_info::{
-            layers::{
-                CanvasText, Layer, LayerContent, LayerTransformEditState, LineToolSettings,
-                ShapeToolSettings, TextHorizontalAlignment, TextToolSettings,
-                TextVerticalAlignment,
-            },
-            quick_layout::{self},
+        canvas_info::layers::{
+            CanvasText, Layer, LayerContent, LayerTransformEditState, LineToolSettings,
+            ShapeToolSettings, TextHorizontalAlignment, TextToolSettings,
+            TextVerticalAlignment,
         },
         transformable::{TransformHandleMode, TransformableState},
     },
@@ -37,7 +35,7 @@ pub struct CanvasState {
     pub page: EditablePage,
     pub template: Option<Template>,
     pub quick_layout_order: Vec<LayerId>,
-    pub last_quick_layout: Option<quick_layout::Layout>,
+    pub last_quick_layout: Option<LayoutNode>,
     pub canvas_id: egui::Id,
     pub text_edit_mode: TextEditMode,
     pub tool_state: ToolState,

@@ -34,6 +34,7 @@ use crate::{
     debug::DebugSettings,
     dependencies::{Dependency, SingletonFor},
     id::LayerId,
+    layout::apply_layout_node,
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::TemplateRegionKind,
@@ -1787,7 +1788,7 @@ impl<'a> Canvas<'a> {
                             self.state.swap_layer_centers_and_bounds(id1, id2);
                         }
                         ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
-                            if let Some(layout) = self.state.last_quick_layout {
+                            if let Some(ref layout) = self.state.last_quick_layout.clone() {
                                 let first_id_index = self
                                     .state
                                     .quick_layout_order
@@ -1806,7 +1807,7 @@ impl<'a> Canvas<'a> {
                                     .quick_layout_order
                                     .swap(first_id_index, second_id_index);
 
-                                layout.apply(&mut self.state, 0.0, 0.0);
+                                apply_layout_node(layout, &mut self.state, 0.0, 0.0);
                             }
                         }
                         ActionBarAction::Crop(layer_id) => {

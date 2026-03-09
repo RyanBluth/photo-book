@@ -46,7 +46,10 @@ skia-safe = { version = "0.90", features = ["vulkan"] }
 wgpu = { version = "27.0.1", features = ["vulkan", "metal", "dx12", "gles"] }
 thiserror = "2.0.18"
 printpdf = { version = "0.8.2", features = ["jpeg", "png"] }
-serde = "1.0.228"
+serde = { version = "1.0.228", features = ["derive"] }
+ron = "0.9"
+calculate = { git = "https://github.com/RyanBluth/calc.git" }
+num-traits = "0.2"
 serde_json = "1.0.149"
 dirs = "6.0.0"
 fxhash = "0.2.1"
