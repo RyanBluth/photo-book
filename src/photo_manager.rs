@@ -22,7 +22,7 @@ use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 use crate::{
     dependencies::Dependency,
     dirs::Dirs,
-    model::photo_grouping::PhotoGrouping,
+    model::{album::Album, photo_grouping::PhotoGrouping},
     photo::{Photo, PhotoRating},
     photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
 };
@@ -734,5 +734,33 @@ impl PhotoManager {
     #[allow(dead_code)]
     pub fn clear_current_filter(&mut self) {
         self.current_filter = PhotoQuery::default();
+    }
+
+    pub fn album_names_iter(&self) -> impl Iterator<Item = &String> {
+        self.photo_database.album_names_iter()
+    }
+
+    pub fn album_photos_iter(&self, album_name: &String) -> impl Iterator<Item = &PathBuf> {
+        self.photo_database.album_photos_iter(album_name)
+    }
+
+    pub fn add_to_album(&mut self, album_name: &String, photo_path: &PathBuf) {
+        self.photo_database.add_to_album(album_name, photo_path);
+    }
+
+    pub fn remove_from_album(&mut self, album_name: &String, photo_path: &PathBuf) {
+        self.photo_database.remove_from_album(album_name, photo_path);
+    }
+
+    pub fn create_album(&mut self, album_name: &String) {
+        self.photo_database.create_album(album_name);
+    }
+
+    pub fn rename_album(&mut self, album_name: &String, new_name: &String) {
+        self.photo_database.rename_album(album_name, new_name);
+    }
+
+    pub fn delete_album(&mut self, album_name: &String) {
+        self.photo_database.delete_album(album_name);
     }
 }

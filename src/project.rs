@@ -9,7 +9,7 @@ use crate::{
     dependencies::{Dependency, SingletonFor},
     id::{LayerId, PageId, next_page_id, set_min_layer_id},
     model::{
-        edit_state::EditablePage, page::Page as AppPage,
+        album::Album as AppAlbum, edit_state::EditablePage, page::Page as AppPage,
         photo_grouping::PhotoGrouping as AppPhotoGrouping, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
@@ -60,6 +60,7 @@ pub struct Project {
     pub pages: Vec<CanvasPage>,
     pub group_by: ProjectPhotoGrouping,
     pub project_settings: ProjectSettings,
+    pub albums: Vec<Album>,
 }
 
 impl Project {
@@ -327,11 +328,28 @@ impl Project {
         let project_settings: AppProjectSettings = Dependency::<ProjectSettingsManager>::get()
             .with_lock(|settings| settings.project_settings.clone());
 
+        let albums: Vec<Album> = Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+            photo_manager
+                .photo_database
+                .album_names_iter()
+                .into_iter()
+                .map(|album_name| Album {
+                    name: album_name.clone(),
+                    photos: photo_manager
+                        .photo_database
+                        .album_photos_iter(album_name)
+                        .cloned()
+                        .collect(),
+                })
+                .collect()
+        });
+
         let project = Project {
             photos,
             pages,
             group_by: group_by.into(),
             project_settings: project_settings.into(),
+            albums: albums.into(),
         };
 
         project
@@ -1085,6 +1103,30 @@ impl Into<egui::StrokeKind> for StrokeKind {
             StrokeKind::Inside => egui::StrokeKind::Inside,
             StrokeKind::Middle => egui::StrokeKind::Middle,
             StrokeKind::Outside => egui::StrokeKind::Outside,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Savefile)]
+pub struct Album {
+    name: String,
+    photos: HashSet<PathBuf>,
+}
+
+impl Into<Album> for AppAlbum {
+    fn into(self) -> Album {
+        Album {
+            name: self.name,
+            photos: self.photos,
+        }
+    }
+}
+
+impl Into<AppAlbum> for Album {
+    fn into(self) -> AppAlbum {
+        AppAlbum {
+            name: self.name,
+            photos: self.photos,
         }
     }
 }

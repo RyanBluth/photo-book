@@ -1,3 +1,4 @@
+pub mod album;
 pub mod edit_state;
 pub mod editable_value;
 pub mod page;

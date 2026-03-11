@@ -12,7 +12,7 @@ use indexmap::IndexMap;
 use crate::{
     file_tree::FileTreeCollection,
     id::next_query_result_id,
-    model::photo_grouping::PhotoGrouping,
+    model::{album::Album, photo_grouping::PhotoGrouping},
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
@@ -85,6 +85,7 @@ pub struct PhotoDatabase {
     photo_tags: HashMap<PathBuf, HashSet<String>>,
     query_cache: HashMap<PhotoQuery, PhotoQueryResult>,
     pub file_collection: FileTreeCollection,
+    albums: Vec<Album>,
     is_sorted: bool,
 }
 
@@ -97,6 +98,7 @@ impl PhotoDatabase {
             photo_tags: HashMap::new(),
             query_cache: HashMap::new(),
             file_collection: FileTreeCollection::new(),
+            albums: Vec::new(),
             is_sorted: true,
         }
     }
@@ -112,6 +114,7 @@ impl PhotoDatabase {
         self.photo_tags.clear();
         self.query_cache.clear();
         self.file_collection = FileTreeCollection::new();
+        self.albums.clear();
         self.is_sorted = true;
     }
 
@@ -169,6 +172,9 @@ impl PhotoDatabase {
         self.photo_tags.remove(path);
         self.file_collection.remove(path);
         self.is_sorted = false;
+        self.albums.iter_mut().for_each(|album| {
+            album.photos.remove(path);
+        });
         self.invalidate_query_cache();
     }
 
@@ -436,6 +442,52 @@ impl PhotoDatabase {
             (None, Some(PhotoMetadataField::DateTime(_))) => Ordering::Less,
             _ => a.path.cmp(&b.path),
         }
+    }
+}
+
+
+
+/// Album management
+impl PhotoDatabase {
+    pub fn album_names_iter(&self) -> impl Iterator<Item = &String> {
+        self.albums.iter().map(|album| &album.name)
+    }
+
+    pub fn album_photos_iter(&self, album_name: &String) -> impl Iterator<Item = &PathBuf> {
+        self.albums
+            .iter()
+            .find(|album| album.name == *album_name)
+            .map(|album| album.photos.iter())
+            .unwrap_or_default()
+    }
+
+    pub fn add_to_album(&mut self, album_name: &String, photo_path: &PathBuf) {
+        self.albums
+            .iter_mut()
+            .find(|album| album.name == *album_name)
+            .map(|album| album.photos.insert(photo_path.clone()));
+    }
+
+    pub fn remove_from_album(&mut self, album_name: &String, photo_path: &PathBuf) {
+        self.albums
+            .iter_mut()
+            .find(|album| album.name == *album_name)
+            .map(|album| album.photos.remove(photo_path));
+    }
+
+    pub fn create_album(&mut self, album_name: &String) {
+        self.albums.push(Album::new(album_name.clone(), HashSet::new()));
+    }
+
+    pub fn rename_album(&mut self, album_name: &String, new_name: &String) {
+        self.albums
+            .iter_mut()
+            .find(|album| album.name == *album_name)
+            .map(|album| album.name = new_name.clone());
+    }
+
+    pub fn delete_album(&mut self, album_name: &String) {
+        self.albums.retain(|album| album.name != *album_name);
     }
 }
 
