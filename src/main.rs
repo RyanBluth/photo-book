@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
                             experimental_features: wgpu::ExperimentalFeatures::default(),
                         }
                     }),
-                    ..Default::default()
+                    ..eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle()
                 },
             ),
             ..Default::default()

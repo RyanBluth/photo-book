@@ -9,3 +9,4 @@ export/
 **/tests/snapshots/**/*.old.png
 *.rpb
 .claude/settings.local.json
+**/.DS_Store
