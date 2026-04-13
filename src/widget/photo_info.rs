@@ -1,5 +1,6 @@
-use eframe::egui::{Grid, Widget};
+use eframe::egui::Widget;
 use egui::{Key, Ui};
+use image::metadata;
 use std::collections::HashSet;
 use strum::IntoEnumIterator;
 
@@ -9,7 +10,6 @@ use crate::photo_manager::PhotoManager;
 
 use super::{
     segment_control::SegmentControl,
-    spacer::Spacer,
     tag_chips::{TagChips, TagChipsState},
 };
 
@@ -44,33 +44,31 @@ impl<'a> PhotoInfo<'a> {
 impl<'a> PhotoInfo<'a> {
     pub fn show(&mut self, ui: &mut Ui) {
         ui.allocate_ui(ui.available_size(), |ui: &mut egui::Ui| {
-            Grid::new("photo_info_grid")
-                .striped(true)
-                .num_columns(4)
+            egui::Frame::NONE
+                .inner_margin(egui::Margin::same(12))
+                .fill(egui::Color32::TRANSPARENT)
                 .show(ui, |ui| {
-                    ui.label("Rating");
-
-                    let mut current_rating = self.photo.rating();
-                    SegmentControl::new(
-                        PhotoRating::iter()
-                            .enumerate()
-                            .map(|pr| (pr.1, format!("({}) {}", pr.0 + 1, pr.1)))
-                            .collect::<Vec<_>>()
-                            .as_slice(),
-                        &mut current_rating,
-                    )
-                    .ui(ui);
-
-                    if current_rating != self.photo.rating() {
-                        self.photo.set_rating(current_rating);
-                    }
-
-                    ui.end_row();
-
-                    // Tags section
-                    ui.label("Tags");
                     ui.vertical(|ui| {
-                        // Sync selected_tags with photo tags only if photo has changed
+                        ui.label(egui::RichText::new("Rating").small().strong());
+                        let mut current_rating = self.photo.rating();
+                        ui.add_space(4.0);
+                        SegmentControl::new(
+                            PhotoRating::iter()
+                                .enumerate()
+                                .map(|pr| (pr.1, format!("({}) {}", pr.0 + 1, pr.1)))
+                                .collect::<Vec<_>>()
+                                .as_slice(),
+                            &mut current_rating,
+                        )
+                        .ui(ui);
+
+                        if current_rating != self.photo.rating() {
+                            self.photo.set_rating(current_rating);
+                        }
+
+                        ui.add_space(4.0);
+
+                        ui.label(egui::RichText::new("Tags").small().strong());
                         let photo_tags = self.photo.tags();
                         if self.state.last_photo_tags != photo_tags {
                             self.state.selected_tags = photo_tags.clone();
@@ -89,40 +87,38 @@ impl<'a> PhotoInfo<'a> {
                         .show(ui);
 
                         if tag_response.changed() {
-                            // Sync changes to photo
                             let current_photo_tags = self.photo.tags();
 
-                            // Remove tags that are no longer selected
                             for tag in &current_photo_tags {
                                 if !self.state.selected_tags.contains(tag) {
                                     self.photo.remove_tag(tag);
                                 }
                             }
 
-                            // Add new tags that are selected but not in photo
                             for tag in &self.state.selected_tags {
                                 if !current_photo_tags.contains(tag) {
                                     self.photo.add_tag(tag.clone());
                                 }
                             }
-                            // Update our tracking of photo tags
                             self.state.last_photo_tags = self.photo.tags();
                         }
-                    });
-                    Spacer::new(ui.available_width(), 1.0).ui(ui);
-                    ui.end_row();
 
-                    for (label, value) in self.photo.metadata.iter() {
-                        ui.label(format!("{}", label));
-                        ui.label(format!("{}", value));
-                        if let PhotoMetadataField::Path(path) = value {
-                            if ui.button("📂").clicked() {
-                                open::that_in_background(path.parent().unwrap());
-                            }
+                        ui.add_space(4.0);
+
+                        for (label, value) in self.photo.metadata.iter() {
+                            ui.label(egui::RichText::new(format!("{}", label)).small().strong());
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(format!("{}", value));
+                                if let PhotoMetadataField::Path(path) = value {
+                                    if ui.button("📂").clicked() {
+                                        open::that_in_background(path.parent().unwrap());
+                                    }
+                                }
+                            });
+
+                            ui.add_space(4.0);
                         }
-                        Spacer::new(ui.available_width(), 1.0).ui(ui);
-                        ui.end_row();
-                    }
+                    });
                 });
         });
 
