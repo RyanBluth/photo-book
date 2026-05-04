@@ -226,7 +226,11 @@ impl PhotoDatabase {
             match query.grouping {
                 PhotoGrouping::Rating => {
                     let rating = self.get_photo_rating(&photo.path);
-                    let group_label = format!("{:?}", rating);
+                    let group_label = match rating {
+                        None => "Unrated".to_string(),
+                        Some(1) => "1 Star".to_string(),
+                        Some(n) => format!("{} Stars", n),
+                    };
                     grouped_photos
                         .entry(group_label)
                         .or_insert_with(IndexMap::new)
@@ -665,7 +669,7 @@ mod tests {
 
         assert_eq!(db.photos.len(), 1);
         assert!(db.get_photo(&path).is_some());
-        assert_eq!(db.get_photo_rating(&path), PhotoRating::default());
+        assert_eq!(db.get_photo_rating(&path), None);
         assert_eq!(db.get_photo_tags(&path), HashSet::new());
     }
 
@@ -770,15 +774,15 @@ mod tests {
         db.add_photo(photo);
 
         // Test default rating
-        assert_eq!(db.get_photo_rating(&path), PhotoRating::default());
+        assert_eq!(db.get_photo_rating(&path), None);
 
         // Test setting rating
-        db.set_photo_rating(&path, PhotoRating::Yes);
-        assert_eq!(db.get_photo_rating(&path), PhotoRating::Yes);
+        db.set_photo_rating(&path, Some(3));
+        assert_eq!(db.get_photo_rating(&path), Some(3));
 
         // Test non-existent photo
         let non_existent = PathBuf::from("/test/nonexistent.jpg");
-        assert_eq!(db.get_photo_rating(&non_existent), PhotoRating::default());
+        assert_eq!(db.get_photo_rating(&non_existent), None);
     }
 
     #[test]
@@ -855,7 +859,7 @@ mod tests {
         assert!(!db.query_cache.is_empty());
 
         // Adding rating should invalidate cache
-        db.set_photo_rating(&path, PhotoRating::Yes);
+        db.set_photo_rating(&path, Some(3));
         assert!(db.query_cache.is_empty());
 
         // Query again to populate cache
@@ -878,9 +882,9 @@ mod tests {
         db.add_photo(photo2);
         db.add_photo(photo3);
 
-        db.set_photo_rating(&PathBuf::from("/test/photo1.jpg"), PhotoRating::Yes);
-        db.set_photo_rating(&PathBuf::from("/test/photo2.jpg"), PhotoRating::Yes);
-        db.set_photo_rating(&PathBuf::from("/test/photo3.jpg"), PhotoRating::Maybe);
+        db.set_photo_rating(&PathBuf::from("/test/photo1.jpg"), Some(3));
+        db.set_photo_rating(&PathBuf::from("/test/photo2.jpg"), Some(3));
+        db.set_photo_rating(&PathBuf::from("/test/photo3.jpg"), Some(2));
 
         let query = PhotoQuery {
             ratings: None,
@@ -890,14 +894,14 @@ mod tests {
 
         let result = db.query_photos(&query);
 
-        assert_eq!(result.groups.len(), 2); // Yes, Maybe (only groups with photos)
+        assert_eq!(result.groups.len(), 2); // 3 Stars, 2 Stars (only groups with photos)
 
-        let yes_group = result.groups.get("Yes").unwrap();
+        let yes_group = result.groups.get("3 Stars").unwrap();
         assert_eq!(yes_group.len(), 2);
         assert!(yes_group.contains_key(&PathBuf::from("/test/photo1.jpg")));
         assert!(yes_group.contains_key(&PathBuf::from("/test/photo2.jpg")));
 
-        let maybe_group = result.groups.get("Maybe").unwrap();
+        let maybe_group = result.groups.get("2 Stars").unwrap();
         assert_eq!(maybe_group.len(), 1);
         assert!(maybe_group.contains_key(&PathBuf::from("/test/photo3.jpg")));
     }

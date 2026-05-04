@@ -72,7 +72,7 @@ impl Project {
                 .iter()
                 .map(|path| Photo {
                     path: path.clone(),
-                    rating: photo_manager.get_photo_rating(path).into(),
+                    rating: photo_manager.get_photo_rating(path),
                     tags: photo_manager.get_photo_tags(path).into(),
                 })
                 .collect()
@@ -102,7 +102,6 @@ impl Project {
                                                 |photo_manager| {
                                                     photo_manager
                                                         .get_photo_rating(&canvas_photo.photo.path)
-                                                        .into()
                                                 },
                                             ),
                                             tags: Dependency::<PhotoManager>::get().with_lock(
@@ -175,7 +174,6 @@ impl Project {
                                                 |photo_manager| {
                                                     photo_manager
                                                         .get_photo_rating(&canvas_photo.photo.path)
-                                                        .into()
                                                 },
                                             ),
                                             tags: Dependency::<PhotoManager>::get().with_lock(
@@ -396,7 +394,7 @@ impl Into<OrganizeEditScene> for Project {
             .map(|photo| {
                 (
                     photo.path.clone(),
-                    photo.rating.clone().into(),
+                    photo.rating,
                     photo.tags.clone(),
                 )
             })
@@ -822,12 +820,7 @@ pub enum TextVerticalAlignment {
     Bottom,
 }
 
-#[derive(Debug, Clone, Savefile)]
-pub enum PhotoRating {
-    Yes,
-    No,
-    Maybe,
-}
+pub type PhotoRating = Option<u8>;
 
 #[derive(Debug, Clone, Savefile)]
 pub struct ProjectSettings {
@@ -850,25 +843,6 @@ impl Into<ProjectSettings> for AppProjectSettings {
     }
 }
 
-impl Into<AppPhotoRating> for PhotoRating {
-    fn into(self) -> AppPhotoRating {
-        match self {
-            PhotoRating::Yes => AppPhotoRating::Yes,
-            PhotoRating::No => AppPhotoRating::No,
-            PhotoRating::Maybe => AppPhotoRating::Maybe,
-        }
-    }
-}
-
-impl Into<PhotoRating> for AppPhotoRating {
-    fn into(self) -> PhotoRating {
-        match self {
-            AppPhotoRating::Yes => PhotoRating::Yes,
-            AppPhotoRating::No => PhotoRating::No,
-            AppPhotoRating::Maybe => PhotoRating::Maybe,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Savefile)]
 pub enum ProjectPhotoGrouping {

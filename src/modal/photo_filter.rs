@@ -144,12 +144,11 @@ impl Modal for PhotoFilterModal {
 mod tests {
     use super::*;
     use crate::model::photo_grouping::PhotoGrouping;
-    use crate::photo::PhotoRating;
 
     #[test]
     fn test_photo_filter_modal_with_query() {
         let query = PhotoQuery {
-            ratings: Some(vec![PhotoRating::Yes]),
+            ratings: Some(vec![Some(3)]),
             tags: Some(vec!["landscape".to_string(), "__untagged__".to_string()]),
             grouping: PhotoGrouping::Date,
         };
@@ -174,14 +173,14 @@ mod tests {
 
         // Modify the filter state
         modal.filter_state.enabled_ratings.clear();
-        modal.filter_state.enabled_ratings.insert(PhotoRating::Yes);
+        modal.filter_state.enabled_ratings.insert(Some(3));
         modal
             .filter_state
             .selected_tags
             .insert("landscape".to_string());
 
         let query = modal.get_query();
-        assert_eq!(query.ratings.unwrap(), vec![PhotoRating::Yes]);
+        assert_eq!(query.ratings.unwrap(), vec![Some(3)]);
 
         let tags = query.tags.unwrap();
         assert!(tags.contains(&"landscape".to_string()));
@@ -204,7 +203,7 @@ mod tests {
 
         // Test with initial query
         let initial_query = PhotoQuery {
-            ratings: Some(vec![PhotoRating::Yes]),
+            ratings: Some(vec![Some(3)]),
             tags: None,
             grouping: PhotoGrouping::Date,
         };
@@ -220,7 +219,7 @@ mod tests {
 
         // Set state to match initial query
         modal.filter_state.enabled_ratings.clear();
-        modal.filter_state.enabled_ratings.insert(PhotoRating::Yes);
+        modal.filter_state.enabled_ratings.insert(Some(3));
         modal.filter_state.grouping = PhotoGrouping::Date;
 
         // Should not be modified now
@@ -248,11 +247,11 @@ mod tests {
 
         // Test various filter combinations
         modal.filter_state.enabled_ratings.clear();
-        modal.filter_state.enabled_ratings.insert(PhotoRating::Yes);
+        modal.filter_state.enabled_ratings.insert(Some(3));
         modal
             .filter_state
             .enabled_ratings
-            .insert(PhotoRating::Maybe);
+            .insert(Some(2));
 
         modal
             .filter_state
@@ -267,9 +266,9 @@ mod tests {
         let query = modal.get_query();
 
         let ratings = query.ratings.unwrap();
-        assert!(ratings.contains(&PhotoRating::Yes));
-        assert!(ratings.contains(&PhotoRating::Maybe));
-        assert!(!ratings.contains(&PhotoRating::No));
+        assert!(ratings.contains(&Some(3)));
+        assert!(ratings.contains(&Some(2)));
+        assert!(!ratings.contains(&Some(1)));
 
         let tags = query.tags.unwrap();
         assert!(tags.contains(&"landscape".to_string()));

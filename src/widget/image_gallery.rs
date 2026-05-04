@@ -12,12 +12,11 @@ use crate::{
     assets::Asset,
     dependencies::{Dependency, Singleton, SingletonFor},
     model::photo_grouping::PhotoGrouping,
-    photo::{Photo, PhotoRating},
+    photo::Photo,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
 };
 
-use strum::IntoEnumIterator;
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
@@ -284,17 +283,19 @@ fn add_filter_menu(ui: &mut egui::Ui) {
             ui.menu_button("Rating", |ui| {
                 let mut new_filter = get_current_filter();
 
-                for rating in PhotoRating::iter() {
+                for rating in [None, Some(1), Some(2), Some(3)] {
+                    let label = match rating {
+                        None => "Unrated".to_string(),
+                        Some(1) => "1 Star".to_string(),
+                        Some(n) => format!("{} Stars", n),
+                    };
                     let mut is_enabled = new_filter
                         .ratings
                         .as_ref()
                         .map(|ratings| ratings.contains(&rating))
                         .unwrap_or(false);
 
-                    if ui
-                        .checkbox(&mut is_enabled, format!("{}", rating))
-                        .changed()
-                    {
+                    if ui.checkbox(&mut is_enabled, label).changed() {
                         let ratings = new_filter.ratings.get_or_insert_with(Vec::new);
                         if is_enabled {
                             if !ratings.contains(&rating) {

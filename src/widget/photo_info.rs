@@ -1,17 +1,11 @@
-use eframe::egui::Widget;
 use egui::{Key, Ui};
-use image::metadata;
 use std::collections::HashSet;
-use strum::IntoEnumIterator;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
-use crate::photo::{PhotoMetadataField, PhotoRating, SaveOnDropPhoto};
+use crate::photo::{PhotoMetadataField, SaveOnDropPhoto};
 use crate::photo_manager::PhotoManager;
 
-use super::{
-    segment_control::SegmentControl,
-    tag_chips::{TagChips, TagChipsState},
-};
+use super::tag_chips::{TagChips, TagChipsState};
 
 #[derive(Debug, Clone)]
 pub struct PhotoInfoState {
@@ -50,21 +44,43 @@ impl<'a> PhotoInfo<'a> {
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new("Rating").small().strong());
-                        let mut current_rating = self.photo.rating();
+                        let current_rating = self.photo.rating();
                         ui.add_space(4.0);
-                        SegmentControl::new(
-                            PhotoRating::iter()
-                                .enumerate()
-                                .map(|pr| (pr.1, format!("({}) {}", pr.0 + 1, pr.1)))
-                                .collect::<Vec<_>>()
-                                .as_slice(),
-                            &mut current_rating,
-                        )
-                        .ui(ui);
+                        ui.horizontal(|ui| {
+                            let star_size = 24.0;
 
-                        if current_rating != self.photo.rating() {
-                            self.photo.set_rating(current_rating);
-                        }
+                            for i in 1..=3 {
+                                let is_selected = current_rating.map_or(false, |r| r >= i as u8);
+                                let text = if is_selected { "★" } else { "☆" };
+                                let resp = ui.add(
+                                    egui::Button::new(
+                                        egui::RichText::new(text)
+                                            .size(star_size)
+                                            .color(if is_selected {
+                                                ui.style().visuals.text_color()
+                                            } else {
+                                                ui.style().visuals.weak_text_color()
+                                            }),
+                                    )
+                                    .frame(false),
+                                );
+
+                                if resp.hovered() {
+                                    Dependency::<crate::cursor_manager::CursorManager>::get()
+                                        .with_lock_mut(|cm| {
+                                            cm.set_cursor(egui::CursorIcon::PointingHand);
+                                        });
+                                }
+
+                                if resp.clicked() {
+                                    if current_rating == Some(i as u8) {
+                                        self.photo.set_rating(None);
+                                    } else {
+                                        self.photo.set_rating(Some(i as u8));
+                                    }
+                                }
+                            }
+                        });
 
                         ui.add_space(4.0);
 
@@ -123,12 +139,14 @@ impl<'a> PhotoInfo<'a> {
         });
 
         ui.ctx().input(|input| {
-            if input.key_down(Key::Num1) {
-                self.photo.set_rating(PhotoRating::Yes);
-            } else if input.key_down(Key::Num2) {
-                self.photo.set_rating(PhotoRating::Maybe);
-            } else if input.key_down(Key::Num3) {
-                self.photo.set_rating(PhotoRating::No);
+            if input.key_pressed(Key::Num1) {
+                self.photo.set_rating(Some(1));
+            } else if input.key_pressed(Key::Num2) {
+                self.photo.set_rating(Some(2));
+            } else if input.key_pressed(Key::Num3) {
+                self.photo.set_rating(Some(3));
+            } else if input.key_pressed(Key::Num0) {
+                self.photo.set_rating(None);
             }
         })
     }

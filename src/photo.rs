@@ -26,7 +26,6 @@ use chrono::{DateTime, Utc};
 use exif::{In, Reader, Tag, Value};
 use fxhash::hash64;
 use serde::{Deserialize, Serialize};
-use strum_macros::EnumIter;
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
@@ -477,28 +476,7 @@ impl PhotoMetadata {
     }
 }
 
-#[derive(Debug, Clone, Copy, EnumIter, PartialEq, Eq, Hash)]
-pub enum PhotoRating {
-    Yes = 0,
-    Maybe = 1,
-    No = 2,
-}
-
-impl Default for PhotoRating {
-    fn default() -> Self {
-        PhotoRating::Maybe
-    }
-}
-
-impl Display for PhotoRating {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PhotoRating::Yes => f.write_str("Yes"),
-            PhotoRating::Maybe => f.write_str("Maybe"),
-            PhotoRating::No => f.write_str("No"),
-        }
-    }
-}
+pub type PhotoRating = Option<u8>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Photo {

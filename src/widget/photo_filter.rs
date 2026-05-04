@@ -1,6 +1,5 @@
 use egui::{Response, Ui, Widget};
 use std::collections::HashSet;
-use strum::IntoEnumIterator;
 
 use crate::{model::photo_grouping::PhotoGrouping, photo::PhotoRating, photo_database::PhotoQuery};
 
@@ -21,7 +20,7 @@ pub struct PhotoFilterState {
 impl Default for PhotoFilterState {
     fn default() -> Self {
         Self {
-            enabled_ratings: PhotoRating::iter().collect(),
+            enabled_ratings: [None, Some(1), Some(2), Some(3)].into_iter().collect(),
             selected_tags: HashSet::new(),
             grouping: PhotoGrouping::default(),
             tag_chips_state: TagChipsState::new(),
@@ -38,7 +37,7 @@ impl PhotoFilterState {
     pub fn to_query(&self) -> PhotoQuery {
         PhotoQuery {
             ratings: if self.enabled_ratings.is_empty()
-                || self.enabled_ratings.len() == PhotoRating::iter().count()
+                || self.enabled_ratings.len() == 4
             {
                 None
             } else {
@@ -60,7 +59,7 @@ impl PhotoFilterState {
 
     /// Check if any filters are active (different from default)
     pub fn has_active_filters(&self) -> bool {
-        (self.enabled_ratings.len() != PhotoRating::iter().count()
+        (self.enabled_ratings.len() != 4
             && !self.enabled_ratings.is_empty())
             || !self.selected_tags.is_empty()
     }
@@ -138,10 +137,15 @@ impl<'a> PhotoFilter<'a> {
 
                                     ui.horizontal_wrapped(|ui| {
                                         ui.spacing_mut().item_spacing.x = 12.0;
-                                        for rating in PhotoRating::iter() {
+                                        for rating in [None, Some(1), Some(2), Some(3)] {
+                                            let label = match rating {
+                                                None => "Unrated".to_string(),
+                                                Some(1) => "1 Star".to_string(),
+                                                Some(n) => format!("{} Stars", n),
+                                            };
                                             let mut is_enabled = self.state.enabled_ratings.contains(&rating);
                                             let checkbox_response = ui.checkbox(&mut is_enabled,
-                                                egui::RichText::new(format!("{:?}", rating)).size(14.0));
+                                                egui::RichText::new(label).size(14.0));
 
                                             if checkbox_response.changed() {
                                                 if is_enabled {
@@ -271,7 +275,7 @@ impl<'a> PhotoFilter<'a> {
     fn count_active_filters(&self) -> usize {
         let mut count = 0;
 
-        if self.state.enabled_ratings.len() != PhotoRating::iter().count() {
+        if self.state.enabled_ratings.len() != 4 {
             count += 1;
         }
 
@@ -296,7 +300,7 @@ mod tests {
     #[test]
     fn test_default_filter_state() {
         let state = PhotoFilterState::default();
-        assert_eq!(state.enabled_ratings.len(), PhotoRating::iter().count());
+        assert_eq!(state.enabled_ratings.len(), 4);
         assert!(state.selected_tags.is_empty());
         assert_eq!(state.grouping, PhotoGrouping::default());
     }
@@ -312,13 +316,13 @@ mod tests {
 
         // Test with specific filters
         state.enabled_ratings.clear();
-        state.enabled_ratings.insert(PhotoRating::Yes);
+        state.enabled_ratings.insert(Some(3));
         state.selected_tags.insert("landscape".to_string());
 
         let query = state.to_query();
         let ratings = query.ratings.unwrap();
         assert_eq!(ratings.len(), 1);
-        assert!(ratings.contains(&PhotoRating::Yes));
+        assert!(ratings.contains(&Some(3)));
 
         let tags = query.tags.unwrap();
         assert_eq!(tags.len(), 1);
@@ -331,7 +335,7 @@ mod tests {
         assert!(!state.has_active_filters());
 
         // Remove one rating
-        state.enabled_ratings.remove(&PhotoRating::Maybe);
+        state.enabled_ratings.remove(&Some(2));
         assert!(state.has_active_filters());
 
         // Reset and add a tag
@@ -426,7 +430,7 @@ mod tests {
     fn test_photo_filter_widget_with_modified_ratings() {
         let mut state = PhotoFilterState::default();
         state.enabled_ratings.clear();
-        state.enabled_ratings.insert(PhotoRating::Yes);
+        state.enabled_ratings.insert(Some(3));
 
         let mut harness = Harness::new_ui(|ui| {
             let response = PhotoFilter::new(&mut state).show(ui);
@@ -444,7 +448,7 @@ mod tests {
         assert_eq!(filter.count_active_filters(), 0);
 
         let mut state = PhotoFilterState::default();
-        state.enabled_ratings.remove(&PhotoRating::Maybe);
+        state.enabled_ratings.remove(&Some(2));
         let filter = PhotoFilter::new(&mut state);
         assert_eq!(filter.count_active_filters(), 1);
 
@@ -457,7 +461,7 @@ mod tests {
         // Comprehensive filter widget test with all features
         let mut state = PhotoFilterState::default();
         state.enabled_ratings.clear();
-        state.enabled_ratings.insert(PhotoRating::Yes);
+        state.enabled_ratings.insert(Some(3));
         state.selected_tags.insert("landscape".to_string());
 
         let available_tags = vec![
