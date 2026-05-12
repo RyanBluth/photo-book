@@ -78,6 +78,7 @@ impl<'a> Pages<'a> {
 
         ui.allocate_ui(table_size, |ui| {
             egui_extras::TableBuilder::new(ui)
+                .id_salt("pages_table")
                 .min_scrolled_height(table_size.y)
                 .drag_to_scroll(false)
                 .auto_shrink(false)

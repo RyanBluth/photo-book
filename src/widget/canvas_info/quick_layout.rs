@@ -105,6 +105,7 @@ impl<'a> QuickLayout<'a> {
             self.state.margin = new_margin;
 
             egui_extras::TableBuilder::new(ui)
+                .id_salt("quick_layouts_table")
                 .min_scrolled_height(available_height)
                 .columns(Column::exact(column_width), num_columns)
                 .column(Column::exact(spacer_width))
@@ -168,9 +169,8 @@ impl<'a> QuickLayout<'a> {
     fn available_layouts(&self) -> Vec<LayoutNode> {
         use std::sync::LazyLock;
 
-        static PRESETS: LazyLock<Vec<template::LayoutPreset>> = LazyLock::new(|| {
-            template::load_presets(include_str!("../../../layouts/presets.ron"))
-        });
+        static PRESETS: LazyLock<Vec<template::LayoutPreset>> =
+            LazyLock::new(|| template::load_presets(include_str!("../../../layouts/presets.ron")));
 
         let n = self.canvas_state.quick_layout_order.len();
 

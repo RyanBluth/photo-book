@@ -17,7 +17,6 @@ use crate::{
     photo_manager::PhotoManager,
 };
 
-
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
 #[derive(Debug, Clone)]
@@ -151,6 +150,7 @@ impl<'a> ImageGallery<'a> {
                     };
 
                     let mut builder = egui_extras::TableBuilder::new(ui)
+                        .id_salt("image_gallery_table")
                         .min_scrolled_height(table_size.y)
                         .auto_shrink(false)
                         .columns(Column::exact(column_width), num_columns)

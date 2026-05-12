@@ -1,8 +1,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use egui::{Image, ImageSource, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2};
-use egui_extras::{Column, TableBuilder};
+use egui::{Image, ImageSource, Rect, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, Vec2};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -71,12 +70,15 @@ impl<'a> FileTree<'a> {
             .filter(|item| self.is_path_visible(item))
             .collect();
 
-        let max_depth = visible_items.len();
+        let max_depth = visible_items
+            .iter()
+            .map(|item| item.depth)
+            .max()
+            .unwrap_or(0);
 
         let row_height = 24.0;
-        let heights: Vec<f32> = vec![row_height; visible_items.len()];
 
-        let column_width = BASE_WIDTH + (max_depth as f32 * INDENT_WIDTH);
+        let min_column_width = BASE_WIDTH + (max_depth as f32 * INDENT_WIDTH);
 
         let mut row_to_scroll: Option<usize> = None;
         if let Some(path_to_scroll) = scroll_to_path {
@@ -98,21 +100,24 @@ impl<'a> FileTree<'a> {
             }
         }
 
-        let mut builder = TableBuilder::new(&mut table_ui)
-            .cell_layout(egui::Layout::left_to_right(egui::Align::Min))
-            .column(Column::exact(column_width))
-            .resizable(true);
+        let mut scroll_area = ScrollArea::vertical()
+            .id_salt("file_tree_scroll")
+            .auto_shrink([false, false]);
 
         if let Some(row) = row_to_scroll {
-            builder = builder.scroll_to_row(row, None);
+            let row_stride = row_height + table_ui.spacing().item_spacing.y;
+            scroll_area = scroll_area.vertical_scroll_offset(row as f32 * row_stride);
         }
 
-        builder.body(|body| {
-            body.heterogeneous_rows(heights.into_iter(), |mut row| {
-                let row_index = row.index();
-                if row_index < visible_items.len() {
-                    let item = visible_items[row_index];
-                    row.col(|ui| {
+        scroll_area.show_rows(
+            &mut table_ui,
+            row_height,
+            visible_items.len(),
+            |ui, row_range| {
+                ui.set_width(ui.available_width().max(min_column_width));
+
+                for row_index in row_range {
+                    if let Some(item) = visible_items.get(row_index) {
                         let (selected, double_clicked, removed) = self.draw_tree_item(ui, item);
                         if let Some(path) = selected {
                             selected_path_this_frame = Some(path);
@@ -123,10 +128,10 @@ impl<'a> FileTree<'a> {
                         if let Some(path) = removed {
                             removed_path_this_frame = Some(path);
                         }
-                    });
+                    }
                 }
-            });
-        });
+            },
+        );
 
         FileTreeResponse {
             _response: outer_response,
@@ -190,8 +195,11 @@ impl<'a> FileTree<'a> {
                 FileTreeNode::Directory(path, children) if !children.is_empty() => {
                     let is_expanded = self.state.expanded_directories.contains(path);
 
-                    let icon = if is_expanded { '▼' } else { '▶' };
-                    let arrow_response = ui.selectable_label(false, icon.to_string());
+                    let id = ui.make_persistent_id(path);
+                    let openness = ui.ctx().animate_bool(id, is_expanded);
+                    let (_arrow_rect, arrow_response) =
+                        ui.allocate_exact_size(Vec2::splat(14.0), Sense::click());
+                    egui::collapsing_header::paint_default_icon(ui, openness, &arrow_response);
 
                     if arrow_response.clicked() {
                         if is_expanded {

@@ -1,4 +1,5 @@
 pub mod action_bar;
+pub mod album_list;
 pub mod auto_center;
 pub mod canvas;
 pub mod canvas_info;
@@ -10,10 +11,12 @@ pub mod file_tree;
 pub mod gallery_image;
 pub mod image_gallery;
 pub mod image_viewer;
+pub mod left_sidebar;
 pub mod pages;
 pub mod photo_filter;
 pub mod photo_info;
 pub mod placeholder;
+pub mod sectioned_sidebar;
 pub mod segment_control;
 pub mod spacer;
 pub mod tag_chips;

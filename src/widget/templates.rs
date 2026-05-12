@@ -56,6 +56,7 @@ impl<'a> Templates<'a> {
         let mut clicked_template = None;
 
         egui_extras::TableBuilder::new(ui)
+            .id_salt("templates_table")
             .min_scrolled_height(window_height)
             .columns(Column::exact(column_width), num_columns)
             .column(Column::exact(spacer_width))

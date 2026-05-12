@@ -48,6 +48,7 @@ impl<'a> HistoryInfo<'a> {
             let available_width = ui.available_width();
 
             TableBuilder::new(ui)
+                .id_salt("undo_history_table")
                 .column(Column::exact(available_width))
                 .striped(true)
                 .body(|body| {
