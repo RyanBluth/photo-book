@@ -1,18 +1,16 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use egui::{Image, ImageSource, Rect, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, Vec2};
+use egui::{Response, Sense, Ui};
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dependencies::{Dependency, SingletonFor},
     file_tree::{FileTreeNode, FlattenedTreeItem},
     photo_manager::PhotoManager,
-    theme,
+    widget::tree_list::{INDENT_WIDTH, ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow},
 };
 
-const INDENT_WIDTH: f32 = 20.0;
 const BASE_WIDTH: f32 = 200.0;
-const THUMBNAIL_SIZE: f32 = 16.0;
 
 #[derive(Debug, Clone)]
 pub struct FileTreeState {
@@ -56,27 +54,17 @@ impl<'a> FileTree<'a> {
         let mut double_clicked_path_this_frame: Option<PathBuf> = None;
         let mut removed_path_this_frame: Option<PathBuf> = None;
 
-        let outer_response = ui.allocate_response(ui.available_size(), egui::Sense::click());
-        let mut table_ui = ui.new_child(
-            UiBuilder::new()
-                .max_rect(outer_response.rect)
-                .layout(*ui.layout()),
-        );
-
         let items = Dependency::<PhotoManager>::get()
             .with_lock_mut(|pm| pm.photo_database.get_flattened_file_trees());
         let visible_items: Vec<&FlattenedTreeItem> = items
             .iter()
             .filter(|item| self.is_path_visible(item))
             .collect();
-
         let max_depth = visible_items
             .iter()
             .map(|item| item.depth)
             .max()
             .unwrap_or(0);
-
-        let row_height = 24.0;
 
         let min_column_width = BASE_WIDTH + (max_depth as f32 * INDENT_WIDTH);
 
@@ -100,38 +88,53 @@ impl<'a> FileTree<'a> {
             }
         }
 
-        let mut scroll_area = ScrollArea::vertical()
+        let mut disclosure_clicked_path: Option<PathBuf> = None;
+
+        let outer_response = TreeList::new(ui)
             .id_salt("file_tree_scroll")
-            .auto_shrink([false, false]);
+            .min_width(min_column_width)
+            .scroll_to_row_top(row_to_scroll)
+            .body(|body| {
+                body.rows(ROW_HEIGHT, visible_items.len(), |mut row| {
+                    let response = row.add(self.row_for_item(visible_items[row.index()]));
 
-        if let Some(row) = row_to_scroll {
-            let row_stride = row_height + table_ui.spacing().item_spacing.y;
-            scroll_area = scroll_area.vertical_scroll_offset(row as f32 * row_stride);
-        }
-
-        scroll_area.show_rows(
-            &mut table_ui,
-            row_height,
-            visible_items.len(),
-            |ui, row_range| {
-                ui.set_width(ui.available_width().max(min_column_width));
-
-                for row_index in row_range {
-                    if let Some(item) = visible_items.get(row_index) {
-                        let (selected, double_clicked, removed) = self.draw_tree_item(ui, item);
-                        if let Some(path) = selected {
+                    if response.disclosure_clicked() {
+                        disclosure_clicked_path = Some(response.id().clone());
+                    } else if response.clicked() {
+                        let path = response.id().clone();
+                        let new_selected = Some(path.clone());
+                        if self.state.selected_node != new_selected {
+                            self.state.selected_node = new_selected;
                             selected_path_this_frame = Some(path);
                         }
-                        if let Some(path) = double_clicked {
-                            double_clicked_path_this_frame = Some(path);
-                        }
-                        if let Some(path) = removed {
-                            removed_path_this_frame = Some(path);
-                        }
                     }
-                }
-            },
-        );
+
+                    if response.double_clicked() {
+                        double_clicked_path_this_frame = Some(response.id().clone());
+                    }
+
+                    let mut remove_clicked = false;
+                    response.response().context_menu(|ui| {
+                        if ui.button("Remove").clicked() {
+                            remove_clicked = true;
+                            ui.close();
+                        }
+                    });
+
+                    if remove_clicked {
+                        removed_path_this_frame = Some(response.id().clone());
+                    }
+                });
+            });
+
+        if let Some(path) = disclosure_clicked_path {
+            if self.state.expanded_directories.contains(&path) {
+                self.state.expanded_directories.remove(&path);
+                self.collapse_all_subdirectories(&path);
+            } else {
+                self.state.expanded_directories.insert(path);
+            }
+        }
 
         FileTreeResponse {
             _response: outer_response,
@@ -141,18 +144,9 @@ impl<'a> FileTree<'a> {
         }
     }
 
-    fn draw_tree_item(
-        &mut self,
-        ui: &mut egui::Ui,
-        item: &FlattenedTreeItem,
-    ) -> (Option<PathBuf>, Option<PathBuf>, Option<PathBuf>) {
-        let mut selected_path: Option<PathBuf> = None;
-        let mut double_clicked_path: Option<PathBuf> = None;
-        let mut removed_path: Option<PathBuf> = None;
-
+    fn row_for_item(&self, item: &FlattenedTreeItem) -> TreeListRow<PathBuf> {
         let item_path = item.node.path().clone();
-
-        let display_text = if item.is_root {
+        let title = if item.is_root {
             item.node.path().to_string_lossy().to_string()
         } else {
             item.node
@@ -162,120 +156,23 @@ impl<'a> FileTree<'a> {
                 .to_string_lossy()
                 .to_string()
         };
-
         let is_selected = self.state.selected_node.as_ref() == Some(&item_path);
 
-        let bg_color = if is_selected {
-            Some(ui.visuals().selection.bg_fill)
-        } else {
-            None
-        };
-
-        let (rect, response) = ui.allocate_at_least(
-            egui::vec2(ui.available_width(), 24.0),
-            egui::Sense::click_and_drag(),
-        );
-
-        if let Some(color) = bg_color {
-            ui.painter().rect_filled(rect, 0.0, color);
-        }
-
-        let mut content_ui = ui.new_child(
-            UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-
-        let indent_space = item.depth as f32 * INDENT_WIDTH;
-
-        content_ui.horizontal(|ui| {
-            ui.add_space(indent_space);
-
-            match &item.node {
-                FileTreeNode::Directory(path, children) if !children.is_empty() => {
-                    let is_expanded = self.state.expanded_directories.contains(path);
-
-                    let id = ui.make_persistent_id(path);
-                    let openness = ui.ctx().animate_bool(id, is_expanded);
-                    let (_arrow_rect, arrow_response) =
-                        ui.allocate_exact_size(Vec2::splat(14.0), Sense::click());
-                    egui::collapsing_header::paint_default_icon(ui, openness, &arrow_response);
-
-                    if arrow_response.clicked() {
-                        if is_expanded {
-                            self.state.expanded_directories.remove(path);
-                            self.collapse_all_subdirectories(path);
-                        } else {
-                            self.state.expanded_directories.insert(path.clone());
-                        }
-                    }
-                    ui.label(RichText::new(display_text));
-                }
-                FileTreeNode::File(path) => {
-                    let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
-                    let photo_clone =
-                        photo_manager.with_lock(|pm| pm.photo_database.get_photo(path).cloned());
-
-                    let texture_handle = if let Some(photo) = photo_clone {
-                        photo_manager.with_lock_mut(|pm| {
-                            match pm.thumbnail_texture_for(&photo, ui.ctx()) {
-                                Ok(Some(texture)) => Some(texture),
-                                _ => None,
-                            }
-                        })
-                    } else {
-                        None
-                    };
-
-                    if let Some(handle) = texture_handle {
-                        ui.add(
-                            Image::new(ImageSource::Texture(handle))
-                                .max_size(Vec2::splat(THUMBNAIL_SIZE)),
-                        );
-                    } else {
-                        let next_pos = ui.next_widget_position();
-                        let rect = Rect::from_min_max(
-                            next_pos,
-                            next_pos + Vec2::new(THUMBNAIL_SIZE, THUMBNAIL_SIZE),
-                        );
-                        ui.allocate_rect(rect, Sense::hover());
-                        ui.painter()
-                            .rect_filled(rect, 0.0, theme::color::PLACEHOLDER);
-                    }
-                    ui.add_space(4.0);
-                    ui.label(RichText::new(display_text));
-                }
-
-                _ => {
-                    // Add space for alignment where files/empty dirs don't have arrows
-                    ui.add_space(14.0); // Approximate width of the arrow button
-                    ui.label(RichText::new(display_text));
-                }
-            }
-        });
-
-        if response.clicked() {
-            let new_selected = Some(item_path.clone());
-            if self.state.selected_node != new_selected {
-                self.state.selected_node = new_selected.clone();
-                selected_path = new_selected;
+        match &item.node {
+            FileTreeNode::Directory(path, children) => TreeListRow::header(
+                item_path,
+                item.depth,
+                title,
+                !children.is_empty(),
+                self.state.expanded_directories.contains(path),
+            ),
+            FileTreeNode::File(path) => {
+                TreeListRow::photo(item_path, item.depth, title, path.clone())
             }
         }
-
-        if response.double_clicked() {
-            double_clicked_path = Some(item_path.clone());
-        }
-
-        // Show context menu on right click
-        response.context_menu(|ui| {
-            if ui.button("Remove").clicked() {
-                removed_path = Some(item_path.clone());
-                ui.close();
-            }
-        });
-
-        (selected_path, double_clicked_path, removed_path)
+        .selected(is_selected)
+        .selection_style(SelectionStyle::Background)
+        .sense(Sense::click_and_drag())
     }
 
     fn collapse_all_subdirectories(&mut self, path: &PathBuf) {

@@ -17,8 +17,7 @@ use crate::{
         canvas::types::{IdleTool, ToolState},
         canvas_info::layers::{
             CanvasText, Layer, LayerContent, LayerTransformEditState, LineToolSettings,
-            ShapeToolSettings, TextHorizontalAlignment, TextToolSettings,
-            TextVerticalAlignment,
+            ShapeToolSettings, TextHorizontalAlignment, TextToolSettings, TextVerticalAlignment,
         },
         transformable::{TransformHandleMode, TransformableState},
     },

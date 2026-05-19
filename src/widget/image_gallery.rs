@@ -352,6 +352,38 @@ fn add_filter_menu(ui: &mut egui::Ui) {
                 }
             });
 
+            ui.menu_button("Albums", |ui| {
+                let mut new_filter = get_current_filter();
+                let mut available_albums = photo_manager.with_lock(|pm| {
+                    pm.albums_iter()
+                        .map(|album| (album.id.clone(), album.name.clone()))
+                        .collect::<Vec<_>>()
+                });
+                available_albums.sort_by(|(_, left), (_, right)| {
+                    left.to_lowercase().cmp(&right.to_lowercase())
+                });
+
+                if ui.radio(new_filter.album.is_none(), "All Albums").clicked() {
+                    new_filter.album = None;
+                }
+
+                if available_albums.is_empty() {
+                    ui.label("No Albums");
+                } else {
+                    ui.separator();
+                    for (album_id, album_name) in available_albums {
+                        let is_selected = new_filter.album.as_ref() == Some(&album_id);
+                        if ui.radio(is_selected, &album_name).clicked() {
+                            new_filter.album = Some(album_id);
+                        }
+                    }
+                }
+
+                if get_current_filter() != new_filter {
+                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                }
+            });
+
             ui.menu_button("Grouping", |ui| {
                 let new_grouping = photo_manager.with_lock(|pm| pm.get_current_filter().grouping);
 

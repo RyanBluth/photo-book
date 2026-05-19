@@ -2,6 +2,7 @@ use std::any::Any;
 
 pub mod basic;
 pub mod manager;
+pub mod new_album;
 pub mod page_settings;
 pub mod photo_filter;
 pub mod progress;

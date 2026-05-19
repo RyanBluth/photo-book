@@ -1,11 +1,14 @@
 use std::path::PathBuf;
 
-use egui::{Response, Sense, Ui, Vec2};
+use egui::Ui;
 
-use crate::widget::{
-    album_list::{AlbumList, AlbumListResponse, AlbumListState},
-    file_tree::{FileTree, FileTreeResponse, FileTreeState},
-    sectioned_sidebar::{SectionedSidebarBuilder, section::CollapsableSectionState},
+use crate::{
+    modal::{manager::ModalManager, new_album::NewAlbumModal},
+    widget::{
+        album_list::{AlbumList, AlbumListResponse, AlbumListState},
+        file_tree::{FileTree, FileTreeResponse, FileTreeState},
+        sectioned_sidebar::{SectionedSidebarBuilder, section::CollapsableSectionState},
+    },
 };
 
 #[derive(Debug, Clone)]
@@ -51,15 +54,24 @@ impl<'a> LeftSidebar<'a> {
                 file_tree_response =
                     Some(FileTree::new(&mut self.state.file_tree_state).show(ui, scroll_to_path));
             })
-            .section(ui, &mut self.state.album_list_section_state, |ui| {
-                album_list_response =
-                    Some(AlbumList::new(&mut self.state.album_list_state).show(ui));
-            })
+            .section_with_action(
+                ui,
+                &mut self.state.album_list_section_state,
+                "+",
+                "New album",
+                || {
+                    ModalManager::push(NewAlbumModal::new());
+                },
+                |ui| {
+                    album_list_response =
+                        Some(AlbumList::new(&mut self.state.album_list_state).show(ui));
+                },
+            )
             .show(ui);
 
         LeftSidebarResponse {
-            album_list_response: album_list_response,
             file_tree_response: file_tree_response,
+            album_list_response: album_list_response,
         }
     }
 }

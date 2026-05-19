@@ -36,9 +36,7 @@ impl PhotoFilterState {
     /// Convert the filter state to a PhotoQuery
     pub fn to_query(&self) -> PhotoQuery {
         PhotoQuery {
-            ratings: if self.enabled_ratings.is_empty()
-                || self.enabled_ratings.len() == 4
-            {
+            ratings: if self.enabled_ratings.is_empty() || self.enabled_ratings.len() == 4 {
                 None
             } else {
                 Some(self.enabled_ratings.iter().copied().collect())
@@ -48,6 +46,7 @@ impl PhotoFilterState {
             } else {
                 Some(self.selected_tags.iter().cloned().collect::<Vec<String>>())
             },
+            album: None,
             grouping: self.grouping,
         }
     }
@@ -59,8 +58,7 @@ impl PhotoFilterState {
 
     /// Check if any filters are active (different from default)
     pub fn has_active_filters(&self) -> bool {
-        (self.enabled_ratings.len() != 4
-            && !self.enabled_ratings.is_empty())
+        (self.enabled_ratings.len() != 4 && !self.enabled_ratings.is_empty())
             || !self.selected_tags.is_empty()
     }
 }

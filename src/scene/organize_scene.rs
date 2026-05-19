@@ -115,6 +115,83 @@ struct GalleryTreeBehavior<'a> {
 }
 
 impl GalleryTreeBehavior<'_> {
+    fn open_photo(&mut self, path: &PathBuf) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock(|photo_manager| {
+            if let Some(photo) = photo_manager.photo_database.get_photo(path) {
+                self.navigator
+                    .push(SceneTransition::Viewer(ViewerScene::new(photo.clone())));
+            }
+        });
+    }
+
+    fn select_photo_in_gallery(&mut self, path: &PathBuf) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+
+        photo_manager.with_lock(|photo_manager| {
+            if let Some(photo) = photo_manager.photo_database.get_photo(path) {
+                self.scene_state.image_gallery_state.selected_images.clear();
+                self.scene_state
+                    .image_gallery_state
+                    .selected_images
+                    .insert(photo.path.clone());
+                self.scene_state.scroll_gallery_to_path = Some(photo.path.clone());
+            }
+        });
+    }
+
+    fn select_photo_in_file_tree(&mut self, path: PathBuf) {
+        self.scene_state
+            .left_sidebar_state
+            .file_tree_state
+            .selected_node = Some(path.clone());
+
+        self.expand_file_tree_parent_directories(&path);
+        self.scene_state.scroll_file_tree_to_path = Some(path);
+    }
+
+    fn expand_file_tree_parent_directories(&mut self, path: &PathBuf) {
+        let mut current_path = path.clone();
+        while let Some(parent) = current_path.parent() {
+            if parent.as_os_str().is_empty() {
+                break;
+            }
+
+            self.scene_state
+                .left_sidebar_state
+                .file_tree_state
+                .expanded_directories
+                .insert(parent.to_path_buf());
+            current_path = parent.to_path_buf();
+        }
+    }
+
+    fn apply_album_filter(&mut self, album_id: String) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|photo_manager| {
+            let mut filter = photo_manager.get_current_filter().clone();
+            filter.album = Some(album_id);
+            photo_manager.set_current_filter(filter);
+        });
+
+        self.scene_state.image_gallery_state.selected_images.clear();
+        self.scene_state
+            .left_sidebar_state
+            .file_tree_state
+            .selected_node = None;
+    }
+
+    fn remove_photo(&mut self, path: &PathBuf) {
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        photo_manager.with_lock_mut(|photo_manager| {
+            photo_manager.photo_database.remove_photo(path);
+            self.scene_state
+                .image_gallery_state
+                .selected_images
+                .remove(path);
+        });
+    }
+
     fn ui(&mut self, pane: &GalleryScenePane, ui: &mut egui::Ui) -> UiResponse {
         match pane {
             GalleryScenePane::Gallery => {
@@ -137,31 +214,7 @@ impl GalleryTreeBehavior<'_> {
 
                 // Handle selection changes in gallery for file tree synchronization
                 if let Some(selected_photo) = gallery_response.selected_photo {
-                    // Synchronize file tree selection
-                    self.scene_state
-                        .left_sidebar_state
-                        .file_tree_state
-                        .selected_node = Some(selected_photo.path.clone());
-
-                    // Ensure parent directories are expanded when selecting from gallery
-                    // This is important to make the selected node visible in the tree
-                    let mut current_path = selected_photo.path.clone();
-                    while let Some(parent) = current_path.parent() {
-                        if !parent.as_os_str().is_empty() {
-                            // Add the parent to expanded directories
-                            self.scene_state
-                                .left_sidebar_state
-                                .file_tree_state
-                                .expanded_directories
-                                .insert(parent.to_path_buf());
-                            current_path = parent.to_path_buf();
-                        } else {
-                            break;
-                        }
-                    }
-
-                    // Mark path for file tree to scroll to in the next frame
-                    self.scene_state.scroll_file_tree_to_path = Some(selected_photo.path);
+                    self.select_photo_in_file_tree(selected_photo.path);
                 }
 
                 // Handle selection clearing
@@ -207,6 +260,20 @@ impl GalleryTreeBehavior<'_> {
                 let sidebar_response = LeftSidebar::new(&mut self.scene_state.left_sidebar_state)
                     .show(ui, self.scene_state.scroll_file_tree_to_path.as_ref());
 
+                if let Some(album_list_response) = sidebar_response.album_list_response {
+                    if let Some(album_id) = album_list_response.selected {
+                        self.apply_album_filter(album_id);
+                    }
+
+                    if let Some(selected_path) = album_list_response.selected_photo {
+                        self.select_photo_in_gallery(&selected_path);
+                    }
+
+                    if let Some(double_clicked_path) = album_list_response.double_clicked_photo {
+                        self.open_photo(&double_clicked_path);
+                    }
+                }
+
                 if let Some(file_tree_response) = sidebar_response.file_tree_response {
                     // Clear the scroll target after it's been used
                     self.scene_state.scroll_file_tree_to_path = None;
@@ -214,53 +281,18 @@ impl GalleryTreeBehavior<'_> {
                     // Handle file tree responses
                     if let Some(selected_path) = file_tree_response.selected {
                         // When a file is selected in the tree, update the gallery selection
-                        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
-                        photo_manager.with_lock(|photo_manager| {
-                            if let Some(photo) =
-                                photo_manager.photo_database.get_photo(&selected_path)
-                            {
-                                // Clear current selection
-                                self.scene_state.image_gallery_state.selected_images.clear();
-                                // Select this photo in the gallery
-                                self.scene_state
-                                    .image_gallery_state
-                                    .selected_images
-                                    .insert(photo.path.clone());
-                                // Mark this path for the gallery to scroll to in the next frame
-                                self.scene_state.scroll_gallery_to_path = Some(photo.path.clone());
-                            }
-                        });
+                        self.select_photo_in_gallery(&selected_path);
                     }
 
                     // Handle double-clicks in the file tree
                     if let Some(double_clicked_path) = file_tree_response.double_clicked {
                         // When an image file is double-clicked, open it in the viewer
-                        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                        photo_manager.with_lock(|photo_manager| {
-                            if let Some(photo) =
-                                photo_manager.photo_database.get_photo(&double_clicked_path)
-                            {
-                                let photo_clone = photo.clone();
-                                self.navigator
-                                    .push(SceneTransition::Viewer(ViewerScene::new(photo_clone)));
-                            }
-                        });
+                        self.open_photo(&double_clicked_path);
                     }
 
                     // Handle file removal from the file tree
                     if let Some(removed_path) = file_tree_response.removed {
-                        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                        photo_manager.with_lock_mut(|photo_manager| {
-                            // Remove the photo from the database (this will also remove from file collection)
-                            photo_manager.photo_database.remove_photo(&removed_path);
-
-                            // If this photo was selected in the gallery, clear the selection
-                            self.scene_state
-                                .image_gallery_state
-                                .selected_images
-                                .remove(&removed_path);
-                        });
+                        self.remove_photo(&removed_path);
                     }
                 }
 

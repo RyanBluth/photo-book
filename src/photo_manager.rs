@@ -22,7 +22,10 @@ use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 use crate::{
     dependencies::Dependency,
     dirs::Dirs,
-    model::{album::Album, photo_grouping::PhotoGrouping},
+    model::{
+        album::{Album, AlbumId},
+        photo_grouping::PhotoGrouping,
+    },
     photo::{Photo, PhotoRating},
     photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
 };
@@ -736,31 +739,39 @@ impl PhotoManager {
         self.current_filter = PhotoQuery::default();
     }
 
-    pub fn album_names_iter(&self) -> impl Iterator<Item = &String> {
-        self.photo_database.album_names_iter()
+    pub fn albums_iter(&self) -> impl Iterator<Item = &Album> {
+        self.photo_database.albums_iter()
     }
 
-    pub fn album_photos_iter(&self, album_name: &String) -> impl Iterator<Item = &PathBuf> {
-        self.photo_database.album_photos_iter(album_name)
+    pub fn album_photos_iter(&mut self, album_id: &AlbumId) -> impl Iterator<Item = &PathBuf> {
+        self.photo_database.album_photos_iter(album_id)
     }
 
-    pub fn add_to_album(&mut self, album_name: &String, photo_path: &PathBuf) {
-        self.photo_database.add_to_album(album_name, photo_path);
+    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+        self.photo_database.add_to_album(album_id, photo_path);
     }
 
-    pub fn remove_from_album(&mut self, album_name: &String, photo_path: &PathBuf) {
-        self.photo_database.remove_from_album(album_name, photo_path);
+    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+        self.photo_database.remove_from_album(album_id, photo_path);
     }
 
-    pub fn create_album(&mut self, album_name: &String) {
-        self.photo_database.create_album(album_name);
+    pub fn get_photo_albums(&self, photo_path: &PathBuf) -> HashSet<AlbumId> {
+        self.photo_database.get_photo_albums(photo_path)
     }
 
-    pub fn rename_album(&mut self, album_name: &String, new_name: &String) {
-        self.photo_database.rename_album(album_name, new_name);
+    pub fn create_album(&mut self, album_name: &String) -> Option<AlbumId> {
+        self.photo_database.create_album(album_name)
     }
 
-    pub fn delete_album(&mut self, album_name: &String) {
-        self.photo_database.delete_album(album_name);
+    pub fn insert_album(&mut self, album: Album) -> Option<AlbumId> {
+        self.photo_database.insert_album(album)
+    }
+
+    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &String) {
+        self.photo_database.rename_album(album_id, new_name);
+    }
+
+    pub fn delete_album(&mut self, album_id: &AlbumId) {
+        self.photo_database.delete_album(album_id);
     }
 }

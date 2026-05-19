@@ -73,11 +73,8 @@ impl GridLayout {
     }
 
     fn layout_vertical(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
-        let num_rows_target_per_column =
-            (items.len() as f32).sqrt().ceil().max(1.0) as usize;
-        let columns: Vec<&[LayoutItem]> = items
-            .chunks(num_rows_target_per_column)
-            .collect();
+        let num_rows_target_per_column = (items.len() as f32).sqrt().ceil().max(1.0) as usize;
+        let columns: Vec<&[LayoutItem]> = items.chunks(num_rows_target_per_column).collect();
 
         if columns.is_empty() {
             return IndexMap::new();
@@ -85,8 +82,7 @@ impl GridLayout {
         let num_columns = columns.len();
 
         let total_gaps_width = self.gap * (num_columns.saturating_sub(1) as f32);
-        let available_width =
-            self.width - self.margin.left - self.margin.right - total_gaps_width;
+        let available_width = self.width - self.margin.left - self.margin.right - total_gaps_width;
         let column_width = (available_width / num_columns as f32).max(0.0);
         let stack_height = self.height - self.margin.top - self.margin.bottom;
 
@@ -110,19 +106,18 @@ impl GridLayout {
                 })
                 .collect(),
             GridDistribution::CenterWeighted => {
-                let item_dimensions_per_column: Vec<IndexMap<usize, Vec2>> =
-                    columns
-                        .iter()
-                        .map(|column_items| {
-                            StackLayout::calculate_vertical_item_dimensions(
-                                column_width,
-                                stack_height,
-                                self.gap,
-                                Margin::none(),
-                                column_items,
-                            )
-                        })
-                        .collect();
+                let item_dimensions_per_column: Vec<IndexMap<usize, Vec2>> = columns
+                    .iter()
+                    .map(|column_items| {
+                        StackLayout::calculate_vertical_item_dimensions(
+                            column_width,
+                            stack_height,
+                            self.gap,
+                            Margin::none(),
+                            column_items,
+                        )
+                    })
+                    .collect();
 
                 let max_rows = item_dimensions_per_column
                     .iter()
@@ -134,8 +129,7 @@ impl GridLayout {
                 for dim_map in &item_dimensions_per_column {
                     for (row_idx, size) in dim_map.values().enumerate() {
                         if row_idx < common_row_heights.len() {
-                            common_row_heights[row_idx] =
-                                common_row_heights[row_idx].min(size.y);
+                            common_row_heights[row_idx] = common_row_heights[row_idx].min(size.y);
                         }
                     }
                 }
@@ -144,11 +138,9 @@ impl GridLayout {
                 let total_rows_content_height: f32 = common_row_heights.iter().sum();
                 let total_rows_gaps_height =
                     (common_row_heights.len().saturating_sub(1)) as f32 * self.gap;
-                let total_grid_block_height =
-                    total_rows_content_height + total_rows_gaps_height;
+                let total_grid_block_height = total_rows_content_height + total_rows_gaps_height;
 
-                let vertical_offset =
-                    (stack_height - total_grid_block_height).max(0.0) / 2.0;
+                let vertical_offset = (stack_height - total_grid_block_height).max(0.0) / 2.0;
 
                 columns
                     .iter()
@@ -164,7 +156,8 @@ impl GridLayout {
                             distribution: StackLayoutDistribution::CenterWeightedGrid {
                                 main_axis_sizes: common_row_heights.clone(),
                             },
-                            x: self.x + self.margin.left
+                            x: self.x
+                                + self.margin.left
                                 + col_idx as f32 * (column_width + self.gap),
                             y: self.y + self.margin.top + vertical_offset,
                         }
@@ -186,10 +179,7 @@ impl GridLayout {
             temp_rows[idx % num_rows].push(item.clone());
         }
 
-        let rows: Vec<Vec<LayoutItem>> = temp_rows
-            .into_iter()
-            .filter(|r| !r.is_empty())
-            .collect();
+        let rows: Vec<Vec<LayoutItem>> = temp_rows.into_iter().filter(|r| !r.is_empty()).collect();
 
         if rows.is_empty() {
             return IndexMap::new();
@@ -222,19 +212,18 @@ impl GridLayout {
                 })
                 .collect(),
             GridDistribution::CenterWeighted => {
-                let item_dimensions_per_row: Vec<IndexMap<usize, Vec2>> =
-                    rows
-                        .iter()
-                        .map(|row_items| {
-                            StackLayout::calculate_horizontal_item_dimensions(
-                                stack_width,
-                                row_height,
-                                self.gap,
-                                Margin::none(),
-                                row_items.as_slice(),
-                            )
-                        })
-                        .collect();
+                let item_dimensions_per_row: Vec<IndexMap<usize, Vec2>> = rows
+                    .iter()
+                    .map(|row_items| {
+                        StackLayout::calculate_horizontal_item_dimensions(
+                            stack_width,
+                            row_height,
+                            self.gap,
+                            Margin::none(),
+                            row_items.as_slice(),
+                        )
+                    })
+                    .collect();
 
                 // Compute common column widths (min width per column across rows)
                 let max_columns = item_dimensions_per_row
@@ -257,35 +246,25 @@ impl GridLayout {
                 let total_cols_content_width: f32 = common_column_widths.iter().sum();
                 let total_cols_gaps_width =
                     (common_column_widths.len().saturating_sub(1)) as f32 * self.gap;
-                let total_grid_block_width =
-                    total_cols_content_width + total_cols_gaps_width;
+                let total_grid_block_width = total_cols_content_width + total_cols_gaps_width;
 
-                let horizontal_offset =
-                    (stack_width - total_grid_block_width).max(0.0) / 2.0;
+                let horizontal_offset = (stack_width - total_grid_block_width).max(0.0) / 2.0;
 
                 // Compute actual content height per row (max item height in each row)
                 let row_content_heights: Vec<f32> = item_dimensions_per_row
                     .iter()
-                    .map(|dim_map| {
-                        dim_map
-                            .values()
-                            .map(|size| size.y)
-                            .fold(0.0, f32::max)
-                    })
+                    .map(|dim_map| dim_map.values().map(|size| size.y).fold(0.0, f32::max))
                     .collect();
 
                 let total_rows_content_height: f32 = row_content_heights.iter().sum();
                 let total_rows_gaps_height =
                     (row_content_heights.len().saturating_sub(1)) as f32 * self.gap;
-                let total_grid_block_height =
-                    total_rows_content_height + total_rows_gaps_height;
+                let total_grid_block_height = total_rows_content_height + total_rows_gaps_height;
                 let full_height = self.height - self.margin.top - self.margin.bottom;
-                let vertical_offset =
-                    (full_height - total_grid_block_height).max(0.0) / 2.0;
+                let vertical_offset = (full_height - total_grid_block_height).max(0.0) / 2.0;
 
                 let mut current_y = self.y + self.margin.top + vertical_offset;
-                rows
-                    .iter()
+                rows.iter()
                     .enumerate()
                     .flat_map(|(row_idx, row_items)| {
                         let this_row_height = row_content_heights[row_idx];

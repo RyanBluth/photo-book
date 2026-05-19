@@ -1,12 +1,18 @@
-use egui::{CursorIcon, Frame, InnerResponse, Response, RichText, Sense, UiBuilder, Vec2, Widget};
+use egui::{Button, CursorIcon, Frame, RichText, Sense, TextStyle, UiBuilder, Vec2};
 
 use crate::{
-    cursor_manager::{self, CursorManager},
+    cursor_manager::CursorManager,
     dependencies::{Dependency, SingletonFor},
     theme::color::ACTION_BAR,
 };
 
 pub const SECTION_HEADER_INNER_MARGIN: f32 = 8.0;
+
+pub fn section_header_height(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&TextStyle::Body)
+        .max(ui.spacing().interact_size.y)
+        + SECTION_HEADER_INNER_MARGIN * 2.0
+}
 
 #[derive(Debug, Clone)]
 pub struct CollapsableSectionState {
@@ -35,44 +41,73 @@ impl<'a> CollapsableSection<'a> {
         Self { state }
     }
 
+    #[allow(dead_code)]
     pub fn show<R>(
         &mut self,
         ui: &mut egui::Ui,
         add_contents: impl FnOnce(&mut egui::Ui) -> R + 'a,
     ) -> CollapsableSectionResponse {
-        ui.vertical(|ui| {
-            let title_response = Frame::new()
-                .fill(ACTION_BAR)
-                .inner_margin(SECTION_HEADER_INNER_MARGIN)
-                .show(ui, |ui| {
-                    ui.scope_builder(UiBuilder::new().sense(Sense::click()), |ui| {
-                        ui.allocate_at_least(
-                            Vec2 {
-                                x: ui.available_size_before_wrap().x,
-                                y: 0.0,
-                            },
-                            Sense::click(),
-                        );
+        self.show_with_action(ui, None, add_contents)
+    }
 
-                        ui.horizontal(|ui| {
-                            ui.style_mut().interaction.selectable_labels = false;
-                            ui.label(RichText::new(&self.state.title).strong());
-                        })
-                    })
-                });
+    pub fn show_with_action<R>(
+        &mut self,
+        ui: &mut egui::Ui,
+        header_action: Option<(&str, &str, &mut dyn FnMut())>,
+        add_contents: impl FnOnce(&mut egui::Ui) -> R + 'a,
+    ) -> CollapsableSectionResponse {
+        ui.vertical(|ui| {
+            let header_height = section_header_height(ui);
+            let (header_rect, _) = ui.allocate_exact_size(
+                Vec2::new(ui.available_width(), header_height),
+                Sense::hover(),
+            );
+            ui.painter().rect_filled(header_rect, 0.0, ACTION_BAR);
+
+            let inner_rect = header_rect.shrink(SECTION_HEADER_INNER_MARGIN);
+            let mut header_ui = ui.new_child(
+                UiBuilder::new()
+                    .max_rect(inner_rect)
+                    .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            );
+            header_ui.style_mut().interaction.selectable_labels = false;
+
+            if let Some((icon, tooltip, on_click)) = header_action {
+                let action_size = Vec2::splat(header_ui.available_height());
+                let action_response = header_ui
+                    .add_sized(action_size, Button::new(icon).frame(false))
+                    .on_hover_text(tooltip);
+
+                if action_response.clicked() {
+                    on_click();
+                }
+            }
+
+            let title_width = header_ui.available_width();
+            let (title_rect, response) = header_ui.allocate_exact_size(
+                Vec2::new(title_width, header_ui.available_height()),
+                Sense::click(),
+            );
+            let mut title_ui = header_ui.new_child(
+                UiBuilder::new()
+                    .max_rect(title_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            title_ui.label(RichText::new(&self.state.title).strong());
+
             if self.state.expanded {
                 Frame::new().inner_margin(8.0).show(ui, |ui| {
                     (add_contents)(ui);
                 });
             }
 
-            if title_response.response.hovered() {
+            if response.hovered() {
                 Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
                     cursor_manager.set_cursor(CursorIcon::PointingHand);
                 });
             }
 
-            if title_response.inner.response.clicked() {
+            if response.clicked() {
                 self.state.expanded = !self.state.expanded;
                 if self.state.expanded {
                     return CollapsableSectionResponse::Expanded;

@@ -40,7 +40,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 3;
+pub const PROJECT_VERSION: u32 = 4;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -326,21 +326,27 @@ impl Project {
         let project_settings: AppProjectSettings = Dependency::<ProjectSettingsManager>::get()
             .with_lock(|settings| settings.project_settings.clone());
 
-        let albums: Vec<Album> = Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
-            photo_manager
-                .photo_database
-                .album_names_iter()
-                .into_iter()
-                .map(|album_name| Album {
-                    name: album_name.clone(),
+        let albums = Dependency::<PhotoManager>::get()
+            .with_lock(|photo_manager| {
+                photo_manager
+                    .photo_database
+                    .albums_iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+            })
+            .into_iter()
+            .map(|album| {
+                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| Album {
+                    id: album.id.clone(),
+                    name: album.name.clone(),
                     photos: photo_manager
                         .photo_database
-                        .album_photos_iter(album_name)
+                        .album_photos_iter(&album.id)
                         .cloned()
                         .collect(),
                 })
-                .collect()
-        });
+            })
+            .collect::<Vec<_>>();
 
         let project = Project {
             photos,
@@ -391,13 +397,7 @@ impl Into<OrganizeEditScene> for Project {
         let photos_with_metadata: Vec<(PathBuf, AppPhotoRating, HashSet<String>)> = self
             .photos
             .iter()
-            .map(|photo| {
-                (
-                    photo.path.clone(),
-                    photo.rating,
-                    photo.tags.clone(),
-                )
-            })
+            .map(|photo| (photo.path.clone(), photo.rating, photo.tags.clone()))
             .collect();
 
         Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
@@ -413,6 +413,13 @@ impl Into<OrganizeEditScene> for Project {
             for (path, rating, tags) in photos_with_metadata {
                 photo_manager.set_photo_rating(&path, rating);
                 photo_manager.set_photo_tags(&path, tags);
+            }
+        });
+
+        let albums: Vec<AppAlbum> = self.albums.into_iter().map(|album| album.into()).collect();
+        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+            for album in albums {
+                photo_manager.insert_album(album);
             }
         });
 
@@ -843,7 +850,6 @@ impl Into<ProjectSettings> for AppProjectSettings {
     }
 }
 
-
 #[derive(Debug, Clone, Savefile)]
 pub enum ProjectPhotoGrouping {
     Rating,
@@ -1085,6 +1091,8 @@ impl Into<egui::StrokeKind> for StrokeKind {
 pub struct Album {
     name: String,
     photos: HashSet<PathBuf>,
+    #[savefile_versions = "4.."]
+    id: String,
 }
 
 impl Into<Album> for AppAlbum {
@@ -1092,15 +1100,48 @@ impl Into<Album> for AppAlbum {
         Album {
             name: self.name,
             photos: self.photos,
+            id: self.id,
         }
     }
 }
 
 impl Into<AppAlbum> for Album {
     fn into(self) -> AppAlbum {
+        let id = if self.id.trim().is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            self.id
+        };
+
         AppAlbum {
+            id,
             name: self.name,
             photos: self.photos,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_album_project_conversion_preserves_id() {
+        let photo_path = PathBuf::from("/test/photo1.jpg");
+        let mut photos = HashSet::new();
+        photos.insert(photo_path.clone());
+
+        let app_album = AppAlbum {
+            id: "album-1".to_string(),
+            name: "Favorites".to_string(),
+            photos,
+        };
+
+        let project_album: Album = app_album.into();
+        let restored_album: AppAlbum = project_album.into();
+
+        assert_eq!(restored_album.id, "album-1");
+        assert_eq!(restored_album.name, "Favorites");
+        assert!(restored_album.photos.contains(&photo_path));
     }
 }

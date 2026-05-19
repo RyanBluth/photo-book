@@ -1,11 +1,11 @@
-use egui::{Color32, CursorIcon, Frame, Id, Sense, TextStyle, Ui, UiBuilder, Vec2};
+use egui::{Color32, CursorIcon, Frame, Id, Sense, Ui, UiBuilder, Vec2};
 
 use crate::{
     cursor_manager::CursorManager,
     dependencies::{Dependency, SingletonFor},
     widget::sectioned_sidebar::section::{
         CollapsableSection, CollapsableSectionResponse, CollapsableSectionState,
-        SECTION_HEADER_INNER_MARGIN,
+        section_header_height,
     },
 };
 
@@ -21,6 +21,12 @@ pub struct SectionedSidebarBuilder<'a> {
     ui: Box<dyn FnMut(&mut Ui) + 'a>,
     sections: Vec<SectionMemoryData>,
     section_index: usize,
+}
+
+struct SectionHeaderAction<'a> {
+    icon: String,
+    tooltip: String,
+    on_click: Box<dyn FnMut() + 'a>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -48,13 +54,41 @@ impl<'a> SectionedSidebarBuilder<'a> {
     }
 
     pub fn section(
-        mut self,
+        self,
         ui: &mut Ui,
         state: &'a mut CollapsableSectionState,
         content: impl FnMut(&mut Ui) + 'a,
     ) -> Self {
+        self.section_inner(ui, state, None, content)
+    }
+
+    pub fn section_with_action(
+        self,
+        ui: &mut Ui,
+        state: &'a mut CollapsableSectionState,
+        action_icon: impl Into<String>,
+        action_tooltip: impl Into<String>,
+        on_action: impl FnMut() + 'a,
+        content: impl FnMut(&mut Ui) + 'a,
+    ) -> Self {
+        let header_action = SectionHeaderAction {
+            icon: action_icon.into(),
+            tooltip: action_tooltip.into(),
+            on_click: Box::new(on_action),
+        };
+        self.section_inner(ui, state, Some(header_action), content)
+    }
+
+    fn section_inner(
+        mut self,
+        ui: &mut Ui,
+        state: &'a mut CollapsableSectionState,
+        header_action: Option<SectionHeaderAction<'a>>,
+        content: impl FnMut(&mut Ui) + 'a,
+    ) -> Self {
         self.sections = Self::read_sections(self.id, ui);
         let mut current = self.ui;
+        let mut header_action = header_action;
         let mut content = content;
 
         let section_data =
@@ -157,7 +191,15 @@ impl<'a> SectionedSidebarBuilder<'a> {
                     sections[section_index].dragging = false;
                 }
 
-                match CollapsableSection::new(state).show(ui, |ui| {
+                let header_action = header_action.as_mut().map(|action| {
+                    (
+                        action.icon.as_str(),
+                        action.tooltip.as_str(),
+                        action.on_click.as_mut() as &mut dyn FnMut(),
+                    )
+                });
+
+                match CollapsableSection::new(state).show_with_action(ui, header_action, |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt(section_id.with(("body-scroll", section_index)))
                         .max_height(section_data.height.max(0.0))
@@ -502,11 +544,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
     }
 
     fn section_header_height(ui: &Ui) -> f32 {
-        Self::section_header_height_from_text_height(ui.text_style_height(&TextStyle::Body))
-    }
-
-    fn section_header_height_from_text_height(text_height: f32) -> f32 {
-        text_height + SECTION_HEADER_INNER_MARGIN * 2.0
+        section_header_height(ui)
     }
 
     fn available_body_height(

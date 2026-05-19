@@ -2,6 +2,7 @@ use egui::{Key, Ui};
 use std::collections::HashSet;
 
 use crate::dependencies::{Dependency, Singleton, SingletonFor};
+use crate::model::album::AlbumId;
 use crate::photo::{PhotoMetadataField, SaveOnDropPhoto};
 use crate::photo_manager::PhotoManager;
 
@@ -12,6 +13,8 @@ pub struct PhotoInfoState {
     pub tag_chips_state: TagChipsState,
     pub selected_tags: HashSet<String>,
     pub last_photo_tags: HashSet<String>,
+    pub selected_albums: HashSet<AlbumId>,
+    pub last_photo_albums: HashSet<AlbumId>,
 }
 
 impl PhotoInfoState {
@@ -20,6 +23,8 @@ impl PhotoInfoState {
             tag_chips_state: TagChipsState::new(),
             selected_tags: HashSet::new(),
             last_photo_tags: HashSet::new(),
+            selected_albums: HashSet::new(),
+            last_photo_albums: HashSet::new(),
         }
     }
 }
@@ -54,13 +59,13 @@ impl<'a> PhotoInfo<'a> {
                                 let text = if is_selected { "★" } else { "☆" };
                                 let resp = ui.add(
                                     egui::Button::new(
-                                        egui::RichText::new(text)
-                                            .size(star_size)
-                                            .color(if is_selected {
+                                        egui::RichText::new(text).size(star_size).color(
+                                            if is_selected {
                                                 ui.style().visuals.text_color()
                                             } else {
                                                 ui.style().visuals.weak_text_color()
-                                            }),
+                                            },
+                                        ),
                                     )
                                     .frame(false),
                                 );
@@ -121,6 +126,11 @@ impl<'a> PhotoInfo<'a> {
 
                         ui.add_space(4.0);
 
+                        ui.label(egui::RichText::new("Albums").small().strong());
+                        self.show_albums(ui);
+
+                        ui.add_space(4.0);
+
                         for (label, value) in self.photo.metadata.iter() {
                             ui.label(egui::RichText::new(format!("{}", label)).small().strong());
                             ui.horizontal_wrapped(|ui| {
@@ -149,5 +159,55 @@ impl<'a> PhotoInfo<'a> {
                 self.photo.set_rating(None);
             }
         })
+    }
+
+    fn show_albums(&mut self, ui: &mut Ui) {
+        let photo_path = self.photo.path.clone();
+        let photo_manager: Singleton<PhotoManager> = Dependency::get();
+        let (mut available_albums, photo_albums) = photo_manager.with_lock(|pm| {
+            (
+                pm.albums_iter()
+                    .map(|album| (album.id.clone(), album.name.clone()))
+                    .collect::<Vec<_>>(),
+                pm.get_photo_albums(&photo_path),
+            )
+        });
+
+        available_albums
+            .sort_by(|(_, left), (_, right)| left.to_lowercase().cmp(&right.to_lowercase()));
+
+        if self.state.last_photo_albums != photo_albums {
+            self.state.selected_albums = photo_albums.clone();
+            self.state.last_photo_albums = photo_albums;
+        }
+
+        if available_albums.is_empty() {
+            ui.label(egui::RichText::new("No albums").weak());
+            return;
+        }
+
+        egui::ScrollArea::vertical()
+            .id_salt("photo_info_albums")
+            .max_height(120.0)
+            .show(ui, |ui| {
+                for (album_id, album_name) in available_albums {
+                    let mut is_selected = self.state.selected_albums.contains(&album_id);
+                    if ui.checkbox(&mut is_selected, &album_name).changed() {
+                        if is_selected {
+                            photo_manager.with_lock_mut(|pm| {
+                                pm.add_to_album(&album_id, &photo_path);
+                            });
+                            self.state.selected_albums.insert(album_id.clone());
+                        } else {
+                            photo_manager.with_lock_mut(|pm| {
+                                pm.remove_from_album(&album_id, &photo_path);
+                            });
+                            self.state.selected_albums.remove(&album_id);
+                        }
+
+                        self.state.last_photo_albums = self.state.selected_albums.clone();
+                    }
+                }
+            });
     }
 }

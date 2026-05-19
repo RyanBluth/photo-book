@@ -150,6 +150,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: Some(vec![Some(3)]),
             tags: Some(vec!["landscape".to_string(), "__untagged__".to_string()]),
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -205,6 +206,7 @@ mod tests {
         let initial_query = PhotoQuery {
             ratings: Some(vec![Some(3)]),
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -248,10 +250,7 @@ mod tests {
         // Test various filter combinations
         modal.filter_state.enabled_ratings.clear();
         modal.filter_state.enabled_ratings.insert(Some(3));
-        modal
-            .filter_state
-            .enabled_ratings
-            .insert(Some(2));
+        modal.filter_state.enabled_ratings.insert(Some(2));
 
         modal
             .filter_state

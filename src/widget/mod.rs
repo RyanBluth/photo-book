@@ -23,3 +23,4 @@ pub mod tag_chips;
 pub mod templates;
 pub mod toolbar;
 pub mod transformable;
+pub mod tree_list;

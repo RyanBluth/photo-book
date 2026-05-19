@@ -12,7 +12,10 @@ use indexmap::IndexMap;
 use crate::{
     file_tree::FileTreeCollection,
     id::next_query_result_id,
-    model::{album::Album, photo_grouping::PhotoGrouping},
+    model::{
+        album::{Album, AlbumId},
+        photo_grouping::PhotoGrouping,
+    },
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
 };
 
@@ -85,7 +88,7 @@ pub struct PhotoDatabase {
     photo_tags: HashMap<PathBuf, HashSet<String>>,
     query_cache: HashMap<PhotoQuery, PhotoQueryResult>,
     pub file_collection: FileTreeCollection,
-    albums: Vec<Album>,
+    albums: HashMap<AlbumId, Album>,
     is_sorted: bool,
 }
 
@@ -98,7 +101,7 @@ impl PhotoDatabase {
             photo_tags: HashMap::new(),
             query_cache: HashMap::new(),
             file_collection: FileTreeCollection::new(),
-            albums: Vec::new(),
+            albums: HashMap::new(),
             is_sorted: true,
         }
     }
@@ -172,7 +175,7 @@ impl PhotoDatabase {
         self.photo_tags.remove(path);
         self.file_collection.remove(path);
         self.is_sorted = false;
-        self.albums.iter_mut().for_each(|album| {
+        self.albums.values_mut().for_each(|album| {
             album.photos.remove(path);
         });
         self.invalidate_query_cache();
@@ -215,6 +218,16 @@ impl PhotoDatabase {
                 }
                 result = result.intersection(&tag_set).cloned().collect();
             }
+        }
+
+        if let Some(album_id) = &query.album {
+            let album_paths = self
+                .albums
+                .get(album_id)
+                .map(|album| album.photos.clone())
+                .unwrap_or_default();
+
+            result.retain(|photo| album_paths.contains(&photo.path));
         }
 
         // Sort by date
@@ -449,49 +462,103 @@ impl PhotoDatabase {
     }
 }
 
-
-
 /// Album management
 impl PhotoDatabase {
-    pub fn album_names_iter(&self) -> impl Iterator<Item = &String> {
-        self.albums.iter().map(|album| &album.name)
+    pub fn albums_iter(&self) -> impl Iterator<Item = &Album> {
+        self.albums.values()
     }
 
-    pub fn album_photos_iter(&self, album_name: &String) -> impl Iterator<Item = &PathBuf> {
+    pub fn album_photos_iter(&mut self, album_id: &AlbumId) -> impl Iterator<Item = &PathBuf> {
+        self.ensure_sorted();
+        let album_photos = self.albums.get(album_id).map(|album| &album.photos);
+
+        self.photos.iter().filter_map(move |photo| {
+            album_photos
+                .filter(|photos| photos.contains(&photo.path))
+                .map(|_| &photo.path)
+        })
+    }
+
+    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+        let changed = self
+            .albums
+            .get_mut(album_id)
+            .map(|album| album.photos.insert(photo_path.clone()))
+            .unwrap_or(false);
+
+        if changed {
+            self.invalidate_query_cache();
+        }
+    }
+
+    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+        let changed = self
+            .albums
+            .get_mut(album_id)
+            .map(|album| album.photos.remove(photo_path))
+            .unwrap_or(false);
+
+        if changed {
+            self.invalidate_query_cache();
+        }
+    }
+
+    pub fn create_album(&mut self, album_name: &String) -> Option<AlbumId> {
+        let album_name = album_name.trim();
+        if album_name.is_empty() {
+            return None;
+        }
+
+        let album = Album::new(album_name.to_string(), Default::default());
+        self.insert_album(album)
+    }
+
+    pub fn insert_album(&mut self, album: Album) -> Option<AlbumId> {
+        let album_name = album.name.trim().to_string();
+        if album.id.trim().is_empty() || album_name.is_empty() {
+            return None;
+        }
+
+        let mut album = album;
+        album.name = album_name;
+
+        let album_id = album.id.clone();
+        self.albums.insert(album_id.clone(), album);
+        self.invalidate_query_cache();
+
+        Some(album_id)
+    }
+
+    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &String) {
+        let new_name = new_name.trim();
+        if new_name.is_empty() {
+            return;
+        }
+
+        let Some(album) = self.albums.get_mut(album_id) else {
+            return;
+        };
+
+        if album.name == new_name {
+            return;
+        }
+
+        album.name = new_name.to_string();
+        self.invalidate_query_cache();
+    }
+
+    pub fn delete_album(&mut self, album_id: &AlbumId) {
+        if self.albums.remove(album_id).is_some() {
+            self.invalidate_query_cache();
+        }
+    }
+
+    pub fn get_photo_albums(&self, photo_path: &PathBuf) -> HashSet<AlbumId> {
         self.albums
-            .iter()
-            .find(|album| album.name == *album_name)
-            .map(|album| album.photos.iter())
-            .unwrap_or_default()
-    }
-
-    pub fn add_to_album(&mut self, album_name: &String, photo_path: &PathBuf) {
-        self.albums
-            .iter_mut()
-            .find(|album| album.name == *album_name)
-            .map(|album| album.photos.insert(photo_path.clone()));
-    }
-
-    pub fn remove_from_album(&mut self, album_name: &String, photo_path: &PathBuf) {
-        self.albums
-            .iter_mut()
-            .find(|album| album.name == *album_name)
-            .map(|album| album.photos.remove(photo_path));
-    }
-
-    pub fn create_album(&mut self, album_name: &String) {
-        self.albums.push(Album::new(album_name.clone(), HashSet::new()));
-    }
-
-    pub fn rename_album(&mut self, album_name: &String, new_name: &String) {
-        self.albums
-            .iter_mut()
-            .find(|album| album.name == *album_name)
-            .map(|album| album.name = new_name.clone());
-    }
-
-    pub fn delete_album(&mut self, album_name: &String) {
-        self.albums.retain(|album| album.name != *album_name);
+            .values()
+            .filter(|album| album.photos.contains(photo_path))
+            .map(|album| album.id.clone())
+            .collect()
     }
 }
 
@@ -504,6 +571,7 @@ pub enum PhotoSortCriteria {
 pub struct PhotoQuery {
     pub ratings: Option<Vec<PhotoRating>>,
     pub tags: Option<Vec<String>>,
+    pub album: Option<AlbumId>,
     pub grouping: PhotoGrouping,
 }
 
@@ -624,6 +692,7 @@ impl Default for PhotoQuery {
         Self {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         }
     }
@@ -889,6 +958,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Rating,
         };
 
@@ -929,6 +999,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -988,6 +1059,155 @@ mod tests {
     }
 
     #[test]
+    fn test_query_filters_by_album() {
+        let mut db = PhotoDatabase::new();
+        let photo1 = create_test_photo("/test/photo1.jpg", None);
+        let photo2 = create_test_photo("/test/photo2.jpg", None);
+        let album_name = "Favorites".to_string();
+
+        db.add_photo(photo1);
+        db.add_photo(photo2);
+        let album_id = db.create_album(&album_name).unwrap();
+        db.add_to_album(&album_id, &PathBuf::from("/test/photo2.jpg"));
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            album: Some(album_id),
+            grouping: PhotoGrouping::Date,
+        };
+
+        let result = db.query_photos(&query);
+        let paths: Vec<PathBuf> = result
+            .groups
+            .values()
+            .flat_map(|photos| photos.keys().cloned())
+            .collect();
+
+        assert_eq!(paths, vec![PathBuf::from("/test/photo2.jpg")]);
+    }
+
+    #[test]
+    fn test_insert_album_preserves_id() {
+        let mut db = PhotoDatabase::new();
+        let album = Album {
+            id: "album-1".to_string(),
+            name: " Favorites ".to_string(),
+            photos: Default::default(),
+        };
+
+        let album_id = db.insert_album(album).unwrap();
+        let restored_album = db.albums_iter().find(|album| album.id == album_id).unwrap();
+
+        assert_eq!(album_id, "album-1");
+        assert_eq!(restored_album.name, "Favorites");
+    }
+
+    #[test]
+    fn test_album_membership_invalidates_query_cache() {
+        let mut db = PhotoDatabase::new();
+        let path = PathBuf::from("/test/photo1.jpg");
+        let album_name = "Favorites".to_string();
+
+        db.add_photo(create_test_photo("/test/photo1.jpg", None));
+        let album_id = db.create_album(&album_name).unwrap();
+
+        let query = PhotoQuery {
+            ratings: None,
+            tags: None,
+            album: Some(album_id.clone()),
+            grouping: PhotoGrouping::Date,
+        };
+
+        db.query_photos(&query);
+        assert!(!db.query_cache.is_empty());
+
+        db.add_to_album(&album_id, &path);
+        assert!(db.query_cache.is_empty());
+
+        db.query_photos(&query);
+        assert!(!db.query_cache.is_empty());
+
+        db.remove_from_album(&album_id, &path);
+        assert!(db.query_cache.is_empty());
+    }
+
+    #[test]
+    fn test_photo_album_membership_updates() {
+        let mut db = PhotoDatabase::new();
+        let path = PathBuf::from("/test/photo1.jpg");
+        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+
+        db.add_photo(create_test_photo("/test/photo1.jpg", None));
+        db.add_to_album(&album_id, &path);
+
+        let photo_albums = db.get_photo_albums(&path);
+        assert_eq!(photo_albums.len(), 1);
+        assert!(photo_albums.contains(&album_id));
+
+        db.remove_from_album(&album_id, &path);
+        assert!(db.get_photo_albums(&path).is_empty());
+    }
+
+    #[test]
+    fn test_photo_album_membership_cleans_up_on_delete() {
+        let mut db = PhotoDatabase::new();
+        let path = PathBuf::from("/test/photo1.jpg");
+        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+
+        db.add_photo(create_test_photo("/test/photo1.jpg", None));
+        db.add_to_album(&album_id, &path);
+
+        db.delete_album(&album_id);
+        assert!(db.get_photo_albums(&path).is_empty());
+    }
+
+    #[test]
+    fn test_photo_album_membership_cleans_up_on_photo_remove() {
+        let mut db = PhotoDatabase::new();
+        let path = PathBuf::from("/test/photo1.jpg");
+        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+
+        db.add_photo(create_test_photo("/test/photo1.jpg", None));
+        db.add_to_album(&album_id, &path);
+
+        db.remove_photo(&path);
+        assert!(db.get_photo_albums(&path).is_empty());
+        assert_eq!(db.album_photos_iter(&album_id).count(), 0);
+    }
+
+    #[test]
+    fn test_album_photos_follow_database_sort_order() {
+        let mut db = PhotoDatabase::new();
+        let first_path = PathBuf::from("/test/photo2.jpg");
+        let second_path = PathBuf::from("/test/photo1.jpg");
+        let third_path = PathBuf::from("/test/photo3.jpg");
+        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+
+        db.add_photo(create_test_photo("/test/photo1.jpg", None));
+        db.add_photo(create_test_photo("/test/photo2.jpg", None));
+        db.add_photo(create_test_photo("/test/photo3.jpg", None));
+        db.add_to_album(&album_id, &first_path);
+        db.add_to_album(&album_id, &second_path);
+        db.add_to_album(&album_id, &third_path);
+
+        let paths = db.album_photos_iter(&album_id).cloned().collect::<Vec<_>>();
+
+        assert_eq!(
+            paths,
+            vec![second_path.clone(), first_path.clone(), third_path.clone()]
+        );
+        assert_eq!(
+            db.album_photos_iter(&album_id)
+                .skip(1)
+                .take(10)
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec![first_path, third_path]
+        );
+    }
+
+    #[test]
     fn test_photo_after_within_group() {
         let mut db = PhotoDatabase::new();
         let dt1 = DateTime::parse_from_rfc3339("2023-01-01T12:00:00Z")
@@ -1006,6 +1226,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1037,6 +1258,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1062,6 +1284,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1091,6 +1314,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1122,6 +1346,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1147,6 +1372,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
@@ -1181,6 +1407,7 @@ mod tests {
         let query = PhotoQuery {
             ratings: None,
             tags: None,
+            album: None,
             grouping: PhotoGrouping::Date,
         };
 
