@@ -1,8 +1,7 @@
 use std::{hash::Hash, path::PathBuf};
 
-use egui::{
-    Color32, Image, ImageSource, Rect, Response, RichText, ScrollArea, Sense, Ui, UiBuilder, Vec2,
-};
+use egui::{Color32, Image, ImageSource, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2};
+use egui_extras::{Column, TableBuilder};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
@@ -221,7 +220,7 @@ impl<'a> TreeList<'a> {
         self
     }
 
-    /// Sets the scroll offset so the row starts at the top of the visible list.
+    /// Scrolls the row to the top of the visible list.
     pub fn scroll_to_row_top(mut self, scroll_to_row_top: Option<usize>) -> Self {
         self.scroll_to_row_top = scroll_to_row_top;
         self
@@ -265,25 +264,33 @@ impl TreeListBody<'_> {
         row_count: usize,
         mut add_row: impl FnMut(TreeListRowUi<'_>),
     ) {
-        let mut scroll_area = ScrollArea::vertical()
+        let table_height = self.ui.available_height();
+        let column_width = self.ui.available_width().max(self.min_width);
+
+        let mut table = TableBuilder::new(self.ui)
             .id_salt(self.id_salt)
-            .auto_shrink([false, false]);
+            .striped(false)
+            .auto_shrink([false, false])
+            .min_scrolled_height(table_height)
+            .max_scroll_height(table_height)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::exact(column_width));
 
         if let Some(row) = self.scroll_to_row_top {
-            let row_stride = row_height + self.ui.spacing().item_spacing.y;
-            scroll_area = scroll_area.vertical_scroll_offset(row as f32 * row_stride);
+            table = table.scroll_to_row(row, Some(egui::Align::TOP));
         }
 
-        scroll_area.show_rows(self.ui, row_height, row_count, |ui, row_range| {
-            ui.set_width(ui.available_width().max(self.min_width));
-
-            for row_index in row_range {
-                add_row(TreeListRowUi {
-                    ui,
-                    row_index,
-                    row_height,
+        table.body(|body| {
+            body.rows(row_height, row_count, |mut row| {
+                let row_index = row.index();
+                row.col(|ui| {
+                    add_row(TreeListRowUi {
+                        ui,
+                        row_index,
+                        row_height,
+                    });
                 });
-            }
+            });
         });
     }
 }

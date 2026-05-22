@@ -379,7 +379,7 @@ impl Scene for OrganizeEditScene {
 
             ui.add_space(10.0);
 
-            let scene_response = ui
+            let scene_response: SceneResponse = ui
                 .allocate_ui(
                     Vec2::new(ui.available_width(), ui.available_height()),
                     |ui| match &self.current {
@@ -399,12 +399,12 @@ impl Scene for OrganizeEditScene {
             // TODO: Is there a more elegant way to do this?
             match scene_response {
                 SceneResponse::Push(transition) => match transition {
-                    SceneTransition::_Gallery(scene) => {
+                    SceneTransition::Gallery(scene) => {
                         *self.organize.write().unwrap() = scene;
                         self.show_organize();
                         SceneResponse::None
                     }
-                    SceneTransition::_Canvas(mut scene) => {
+                    SceneTransition::Canvas(mut scene) => {
                         scene.state.gallery_state = self
                             .organize
                             .read()

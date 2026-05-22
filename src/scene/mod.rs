@@ -31,9 +31,9 @@ pub enum ScenePopResponse {
 
 pub enum SceneTransition {
     _OrganizeEdit(OrganizeEditScene),
-    _Gallery(GalleryScene),
+    Gallery(GalleryScene),
     Viewer(ViewerScene),
-    _Canvas(CanvasScene),
+    Canvas(CanvasScene),
     Crop(CropScene),
 }
 
@@ -41,9 +41,9 @@ impl SceneTransition {
     pub fn scene(self) -> Box<dyn Scene> {
         match self {
             SceneTransition::_OrganizeEdit(scene) => Box::new(scene),
-            SceneTransition::_Gallery(scene) => Box::new(scene),
+            SceneTransition::Gallery(scene) => Box::new(scene),
             SceneTransition::Viewer(scene) => Box::new(scene),
-            SceneTransition::_Canvas(scene) => Box::new(scene),
+            SceneTransition::Canvas(scene) => Box::new(scene),
             SceneTransition::Crop(scene) => Box::new(scene),
         }
     }
@@ -53,9 +53,9 @@ impl PartialEq for SceneTransition {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (SceneTransition::_OrganizeEdit(_), SceneTransition::_OrganizeEdit(_)) => true,
-            (SceneTransition::_Gallery(_), SceneTransition::_Gallery(_)) => true,
+            (SceneTransition::Gallery(_), SceneTransition::Gallery(_)) => true,
             (SceneTransition::Viewer(_), SceneTransition::Viewer(_)) => true,
-            (SceneTransition::_Canvas(_), SceneTransition::_Canvas(_)) => true,
+            (SceneTransition::Canvas(_), SceneTransition::Canvas(_)) => true,
             (SceneTransition::Crop(_), SceneTransition::Crop(_)) => true,
             _ => false,
         }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use egui_tiles::UiResponse;
 
 use crate::{
+    deferred_work_manager::{DeferredWorkHandle, DeferredWorkManager},
     dependencies::{Dependency, Singleton, SingletonFor},
     photo::SaveOnDropPhoto,
     photo_manager::PhotoManager,
@@ -19,16 +20,17 @@ use super::{
 };
 
 #[derive(Debug, Clone)]
+struct ScrollToPhotoPath {
+    path: PathBuf,
+    handle: DeferredWorkHandle,
+}
+
+#[derive(Debug, Clone)]
 pub struct GallerySceneState {
     pub image_gallery_state: ImageGalleryState,
     pub photo_info_state: PhotoInfoState,
     pub left_sidebar_state: LeftSidebarState,
-
-    // New fields for inter-widget communication - replacing static vars
-    /// Path from gallery to scroll the file tree to
-    pub scroll_file_tree_to_path: Option<PathBuf>,
-    /// Path from file tree to scroll the gallery to
-    pub scroll_gallery_to_path: Option<PathBuf>,
+    scroll_to_photo_path: Option<ScrollToPhotoPath>,
 }
 
 impl Default for GallerySceneState {
@@ -37,10 +39,7 @@ impl Default for GallerySceneState {
             image_gallery_state: ImageGalleryState::default(),
             photo_info_state: PhotoInfoState::new(),
             left_sidebar_state: LeftSidebarState::default(),
-
-            // Initialize new fields
-            scroll_file_tree_to_path: None,
-            scroll_gallery_to_path: None,
+            scroll_to_photo_path: None,
         }
     }
 }
@@ -49,7 +48,7 @@ impl Default for GallerySceneState {
 pub enum GalleryScenePane {
     Gallery,
     PhotoInfo,
-    FileTree,
+    Sidebar,
 }
 
 #[derive(Debug, Clone)]
@@ -67,7 +66,7 @@ impl GalleryScene {
         let right_tabs = vec![tiles.insert_pane(GalleryScenePane::PhotoInfo)];
         let right_tabs_id = tiles.insert_tab_tile(right_tabs);
 
-        let left_tabs = vec![tiles.insert_pane(GalleryScenePane::FileTree)];
+        let left_tabs = vec![tiles.insert_pane(GalleryScenePane::Sidebar)];
         let left_tabs_id = tiles.insert_tab_tile(left_tabs);
 
         let mut linear_layout = egui_tiles::Linear::new(
@@ -115,6 +114,27 @@ struct GalleryTreeBehavior<'a> {
 }
 
 impl GalleryTreeBehavior<'_> {
+    fn set_scroll_to_photo_path(&mut self, ui: &mut egui::Ui, path: PathBuf) {
+        let handle = Dependency::<DeferredWorkManager>::get()
+            .with_lock_mut(|deferred_work_manager| deferred_work_manager.after_repaint(ui));
+
+        self.scene_state.scroll_to_photo_path = Some(ScrollToPhotoPath { path, handle });
+    }
+
+    fn scroll_to_photo_path(&self) -> Option<PathBuf> {
+        let scroll_to_photo_path = self.scene_state.scroll_to_photo_path.as_ref()?;
+        let should_perform =
+            Dependency::<DeferredWorkManager>::get().with_lock(|deferred_work_manager| {
+                deferred_work_manager.should_perform(scroll_to_photo_path.handle)
+            });
+
+        if should_perform {
+            Some(scroll_to_photo_path.path.clone())
+        } else {
+            None
+        }
+    }
+
     fn open_photo(&mut self, path: &PathBuf) {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
         photo_manager.with_lock(|photo_manager| {
@@ -125,29 +145,59 @@ impl GalleryTreeBehavior<'_> {
         });
     }
 
-    fn select_photo_in_gallery(&mut self, path: &PathBuf) {
+    fn select_photo(&mut self, ui: &mut egui::Ui, path: &PathBuf) {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
-        photo_manager.with_lock(|photo_manager| {
+        let scroll_to_path = photo_manager.with_lock(|photo_manager| {
             if let Some(photo) = photo_manager.photo_database.get_photo(path) {
-                self.scene_state.image_gallery_state.selected_images.clear();
+                // Gallery
+                self.clear_photo_selection();
+
                 self.scene_state
                     .image_gallery_state
                     .selected_images
                     .insert(photo.path.clone());
-                self.scene_state.scroll_gallery_to_path = Some(photo.path.clone());
+
+                // File Tree
+                self.scene_state
+                    .left_sidebar_state
+                    .file_tree_state
+                    .selected_node = Some(photo.path.clone());
+                self.expand_file_tree_parent_directories(path);
+
+                // Album List
+                self.scene_state
+                    .left_sidebar_state
+                    .album_list_state
+                    .selected_photo = Some(photo.path.clone());
+
+                Some(photo.path.clone())
+            } else {
+                None
             }
         });
+
+        if let Some(path) = scroll_to_path {
+            self.set_scroll_to_photo_path(ui, path);
+        }
     }
 
-    fn select_photo_in_file_tree(&mut self, path: PathBuf) {
+    fn clear_photo_selection(&mut self) {
+        // Clear selection in gallery
+        self.scene_state.image_gallery_state.selected_images.clear();
+
+        // Clear selection in file tree
         self.scene_state
             .left_sidebar_state
             .file_tree_state
-            .selected_node = Some(path.clone());
+            .selected_node = None;
 
-        self.expand_file_tree_parent_directories(&path);
-        self.scene_state.scroll_file_tree_to_path = Some(path);
+        self.scene_state
+            .left_sidebar_state
+            .album_list_state
+            .selected_photo = None;
+
+        self.scene_state.scroll_to_photo_path = None;
     }
 
     fn expand_file_tree_parent_directories(&mut self, path: &PathBuf) {
@@ -179,6 +229,7 @@ impl GalleryTreeBehavior<'_> {
             .left_sidebar_state
             .file_tree_state
             .selected_node = None;
+        self.scene_state.scroll_to_photo_path = None;
     }
 
     fn remove_photo(&mut self, path: &PathBuf) {
@@ -195,15 +246,14 @@ impl GalleryTreeBehavior<'_> {
     fn ui(&mut self, pane: &GalleryScenePane, ui: &mut egui::Ui) -> UiResponse {
         match pane {
             GalleryScenePane::Gallery => {
+                let scroll_to_photo_path = self.scroll_to_photo_path();
+
                 // Show the gallery with any scroll-to info from the state
                 let gallery_response = ImageGallery::show(
                     ui,
                     &mut self.scene_state.image_gallery_state,
-                    self.scene_state.scroll_gallery_to_path.as_ref(),
+                    scroll_to_photo_path.as_ref(),
                 );
-
-                // Clear scroll data after it's been used
-                self.scene_state.scroll_gallery_to_path = None;
 
                 // Handle gallery responses
                 if let Some(photo) = gallery_response.primary_action_photo {
@@ -214,15 +264,12 @@ impl GalleryTreeBehavior<'_> {
 
                 // Handle selection changes in gallery for file tree synchronization
                 if let Some(selected_photo) = gallery_response.selected_photo {
-                    self.select_photo_in_file_tree(selected_photo.path);
+                    self.select_photo(ui, &selected_photo.path);
                 }
 
                 // Handle selection clearing
                 if gallery_response.selection_cleared {
-                    self.scene_state
-                        .left_sidebar_state
-                        .file_tree_state
-                        .selected_node = None;
+                    self.clear_photo_selection();
                 }
 
                 UiResponse::None
@@ -256,9 +303,11 @@ impl GalleryTreeBehavior<'_> {
 
                 UiResponse::None
             }
-            GalleryScenePane::FileTree => {
+            GalleryScenePane::Sidebar => {
+                let scroll_to_photo_path = self.scroll_to_photo_path();
+
                 let sidebar_response = LeftSidebar::new(&mut self.scene_state.left_sidebar_state)
-                    .show(ui, self.scene_state.scroll_file_tree_to_path.as_ref());
+                    .show(ui, scroll_to_photo_path.as_ref());
 
                 if let Some(album_list_response) = sidebar_response.album_list_response {
                     if let Some(album_id) = album_list_response.selected {
@@ -266,7 +315,7 @@ impl GalleryTreeBehavior<'_> {
                     }
 
                     if let Some(selected_path) = album_list_response.selected_photo {
-                        self.select_photo_in_gallery(&selected_path);
+                        self.select_photo(ui, &selected_path);
                     }
 
                     if let Some(double_clicked_path) = album_list_response.double_clicked_photo {
@@ -275,13 +324,10 @@ impl GalleryTreeBehavior<'_> {
                 }
 
                 if let Some(file_tree_response) = sidebar_response.file_tree_response {
-                    // Clear the scroll target after it's been used
-                    self.scene_state.scroll_file_tree_to_path = None;
-
                     // Handle file tree responses
                     if let Some(selected_path) = file_tree_response.selected {
                         // When a file is selected in the tree, update the gallery selection
-                        self.select_photo_in_gallery(&selected_path);
+                        self.select_photo(ui, &selected_path);
                     }
 
                     // Handle double-clicks in the file tree
@@ -316,7 +362,7 @@ impl egui_tiles::Behavior<GalleryScenePane> for GalleryTreeBehavior<'_> {
         match pane {
             GalleryScenePane::Gallery => "Gallery".into(),
             GalleryScenePane::PhotoInfo => "Photo Info".into(),
-            GalleryScenePane::FileTree => "File Tree".into(),
+            GalleryScenePane::Sidebar => "File Tree".into(),
         }
     }
 }

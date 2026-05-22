@@ -3,8 +3,9 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
     auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config,
-    cursor_manager::CursorManager, debug::DebugSettings, export::Exporter,
-    font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager,
+    cursor_manager::CursorManager, debug::DebugSettings,
+    deferred_work_manager::DeferredWorkManager, export::Exporter, font_manager::FontManager,
+    modal::manager::ModalManager, photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager, session::Session,
 };
 
@@ -109,6 +110,12 @@ singleton!(AUTOSAVE_MANAGER, AutoSaveManager, AutoSaveManager::new());
 singleton!(SESSION, Session, Session::new());
 
 singleton!(DEBUG_SETTINGS, DebugSettings, DebugSettings::default());
+
+singleton!(
+    DEFERRED_WORK_MANAGER,
+    DeferredWorkManager,
+    DeferredWorkManager::new()
+);
 
 #[allow(unused_imports)]
 use backtrace::Backtrace;

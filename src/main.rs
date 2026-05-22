@@ -22,12 +22,15 @@ use tokio::runtime;
 use flexi_logger::{Logger, WriteMode};
 use string_log::{ArcStringLog, StringLog};
 
+use crate::deferred_work_manager::DeferredWorkManager;
+
 mod assets;
 mod auto_persisting;
 mod autosave_manager;
 mod config;
 mod cursor_manager;
 mod debug;
+mod deferred_work_manager;
 mod dependencies;
 mod dirs;
 mod error_sink;
@@ -302,6 +305,10 @@ impl eframe::App for PhotoBookApp {
             let modal_manager: Singleton<ModalManager> = Dependency::get();
             modal_manager.with_lock_mut(|modal_manager| {
                 modal_manager.show_next(ui);
+            });
+
+            Dependency::<DeferredWorkManager>::get().with_lock_mut(|deferred_work_manager| {
+                deferred_work_manager.end_frame();
             });
         });
 

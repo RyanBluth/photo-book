@@ -107,7 +107,7 @@ impl<'a> AlbumList<'a> {
         Self { state }
     }
 
-    pub fn show(&mut self, ui: &mut Ui) -> AlbumListResponse {
+    pub fn show(&mut self, ui: &mut Ui, scroll_to_path: Option<&PathBuf>) -> AlbumListResponse {
         ui.style_mut().interaction.selectable_labels = false;
 
         let mut selected_album = None;
@@ -136,32 +136,36 @@ impl<'a> AlbumList<'a> {
             ui.label(RichText::new("No albums").weak());
         } else {
             let layout = AlbumListLayout::new(albums, &self.state.expanded_albums);
+            let row_to_scroll = self.scroll_row_for_path(&layout, scroll_to_path);
             let mut photo_windows = HashMap::new();
             let mut disclosure_clicked = None;
             let mut clicked = None;
             let mut double_clicked = None;
 
-            TreeList::new(ui).id_salt("album_list_scroll").body(|body| {
-                body.rows(ROW_HEIGHT, layout.row_count, |mut row| {
-                    let Some(tree_row) =
-                        self.row_for_index(&layout, row.index(), &mut photo_windows)
-                    else {
-                        return;
-                    };
+            TreeList::new(ui)
+                .id_salt("album_list_scroll")
+                .scroll_to_row_top(row_to_scroll)
+                .body(|body| {
+                    body.rows(ROW_HEIGHT, layout.row_count, |mut row| {
+                        let Some(tree_row) =
+                            self.row_for_index(&layout, row.index(), &mut photo_windows)
+                        else {
+                            return;
+                        };
 
-                    let response = row.add(tree_row);
+                        let response = row.add(tree_row);
 
-                    if response.disclosure_clicked() {
-                        disclosure_clicked = Some(response.id().clone());
-                    } else if response.clicked() {
-                        clicked = Some(response.id().clone());
-                    }
+                        if response.disclosure_clicked() {
+                            disclosure_clicked = Some(response.id().clone());
+                        } else if response.clicked() {
+                            clicked = Some(response.id().clone());
+                        }
 
-                    if response.double_clicked() {
-                        double_clicked = Some(response.id().clone());
-                    }
+                        if response.double_clicked() {
+                            double_clicked = Some(response.id().clone());
+                        }
+                    });
                 });
-            });
 
             if let Some(AlbumListRowId::Album(album_id)) = disclosure_clicked {
                 if self.state.expanded_albums.contains(&album_id) {
@@ -180,22 +184,14 @@ impl<'a> AlbumList<'a> {
                             selected_album = Some(album_id);
                         }
                     }
-                    AlbumListRowId::Photo { album_id, path } => {
-                        self.state.selected_album = Some(album_id.clone());
-                        if current_album_filter.as_ref() != Some(&album_id) {
-                            selected_album = Some(album_id);
-                        }
+                    AlbumListRowId::Photo { path, .. } => {
                         self.state.selected_photo = Some(path.clone());
                         selected_photo = Some(path);
                     }
                 }
             }
 
-            if let Some(AlbumListRowId::Photo { album_id, path }) = double_clicked {
-                self.state.selected_album = Some(album_id.clone());
-                if current_album_filter.as_ref() != Some(&album_id) {
-                    selected_album = Some(album_id);
-                }
+            if let Some(AlbumListRowId::Photo { path, .. }) = double_clicked {
                 self.state.selected_photo = Some(path.clone());
                 selected_photo = Some(path.clone());
                 double_clicked_photo = Some(path);
@@ -253,6 +249,35 @@ impl<'a> AlbumList<'a> {
             )
             .selected(self.state.selected_photo.as_ref() == Some(&photo_path)),
         )
+    }
+
+    fn scroll_row_for_path(
+        &self,
+        layout: &AlbumListLayout,
+        scroll_to_path: Option<&PathBuf>,
+    ) -> Option<usize> {
+        let scroll_to_path = scroll_to_path?;
+
+        Dependency::<PhotoManager>::get().with_lock_mut(|pm| {
+            let mut fallback_album_row = None;
+
+            for section in &layout.sections {
+                let Some(photo_index) = pm
+                    .album_photos_iter(&section.album_id)
+                    .position(|photo_path| photo_path == scroll_to_path)
+                else {
+                    continue;
+                };
+
+                if section.is_expanded {
+                    return Some(section.start_row + photo_index + 1);
+                }
+
+                fallback_album_row.get_or_insert(section.start_row);
+            }
+
+            fallback_album_row
+        })
     }
 
     fn album_photo_path(

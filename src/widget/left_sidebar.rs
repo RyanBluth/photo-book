@@ -46,9 +46,8 @@ impl<'a> LeftSidebar<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui, scroll_to_path: Option<&PathBuf>) -> LeftSidebarResponse {
-        let mut file_tree_response = None;
+        let mut file_tree_response: Option<FileTreeResponse> = None;
         let mut album_list_response = None;
-
         SectionedSidebarBuilder::new("left_sidebar")
             .section(ui, &mut self.state.file_tree_section_state, |ui| {
                 file_tree_response =
@@ -63,8 +62,9 @@ impl<'a> LeftSidebar<'a> {
                     ModalManager::push(NewAlbumModal::new());
                 },
                 |ui| {
-                    album_list_response =
-                        Some(AlbumList::new(&mut self.state.album_list_state).show(ui));
+                    album_list_response = Some(
+                        AlbumList::new(&mut self.state.album_list_state).show(ui, scroll_to_path),
+                    );
                 },
             )
             .show(ui);
