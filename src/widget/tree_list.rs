@@ -277,7 +277,7 @@ impl TreeListBody<'_> {
             .column(Column::exact(column_width));
 
         if let Some(row) = self.scroll_to_row_top {
-            table = table.scroll_to_row(row, Some(egui::Align::TOP));
+            table = table.scroll_to_row(row, None);
         }
 
         table.body(|body| {
