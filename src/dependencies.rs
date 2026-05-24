@@ -6,7 +6,8 @@ use crate::{
     cursor_manager::CursorManager, debug::DebugSettings,
     deferred_work_manager::DeferredWorkManager, export::Exporter, font_manager::FontManager,
     modal::manager::ModalManager, photo_manager::PhotoManager,
-    project_settings::ProjectSettingsManager, session::Session,
+    project_settings::ProjectSettingsManager, selection_manager::SelectionManager,
+    session::Session,
 };
 
 macro_rules! singleton {
@@ -88,6 +89,8 @@ pub trait SingletonFor<T> {
 pub struct Dependency<T>(PhantomData<T>);
 
 singleton!(PHOTO_MANAGER_INSTANCE, PhotoManager, PhotoManager::new());
+
+singleton!(SELECTION_MANAGER, SelectionManager, SelectionManager::new());
 
 singleton!(CURSOR_MANAGER, CursorManager, CursorManager::new());
 

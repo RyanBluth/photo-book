@@ -1,12 +1,13 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::path::PathBuf;
 
-use eframe::{
-    egui::{Key, Ui},
-    epaint::Vec2,
+use eframe::{egui::Key, epaint::Vec2};
+
+use egui::{
+    containers::menu::MenuConfig, Align, Color32, Image, Layout, MenuBar, PopupCloseBehavior,
+    Slider, Ui,
 };
-
-use egui::{Color32, Image, Layout, Slider, containers::menu::MenuConfig};
-use egui_extras::Column;
+use egui_extras::{Column, TableBuilder};
+use indexmap::IndexMap;
 
 use crate::{
     assets::Asset,
@@ -15,22 +16,19 @@ use crate::{
     photo::Photo,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
+    selection_manager::{SelectionManager, SelectionModifiers},
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
 #[derive(Debug, Clone)]
 pub struct ImageGalleryState {
-    pub selected_images: HashSet<PathBuf>,
     pub scale: f32,
 }
 
 impl Default for ImageGalleryState {
     fn default() -> Self {
-        Self {
-            selected_images: HashSet::new(),
-            scale: 1.0,
-        }
+        Self { scale: 1.0 }
     }
 }
 
@@ -47,10 +45,6 @@ pub struct ImageGalleryResponse {
     pub primary_action_photo: Option<Photo>,
     /// A photo that was right-clicked (secondary action)
     pub secondary_action_photo: Option<Photo>,
-    /// A photo that was newly selected this frame
-    pub selected_photo: Option<Photo>,
-    /// Flag indicating if the selection was cleared this frame (e.g., by Escape key)
-    pub selection_cleared: bool,
 }
 
 impl<'a> ImageGallery<'a> {
@@ -60,13 +54,13 @@ impl<'a> ImageGallery<'a> {
         scroll_to_path: Option<&PathBuf>,
     ) -> ImageGalleryResponse {
         let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let selected_images = &mut state.selected_images;
+        let selection_manager: Singleton<SelectionManager> = Dependency::get();
+        let mut selection_snapshot =
+            selection_manager.with_lock(|selection_manager| selection_manager.snapshot());
 
         // Initialize response with defaults
         let mut primary_action_photo: Option<Photo> = None;
         let mut secondary_action_photo: Option<Photo> = None;
-        let mut selected_photo: Option<Photo> = None;
-        let mut selection_cleared = false;
 
         let has_photos =
             photo_manager.with_lock(|photo_manager| photo_manager.photo_database.photo_count() > 0);
@@ -79,8 +73,11 @@ impl<'a> ImageGallery<'a> {
 
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
-                    selected_images.clear();
-                    selection_cleared = true;
+                    if !selection_snapshot.selected_paths.is_empty() {
+                        selection_snapshot = selection_manager.with_lock_mut(|selection_manager| {
+                            selection_manager.clear_this_frame(ui)
+                        });
+                    }
                 }
 
                 let spacing = 10.0;
@@ -135,6 +132,10 @@ impl<'a> ImageGallery<'a> {
                             })
                             .collect()
                     };
+                    let ordered_photo_paths = grouped_photos
+                        .values()
+                        .flat_map(|group| group.keys().cloned())
+                        .collect::<Vec<_>>();
 
                     let heights: Vec<f32> = row_metadatas.iter().map(|x| x.height).collect();
 
@@ -149,7 +150,7 @@ impl<'a> ImageGallery<'a> {
                         None
                     };
 
-                    let mut builder = egui_extras::TableBuilder::new(ui)
+                    let mut builder = TableBuilder::new(ui)
                         .id_salt("image_gallery_table")
                         .min_scrolled_height(table_size.y)
                         .auto_shrink(false)
@@ -183,48 +184,42 @@ impl<'a> ImageGallery<'a> {
 
                                     row.col(|ui: &mut Ui| {
                                         let photo = &group[offest + i];
-                                        photo_manager.with_lock_mut(|photo_manager| {
-                                            let image = GalleryImage::new(
-                                                photo.clone(),
-                                                photo_manager
-                                                    .thumbnail_texture_for(photo, ui.ctx()),
-                                                selected_images.contains(&photo.path),
+                                        let image_response =
+                                            photo_manager.with_lock_mut(|photo_manager| {
+                                                let image = GalleryImage::new(
+                                                    photo.clone(),
+                                                    photo_manager
+                                                        .thumbnail_texture_for(photo, ui.ctx()),
+                                                    selection_snapshot
+                                                        .selected_paths
+                                                        .contains(&photo.path),
+                                                );
+
+                                                ui.add(image)
+                                            });
+
+                                        if image_response.clicked() {
+                                            let modifiers = ui.input(|input| SelectionModifiers {
+                                                ctrl: input.modifiers.ctrl,
+                                                shift: input.modifiers.shift,
+                                            });
+                                            selection_snapshot = selection_manager.with_lock_mut(
+                                                |selection_manager| {
+                                                    selection_manager.select_path(
+                                                        ui,
+                                                        &ordered_photo_paths,
+                                                        &photo.path,
+                                                        modifiers,
+                                                    )
+                                                },
                                             );
+                                        }
 
-                                            let image_response = ui.add(image);
-
-                                            if image_response.clicked() {
-                                                let ctrl_held =
-                                                    ui.input(|input| input.modifiers.ctrl);
-                                                if ctrl_held {
-                                                    if selected_images.contains(&photo.path) {
-                                                        selected_images.remove(&photo.path);
-                                                    } else {
-                                                        selected_images.insert(photo.path.clone());
-                                                        selected_photo = Some(photo.clone());
-                                                    }
-                                                } else {
-                                                    let was_empty = selected_images.is_empty();
-                                                    let was_already_selected =
-                                                        selected_images.contains(&photo.path);
-                                                    selected_images.clear();
-                                                    selected_images.insert(photo.path.clone());
-                                                    // Only report as newly selected if it wasn't the only selection before
-                                                    if was_empty
-                                                        || !was_already_selected
-                                                        || selected_images.len() != 1
-                                                    {
-                                                        selected_photo = Some(photo.clone());
-                                                    }
-                                                }
-                                            }
-
-                                            if image_response.double_clicked() {
-                                                primary_action_photo = Some(photo.clone());
-                                            } else if image_response.secondary_clicked() {
-                                                secondary_action_photo = Some(photo.clone());
-                                            }
-                                        });
+                                        if image_response.double_clicked() {
+                                            primary_action_photo = Some(photo.clone());
+                                        } else if image_response.secondary_clicked() {
+                                            secondary_action_photo = Some(photo.clone());
+                                        }
                                     });
                                 }
 
@@ -241,7 +236,7 @@ impl<'a> ImageGallery<'a> {
                     Color32::from_gray(40),
                 );
 
-                ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_space(20.0);
                     ui.add(
                         Image::from(Asset::larger())
@@ -263,19 +258,17 @@ impl<'a> ImageGallery<'a> {
         ImageGalleryResponse {
             primary_action_photo,
             secondary_action_photo,
-            selected_photo,
-            selection_cleared,
         }
     }
 }
 
-fn add_filter_menu(ui: &mut egui::Ui) {
+fn add_filter_menu(ui: &mut Ui) {
     let photo_manager: Singleton<PhotoManager> = Dependency::get();
 
     let get_current_filter = || photo_manager.with_lock(|pm| pm.get_current_filter().clone());
 
-    egui::MenuBar::new()
-        .config(MenuConfig::new().close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside))
+    MenuBar::new()
+        .config(MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside))
         .ui(ui, |ui| {
             ui.painter()
                 .rect_filled(ui.available_rect_before_wrap(), 0.0, Color32::from_gray(40));
@@ -424,7 +417,7 @@ fn add_filter_menu(ui: &mut egui::Ui) {
 fn scroll_to_row_index(
     scroll_to_path: &PathBuf,
     num_columns: usize,
-    grouped_photos: &indexmap::IndexMap<String, indexmap::IndexMap<PathBuf, Photo>>,
+    grouped_photos: &IndexMap<String, IndexMap<PathBuf, Photo>>,
     row_metadatas: &[RowMetadata],
 ) -> Option<usize> {
     let mut scroll_to_row: Option<usize> = None;

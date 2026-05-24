@@ -7,6 +7,19 @@ use std::{
 
 use log::warn;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RemoveResult {
+    NotFound,
+    Removed,
+    RemoveSelf,
+}
+
+impl RemoveResult {
+    fn found(self) -> bool {
+        self != RemoveResult::NotFound
+    }
+}
+
 /// Represents a node in a file system tree structure.
 ///
 /// A node can either be a file or a directory. Directories can contain other nodes.
@@ -195,40 +208,42 @@ impl FileTreeNode {
     /// * `true` if the path was found and removed
     /// * `false` if the path was not found
     pub fn remove(&mut self, path_to_remove: &Path) -> bool {
+        self.remove_internal(path_to_remove).found()
+    }
+
+    fn remove_internal(&mut self, path_to_remove: &Path) -> RemoveResult {
         match self {
             FileTreeNode::File(file_path) => {
                 // If this is the file to remove, we can't remove ourselves directly
                 // The parent needs to handle this
-                file_path == path_to_remove
+                if file_path == path_to_remove {
+                    RemoveResult::RemoveSelf
+                } else {
+                    RemoveResult::NotFound
+                }
             }
             FileTreeNode::Directory(dir_path, children) => {
                 if dir_path == path_to_remove {
                     // If this directory is the one to remove, we can't remove ourselves
                     // The parent needs to handle this
-                    return true;
+                    return RemoveResult::RemoveSelf;
                 }
 
-                // Check if any child matches the path to remove
-                let mut found_index = None;
-                for (i, child) in children.iter_mut().enumerate() {
-                    if child.path() == path_to_remove {
-                        found_index = Some(i);
-                        break;
-                    } else if child.remove(path_to_remove) {
-                        // Child found and removed the path, or child itself should be removed
-                        if child.path() == path_to_remove {
-                            found_index = Some(i);
+                let mut child_index = 0;
+                while child_index < children.len() {
+                    match children[child_index].remove_internal(path_to_remove) {
+                        RemoveResult::NotFound => {
+                            child_index += 1;
                         }
-                        break;
+                        RemoveResult::Removed => return RemoveResult::Removed,
+                        RemoveResult::RemoveSelf => {
+                            children.remove(child_index);
+                            return RemoveResult::Removed;
+                        }
                     }
                 }
 
-                if let Some(index) = found_index {
-                    children.remove(index);
-                    return true;
-                }
-
-                false
+                RemoveResult::NotFound
             }
         }
     }
@@ -324,6 +339,14 @@ impl Display for FileTreeNode {
             .to_string_lossy();
         write!(f, "{}", display_name)
     }
+}
+
+fn root_component(path: &Path) -> PathBuf {
+    path.components()
+        .next()
+        .map_or_else(PathBuf::new, |component| {
+            PathBuf::from(component.as_os_str())
+        })
 }
 
 /// Represents a single file system tree, with a designated root node.
@@ -749,6 +772,15 @@ impl FileTreeCollection {
         }
     }
 
+    fn invalidate_cache(&mut self) {
+        self.flattened_file_trees = None;
+    }
+
+    fn mark_dirty(&mut self) {
+        self.sorted = false;
+        self.invalidate_cache();
+    }
+
     /// Lazily evaluated flattened file tree
     pub fn flattened_file_trees(&mut self) -> Arc<Vec<FlattenedTreeItem>> {
         match &self.flattened_file_trees {
@@ -792,15 +824,11 @@ impl FileTreeCollection {
     /// assert_eq!(collection.trees().len(), 2);
     /// ```
     pub fn insert(&mut self, path_to_insert: &Path) {
-        self.sorted = false;
-        // Clear the flattened trees so they can be recomputed
-        self.flattened_file_trees = None;
+        self.mark_dirty();
+
         // Determine the root component of the path to decide which tree it belongs to.
         // Path::new("") results in an empty PathBuf, suitable for "empty" root.
-        let root_component_of_path_to_insert = path_to_insert
-            .components()
-            .next()
-            .map_or_else(PathBuf::new, |comp| PathBuf::from(comp.as_os_str()));
+        let root_component_of_path_to_insert = root_component(path_to_insert);
 
         // Try to find an existing tree that is rooted at this component.
         if let Some(existing_tree) = self
@@ -879,37 +907,27 @@ impl FileTreeCollection {
     /// assert!(removed);
     /// ```
     pub fn remove(&mut self, path_to_remove: &Path) -> bool {
-        // Clear the flattened trees so they can be recomputed
-        self.flattened_file_trees = None;
-
         // Determine the root component of the path to find which tree it belongs to
-        let root_component_of_path_to_remove = path_to_remove
-            .components()
-            .next()
-            .map_or_else(PathBuf::new, |comp| PathBuf::from(comp.as_os_str()));
+        let root_component_of_path_to_remove = root_component(path_to_remove);
 
         // Find the tree that contains this path
         for i in 0..self.file_trees.len() {
             if self.file_trees[i].root.path() == &root_component_of_path_to_remove {
+                if self.file_trees[i].root.path() == path_to_remove {
+                    self.file_trees.remove(i);
+                    self.mark_dirty();
+                    self.sort();
+                    return true;
+                }
+
                 let removed = self.file_trees[i].remove(path_to_remove);
 
                 if removed {
-                    self.sorted = false;
+                    self.mark_dirty();
                     // Check if the tree is now empty (only contains the root with no children)
-                    match &self.file_trees[i].root {
-                        FileTreeNode::Directory(_, children) if children.is_empty() => {
-                            // If the directory is empty and we're removing the root itself
-                            if self.file_trees[i].root.path() == path_to_remove {
-                                self.file_trees.remove(i);
-                            }
-                        }
-                        FileTreeNode::File(_) => {
-                            // If it's a file and we're removing the root file itself
-                            if self.file_trees[i].root.path() == path_to_remove {
-                                self.file_trees.remove(i);
-                            }
-                        }
-                        _ => {}
+                    if matches!(&self.file_trees[i].root, FileTreeNode::Directory(_, children) if children.is_empty())
+                    {
+                        self.file_trees.remove(i);
                     }
                     self.sort();
                     return true;

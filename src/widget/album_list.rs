@@ -9,7 +9,8 @@ use crate::{
     dependencies::{Dependency, SingletonFor},
     model::album::AlbumId,
     photo_manager::PhotoManager,
-    widget::tree_list::{ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow},
+    selection_manager::SelectionModifiers,
+    widget::tree_list::{SelectionStyle, TreeList, TreeListRow, TreeListSelection, ROW_HEIGHT},
 };
 
 const PHOTO_WINDOW_SIZE: usize = 64;
@@ -78,7 +79,6 @@ impl AlbumListLayout {
 pub struct AlbumListState {
     pub selected_album: Option<AlbumId>,
     pub expanded_albums: HashSet<AlbumId>,
-    pub selected_photo: Option<PathBuf>,
 }
 
 impl Default for AlbumListState {
@@ -86,7 +86,6 @@ impl Default for AlbumListState {
         Self {
             selected_album: None,
             expanded_albums: HashSet::new(),
-            selected_photo: None,
         }
     }
 }
@@ -94,7 +93,6 @@ impl Default for AlbumListState {
 #[derive(Debug, Clone)]
 pub struct AlbumListResponse {
     pub selected: Option<AlbumId>,
-    pub selected_photo: Option<PathBuf>,
     pub double_clicked_photo: Option<PathBuf>,
 }
 
@@ -110,8 +108,8 @@ impl<'a> AlbumList<'a> {
     pub fn show(&mut self, ui: &mut Ui, scroll_to_path: Option<&PathBuf>) -> AlbumListResponse {
         ui.style_mut().interaction.selectable_labels = false;
 
+        let mut selection = TreeListSelection::new(ui);
         let mut selected_album = None;
-        let mut selected_photo = None;
         let mut double_clicked_photo = None;
 
         let (current_album_filter, mut albums): (Option<AlbumId>, Vec<(AlbumId, String, usize)>) =
@@ -127,7 +125,7 @@ impl<'a> AlbumList<'a> {
 
         if self.state.selected_album != current_album_filter {
             self.state.selected_album = current_album_filter.clone();
-            self.state.selected_photo = None;
+            selection.clear_this_frame(ui);
         }
 
         albums.sort_by_cached_key(|(_, name, _)| name.to_lowercase());
@@ -136,6 +134,7 @@ impl<'a> AlbumList<'a> {
             ui.label(RichText::new("No albums").weak());
         } else {
             let layout = AlbumListLayout::new(albums, &self.state.expanded_albums);
+            let ordered_photo_paths = self.visible_photo_paths(&layout);
             let row_to_scroll = self.scroll_row_for_path(&layout, scroll_to_path);
             let mut photo_windows = HashMap::new();
             let mut disclosure_clicked = None;
@@ -153,7 +152,8 @@ impl<'a> AlbumList<'a> {
                             return;
                         };
 
-                        let response = row.add(tree_row);
+                        let response =
+                            row.add_selectable(tree_row, &mut selection, &ordered_photo_paths);
 
                         if response.disclosure_clicked() {
                             disclosure_clicked = Some(response.id().clone());
@@ -179,28 +179,27 @@ impl<'a> AlbumList<'a> {
                 match clicked {
                     AlbumListRowId::Album(album_id) => {
                         self.state.selected_album = Some(album_id.clone());
-                        self.state.selected_photo = None;
                         if current_album_filter.as_ref() != Some(&album_id) {
                             selected_album = Some(album_id);
                         }
                     }
-                    AlbumListRowId::Photo { path, .. } => {
-                        self.state.selected_photo = Some(path.clone());
-                        selected_photo = Some(path);
-                    }
+                    AlbumListRowId::Photo { .. } => {}
                 }
             }
 
             if let Some(AlbumListRowId::Photo { path, .. }) = double_clicked {
-                self.state.selected_photo = Some(path.clone());
-                selected_photo = Some(path.clone());
+                selection.select_path(
+                    ui,
+                    &ordered_photo_paths,
+                    &path,
+                    SelectionModifiers::default(),
+                );
                 double_clicked_photo = Some(path);
             }
         }
 
         AlbumListResponse {
             selected: selected_album,
-            selected_photo,
             double_clicked_photo,
         }
     }
@@ -237,18 +236,15 @@ impl<'a> AlbumList<'a> {
             .to_string_lossy()
             .to_string();
 
-        Some(
-            TreeListRow::photo(
-                AlbumListRowId::Photo {
-                    album_id: section.album_id.clone(),
-                    path: photo_path.clone(),
-                },
-                1,
-                title,
-                photo_path.clone(),
-            )
-            .selected(self.state.selected_photo.as_ref() == Some(&photo_path)),
-        )
+        Some(TreeListRow::photo(
+            AlbumListRowId::Photo {
+                album_id: section.album_id.clone(),
+                path: photo_path.clone(),
+            },
+            1,
+            title,
+            photo_path.clone(),
+        ))
     }
 
     fn scroll_row_for_path(
@@ -277,6 +273,19 @@ impl<'a> AlbumList<'a> {
             }
 
             fallback_album_row
+        })
+    }
+
+    fn visible_photo_paths(&self, layout: &AlbumListLayout) -> Vec<PathBuf> {
+        Dependency::<PhotoManager>::get().with_lock_mut(|pm| {
+            let mut paths = Vec::new();
+
+            // TODO: Avoid rebuilding all visible paths every frame; range selection only needs this on selection input.
+            for section in layout.sections.iter().filter(|section| section.is_expanded) {
+                paths.extend(pm.album_photos_iter(&section.album_id).cloned());
+            }
+
+            paths
         })
     }
 

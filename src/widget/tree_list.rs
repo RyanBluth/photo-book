@@ -1,11 +1,14 @@
 use std::{hash::Hash, path::PathBuf};
 
-use egui::{Color32, Image, ImageSource, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2};
+use egui::{
+    Color32, Image, ImageSource, Key, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2,
+};
 use egui_extras::{Column, TableBuilder};
 
 use crate::{
     dependencies::{Dependency, Singleton, SingletonFor},
     photo_manager::PhotoManager,
+    selection_manager::{SelectionManager, SelectionModifiers, SelectionSnapshot},
     theme,
 };
 
@@ -124,6 +127,88 @@ impl<Id> TreeListRow<Id> {
             *t = Some(trailing.into());
         }
         self
+    }
+
+    fn selection_path(&self) -> Option<&PathBuf> {
+        match &self.kind {
+            TreeListRowKind::Header { .. } => None,
+            TreeListRowKind::Photo { path } => Some(path),
+        }
+    }
+}
+
+pub struct TreeListSelection {
+    snapshot: SelectionSnapshot,
+    modifiers: SelectionModifiers,
+}
+
+impl TreeListSelection {
+    pub fn new(ui: &mut Ui) -> Self {
+        let selection_manager = Dependency::<SelectionManager>::get();
+        let mut snapshot =
+            selection_manager.with_lock(|selection_manager| selection_manager.snapshot());
+
+        if ui.input(|input| input.key_down(Key::Escape)) && !snapshot.selected_paths.is_empty() {
+            snapshot = selection_manager
+                .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+        }
+
+        let modifiers = ui.input(|input| SelectionModifiers {
+            ctrl: input.modifiers.ctrl,
+            shift: input.modifiers.shift,
+        });
+
+        Self {
+            snapshot,
+            modifiers,
+        }
+    }
+
+    pub fn clear_this_frame(&mut self, ui: &mut Ui) {
+        self.snapshot = Dependency::<SelectionManager>::get()
+            .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+    }
+
+    pub fn select_path(
+        &mut self,
+        ui: &mut Ui,
+        ordered_paths: &[PathBuf],
+        path: &PathBuf,
+        modifiers: SelectionModifiers,
+    ) {
+        self.snapshot = Dependency::<SelectionManager>::get().with_lock_mut(|selection_manager| {
+            selection_manager.select_path(ui, ordered_paths, path, modifiers)
+        });
+    }
+
+    fn apply_to_row<Id>(&self, row: TreeListRow<Id>) -> TreeListRow<Id> {
+        let selected = row
+            .selection_path()
+            .map(|path| self.snapshot.selected_paths.contains(path))
+            .unwrap_or(row.selected);
+
+        row.selected(selected)
+    }
+
+    fn handle_row_response<Id>(
+        &mut self,
+        ui: &mut Ui,
+        ordered_paths: &[PathBuf],
+        response: &TreeListRowResponse<Id>,
+    ) {
+        if !response.clicked() {
+            return;
+        }
+
+        match response.selection_path() {
+            Some(path) => {
+                self.select_path(ui, ordered_paths, path, self.modifiers);
+            }
+            None => {
+                Dependency::<SelectionManager>::get()
+                    .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+            }
+        }
     }
 }
 
@@ -310,12 +395,28 @@ impl TreeListRowUi<'_> {
     where
         Id: Hash,
     {
+        let selection_path = row.selection_path().cloned();
         let row_response = row.draw(self);
         TreeListRowResponse {
             id: row.id,
             response: row_response.row,
             disclosure: row_response.disclosure,
+            selection_path,
         }
+    }
+
+    pub fn add_selectable<Id>(
+        &mut self,
+        row: TreeListRow<Id>,
+        selection: &mut TreeListSelection,
+        ordered_paths: &[PathBuf],
+    ) -> TreeListRowResponse<Id>
+    where
+        Id: Hash,
+    {
+        let response = self.add(selection.apply_to_row(row));
+        selection.handle_row_response(self.ui, ordered_paths, &response);
+        response
     }
 
     fn row_frame(
@@ -392,6 +493,7 @@ pub struct TreeListRowResponse<Id> {
     id: Id,
     response: Response,
     disclosure: Option<Response>,
+    selection_path: Option<PathBuf>,
 }
 
 impl<Id> TreeListRowResponse<Id> {
@@ -401,6 +503,10 @@ impl<Id> TreeListRowResponse<Id> {
 
     pub fn response(&self) -> &Response {
         &self.response
+    }
+
+    pub fn selection_path(&self) -> Option<&PathBuf> {
+        self.selection_path.as_ref()
     }
 
     pub fn disclosure_clicked(&self) -> bool {

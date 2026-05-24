@@ -13,6 +13,7 @@ use crate::{
     photo_manager::PhotoManager,
     project::{Project, ProjectError},
     scene::{organize_edit_scene::OrganizeEditScene, organize_scene::GalleryScene},
+    selection_manager::SelectionManager,
 };
 
 #[derive(Debug, Clone)]
@@ -202,6 +203,8 @@ impl Session {
         Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
             photo_manager.clear();
         });
+        Dependency::<SelectionManager>::get()
+            .with_lock_mut(|selection_manager| selection_manager.clear());
 
         let scene = Project::load(&path)?;
 
@@ -223,6 +226,8 @@ impl Session {
         Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
             photo_manager.clear();
         });
+        Dependency::<SelectionManager>::get()
+            .with_lock_mut(|selection_manager| selection_manager.clear());
 
         Ok(scene)
     }

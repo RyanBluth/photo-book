@@ -1,13 +1,23 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::sync::Arc;
+use std::{
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
+    time::SystemTime,
+};
 
 use auto_persisting::AutoPersisting;
 use autosave_manager::AutoSaveManager;
 use config::Config;
 use cursor_manager::CursorManager;
 use dependencies::{Dependency, Singleton, SingletonFor};
-use eframe::egui::{self, ViewportBuilder};
+use eframe::{
+    Frame,
+    egui::{self, Context, Ui, ViewportBuilder},
+};
 
 use font_manager::FontManager;
 
@@ -16,7 +26,6 @@ use log::info;
 use modal::manager::ModalManager;
 use project::Project;
 use scene::{SceneManager, organize_edit_scene::OrganizeEditScene};
-use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
@@ -48,6 +57,7 @@ mod photo_manager;
 mod project;
 mod project_settings;
 mod scene;
+mod selection_manager;
 mod session;
 mod string_log;
 mod template;
@@ -229,9 +239,7 @@ impl PhotoBookApp {
         }
     }
 
-    fn try_load_last_project(
-        project_path: &Option<std::path::PathBuf>,
-    ) -> Option<OrganizeEditScene> {
+    fn try_load_last_project(project_path: &Option<PathBuf>) -> Option<OrganizeEditScene> {
         let path = project_path.as_ref()?;
         match Project::load(path) {
             Ok(scene) => Some(scene),
@@ -242,7 +250,7 @@ impl PhotoBookApp {
         }
     }
 
-    fn get_last_project_time() -> Option<std::time::SystemTime> {
+    fn get_last_project_time() -> Option<SystemTime> {
         let config = Dependency::<AutoPersisting<Config>>::get();
         let last_project_path = config.with_lock_mut(|config| {
             config
@@ -270,7 +278,7 @@ impl PhotoBookApp {
 }
 
 impl eframe::App for PhotoBookApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
         if !self.loaded_initial_scene {
             egui_extras::install_image_loaders(ctx);
 
@@ -328,5 +336,5 @@ impl eframe::App for PhotoBookApp {
         });
     }
 
-    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {}
+    fn ui(&mut self, _ui: &mut Ui, _frame: &mut Frame) {}
 }
