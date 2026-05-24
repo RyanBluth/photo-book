@@ -32,7 +32,7 @@ use wgpu::Color;
 use crate::{
     cursor_manager::CursorManager,
     debug::DebugSettings,
-    dependencies::{Dependency, SingletonFor},
+    dep, dep_mut,
     id::LayerId,
     layout::apply_layout_node,
     photo_manager::PhotoManager,
@@ -186,7 +186,7 @@ impl<'a> Canvas<'a> {
         ui.input(|input| {
             if input.key_down(egui::Key::Space) && is_pointer_on_canvas {
                 self.state.offset += input.pointer.delta();
-                Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                dep_mut!(CursorManager, |cursor_manager| {
                     cursor_manager.set_cursor(CursorIcon::Grabbing);
                 });
                 true
@@ -788,7 +788,7 @@ impl<'a> Canvas<'a> {
                             layer.id
                         ),
                         |ui| {
-                            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                            dep_mut!(PhotoManager, |photo_manager| {
                                 match photo_manager
                                     .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                                 { Ok(Some(texture)) => {
@@ -852,7 +852,7 @@ impl<'a> Canvas<'a> {
                     )
                     .inner;
 
-                Dependency::<DebugSettings>::get().with_lock(|debug_settings| {
+                dep!(DebugSettings, |debug_settings| {
                     if debug_settings.show_quick_layout_order {
                         self.draw_quick_layout_number(
                             ui,
@@ -972,7 +972,7 @@ impl<'a> Canvas<'a> {
                 );
 
                 if let Some(photo) = photo {
-                    Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    dep_mut!(PhotoManager, |photo_manager| {
                         if let Ok(Some(texture)) = photo_manager
                             .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                         {

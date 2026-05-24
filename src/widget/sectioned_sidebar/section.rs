@@ -1,10 +1,6 @@
 use egui::{Button, CursorIcon, Frame, RichText, Sense, TextStyle, UiBuilder, Vec2};
 
-use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, SingletonFor},
-    theme::color::ACTION_BAR,
-};
+use crate::{cursor_manager::CursorManager, dep_mut, theme::color::ACTION_BAR};
 
 pub const SECTION_HEADER_INNER_MARGIN: f32 = 8.0;
 
@@ -102,7 +98,7 @@ impl<'a> CollapsableSection<'a> {
             }
 
             if response.hovered() {
-                Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                dep_mut!(CursorManager, |cursor_manager| {
                     cursor_manager.set_cursor(CursorIcon::PointingHand);
                 });
             }

@@ -4,7 +4,7 @@ use log::{error, info};
 use savefile_derive::Savefile;
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
+    dep, dep_mut,
     project::{PROJECT_VERSION, Project, ProjectError},
     scene::organize_edit_scene::OrganizeEditScene,
     session::Session,
@@ -57,7 +57,7 @@ impl AutoSaveManager {
         };
 
         if let Some(active_project) = auto_save.active_project {
-            Dependency::<Session>::get().with_lock_mut(|session| {
+            dep_mut!(Session, |session| {
                 session.active_project = Some(active_project);
             });
         }
@@ -110,8 +110,7 @@ fn create_save_task(root_scene: OrganizeEditScene, path: PathBuf) -> tokio::task
         info!("Auto saving project to {}", path.display());
 
         let auto_save: AutoSave = AutoSave {
-            active_project: Dependency::<Session>::get()
-                .with_lock(|session| session.active_project.clone()),
+            active_project: dep!(Session, |session| session.active_project.clone()),
             project: Project::new(&root_scene),
         };
 

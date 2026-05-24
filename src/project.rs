@@ -6,7 +6,7 @@ use savefile_derive::Savefile;
 use thiserror::Error;
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
+    dep, dep_mut,
     id::{LayerId, PageId, next_page_id, set_min_layer_id},
     model::{
         album::Album as AppAlbum, edit_state::EditablePage, page::Page as AppPage,
@@ -65,7 +65,7 @@ pub struct Project {
 
 impl Project {
     pub fn new(root_scene: &OrganizeEditScene) -> Project {
-        let photos = Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+        let photos = dep!(PhotoManager, |photo_manager| {
             photo_manager
                 .photo_database
                 .get_all_photo_paths()
@@ -98,19 +98,15 @@ impl Project {
                                     LayerContent::Photo(CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path.clone(),
-                                            rating: Dependency::<PhotoManager>::get().with_lock(
-                                                |photo_manager| {
-                                                    photo_manager
-                                                        .get_photo_rating(&canvas_photo.photo.path)
-                                                },
-                                            ),
-                                            tags: Dependency::<PhotoManager>::get().with_lock(
-                                                |photo_manager| {
-                                                    photo_manager
-                                                        .get_photo_tags(&canvas_photo.photo.path)
-                                                        .into()
-                                                },
-                                            ),
+                                            rating: dep!(PhotoManager, |photo_manager| {
+                                                photo_manager
+                                                    .get_photo_rating(&canvas_photo.photo.path)
+                                            }),
+                                            tags: dep!(PhotoManager, |photo_manager| {
+                                                photo_manager
+                                                    .get_photo_tags(&canvas_photo.photo.path)
+                                                    .into()
+                                            }),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     })
@@ -170,19 +166,15 @@ impl Project {
                                     photo: photo.map(|canvas_photo| CanvasPhoto {
                                         photo: Photo {
                                             path: canvas_photo.photo.path.clone(),
-                                            rating: Dependency::<PhotoManager>::get().with_lock(
-                                                |photo_manager| {
-                                                    photo_manager
-                                                        .get_photo_rating(&canvas_photo.photo.path)
-                                                },
-                                            ),
-                                            tags: Dependency::<PhotoManager>::get().with_lock(
-                                                |photo_manager| {
-                                                    photo_manager
-                                                        .get_photo_tags(&canvas_photo.photo.path)
-                                                        .into()
-                                                },
-                                            ),
+                                            rating: dep!(PhotoManager, |photo_manager| {
+                                                photo_manager
+                                                    .get_photo_rating(&canvas_photo.photo.path)
+                                            }),
+                                            tags: dep!(PhotoManager, |photo_manager| {
+                                                photo_manager
+                                                    .get_photo_tags(&canvas_photo.photo.path)
+                                                    .into()
+                                            }),
                                         },
                                         crop: canvas_photo.crop.into(),
                                     }),
@@ -320,33 +312,33 @@ impl Project {
             })
             .collect();
 
-        let group_by = Dependency::<PhotoManager>::get()
-            .with_lock(|photo_manager| photo_manager.photo_grouping());
+        let group_by = dep!(PhotoManager, |photo_manager| photo_manager.photo_grouping());
 
-        let project_settings: AppProjectSettings = Dependency::<ProjectSettingsManager>::get()
-            .with_lock(|settings| settings.project_settings.clone());
+        let project_settings: AppProjectSettings =
+            dep!(ProjectSettingsManager, |settings| settings
+                .project_settings
+                .clone());
 
-        let albums = Dependency::<PhotoManager>::get()
-            .with_lock(|photo_manager| {
-                photo_manager
+        let albums = dep!(PhotoManager, |photo_manager| {
+            photo_manager
+                .photo_database
+                .albums_iter()
+                .cloned()
+                .collect::<Vec<_>>()
+        })
+        .into_iter()
+        .map(|album| {
+            dep_mut!(PhotoManager, |photo_manager| Album {
+                id: album.id.clone(),
+                name: album.name.clone(),
+                photos: photo_manager
                     .photo_database
-                    .albums_iter()
+                    .album_photos_iter(&album.id)
                     .cloned()
-                    .collect::<Vec<_>>()
+                    .collect(),
             })
-            .into_iter()
-            .map(|album| {
-                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| Album {
-                    id: album.id.clone(),
-                    name: album.name.clone(),
-                    photos: photo_manager
-                        .photo_database
-                        .album_photos_iter(&album.id)
-                        .cloned()
-                        .collect(),
-                })
-            })
-            .collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
         let project = Project {
             photos,
@@ -390,7 +382,7 @@ impl Project {
 
 impl Into<OrganizeEditScene> for Project {
     fn into(self) -> OrganizeEditScene {
-        Dependency::<ProjectSettingsManager>::get().with_lock_mut(|settings| {
+        dep_mut!(ProjectSettingsManager, |settings| {
             settings.project_settings = self.project_settings.into();
         });
 
@@ -400,7 +392,7 @@ impl Into<OrganizeEditScene> for Project {
             .map(|photo| (photo.path.clone(), photo.rating, photo.tags.clone()))
             .collect();
 
-        Dependency::<PhotoManager>::get().with_lock(|photo_manager| {
+        dep!(PhotoManager, |photo_manager| {
             photo_manager.load_photos(
                 self.photos
                     .into_iter()
@@ -409,7 +401,7 @@ impl Into<OrganizeEditScene> for Project {
             );
         });
 
-        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             for (path, rating, tags) in photos_with_metadata {
                 photo_manager.set_photo_rating(&path, rating);
                 photo_manager.set_photo_tags(&path, tags);
@@ -417,7 +409,7 @@ impl Into<OrganizeEditScene> for Project {
         });
 
         let albums: Vec<AppAlbum> = self.albums.into_iter().map(|album| album.into()).collect();
-        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             for album in albums {
                 photo_manager.insert_album(album);
             }

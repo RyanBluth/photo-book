@@ -1,5 +1,5 @@
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     widget::photo_filter::{PhotoFilter, PhotoFilterState},
@@ -20,8 +20,7 @@ impl PhotoFilterModal {
     /// Create a new photo filter modal with default state
     #[allow(dead_code)]
     pub fn new() -> Self {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
+        let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
 
         Self {
             filter_state: PhotoFilterState::default(),
@@ -33,8 +32,7 @@ impl PhotoFilterModal {
     /// Create a new photo filter modal with existing query
     #[allow(dead_code)]
     pub fn with_query(query: PhotoQuery) -> Self {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
+        let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
 
         let mut filter_state = PhotoFilterState::default();
 

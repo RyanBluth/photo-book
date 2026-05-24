@@ -6,12 +6,12 @@ use std::{
 use egui::{Sense, Ui};
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
+    dep_mut,
     file_tree::{FileTreeNode, FlattenedTreeItem},
     photo_manager::PhotoManager,
     widget::tree_list::{
-        SelectionStyle, TreeList, TreeListRow, TreeListRowResponse, TreeListSelection,
-        INDENT_WIDTH, ROW_HEIGHT,
+        INDENT_WIDTH, ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow, TreeListRowResponse,
+        TreeListSelection,
     },
 };
 
@@ -113,8 +113,9 @@ impl<'a> FileTree<'a> {
         let mut double_clicked: Option<PathBuf> = None;
         let mut removed: Option<PathBuf> = None;
 
-        let items = Dependency::<PhotoManager>::get()
-            .with_lock_mut(|pm| pm.photo_database.get_flattened_file_trees());
+        let items = dep_mut!(PhotoManager, |pm| pm
+            .photo_database
+            .get_flattened_file_trees());
         let layout = FileTreeLayout::new(&items, self.state, scroll_to_path);
 
         let mut disclosure_clicked_path: Option<PathBuf> = None;

@@ -5,7 +5,7 @@ use egui_tiles::UiResponse;
 use indexmap::{IndexMap, indexmap};
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     export::{ExportTaskId, ExportTaskStatus, Exporter},
     history::{HistoricallyEqual, UndoRedoStack},
     id::{LayerId, PageId, next_layer_id, next_page_id},
@@ -168,8 +168,7 @@ impl Scene for CanvasScene {
 
         match self.state.export_task_id {
             Some(task_id) => {
-                let exporter: Singleton<Exporter> = Dependency::get();
-                let status = exporter.with_lock(|exporter| exporter.get_task_status(task_id));
+                let status = dep!(Exporter, |exporter| exporter.get_task_status(task_id));
 
                 match status {
                     Some(ExportTaskStatus::Failed(error)) => {
@@ -187,8 +186,7 @@ impl Scene for CanvasScene {
             }
             None => {
                 if ui.ctx().input(|input| input.key_pressed(Key::F1)) {
-                    let exporter: Singleton<Exporter> = Dependency::get();
-                    self.state.export_task_id = Some(exporter.with_lock_mut(|exporter| {
+                    self.state.export_task_id = Some(dep_mut!(Exporter, |exporter| {
                         exporter.export(
                             ui.ctx().clone(),
                             self.state.pages_state.pages.values().cloned().collect(),

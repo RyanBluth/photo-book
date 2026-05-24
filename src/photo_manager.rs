@@ -20,7 +20,7 @@ use tokio::task::spawn_blocking;
 use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
 use crate::{
-    dependencies::Dependency,
+    dep, dep_mut,
     dirs::Dirs,
     model::{
         album::{Album, AlbumId},
@@ -37,8 +37,6 @@ use image::ImageEncoder;
 use core::result::Result;
 
 use fast_image_resize::{self as fr, ResizeOptions};
-
-use crate::dependencies::SingletonFor;
 
 use crate::utils;
 
@@ -153,7 +151,7 @@ impl PhotoManager {
                     let path = entry.as_ref().ok()?;
                     let lowercase_extension = path.extension()?.to_ascii_lowercase();
                     if (lowercase_extension == "jpg" || lowercase_extension == "jpeg")
-                        && !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path))
+                        && !dep!(PhotoManager, |pm| pm.photo_exists(path))
                     {
                         Some(path.clone())
                     } else {
@@ -165,7 +163,7 @@ impl PhotoManager {
             for photo_path in pending_photos {
                 match Photo::new_async(photo_path.clone()).await {
                     Result::Ok(photo) => {
-                        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                        dep_mut!(PhotoManager, |photo_manager| {
                             photo_manager.photo_database.add_photo(photo);
                         });
                     }
@@ -175,14 +173,15 @@ impl PhotoManager {
                 }
             }
 
-            Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+            dep_mut!(PhotoManager, |photo_manager| {
                 photo_manager
                     .photo_database
                     .sort_photos(PhotoSortCriteria::Date);
             });
 
-            let photo_paths: Vec<PathBuf> = Dependency::<PhotoManager>::get()
-                .with_lock(|photo_manager| photo_manager.photo_database.get_all_photo_paths());
+            let photo_paths: Vec<PathBuf> = dep!(PhotoManager, |photo_manager| photo_manager
+                .photo_database
+                .get_all_photo_paths());
 
             let _ = Self::gen_thumbnails(photo_paths);
 
@@ -197,9 +196,7 @@ impl PhotoManager {
             let mut photos_since_regroup: usize = 0;
             let filtered_photos: Vec<(PathBuf, Option<PhotoRating>)> = photos
                 .into_iter()
-                .filter(|(path, _)| {
-                    !Dependency::<PhotoManager>::get().with_lock(|pm| pm.photo_exists(path))
-                })
+                .filter(|(path, _)| !dep!(PhotoManager, |pm| pm.photo_exists(path)))
                 .collect();
 
             let num_photos = filtered_photos.len();
@@ -213,7 +210,7 @@ impl PhotoManager {
                         continue;
                     }
                     Result::Ok(photo) => {
-                        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                        dep_mut!(PhotoManager, |photo_manager| {
                             photo_manager.photo_database.add_photo(photo);
 
                             photos_since_regroup += 1;
@@ -227,14 +224,12 @@ impl PhotoManager {
                 };
             }
 
-            let (photo_paths, _) =
-                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
-                    let photo_paths: Vec<PathBuf> =
-                        photo_manager.photo_database.get_all_photo_paths();
-                    let thumbnail_dir = Dirs::Thumbnails.path();
+            let (photo_paths, _) = dep_mut!(PhotoManager, |photo_manager| {
+                let photo_paths: Vec<PathBuf> = photo_manager.photo_database.get_all_photo_paths();
+                let thumbnail_dir = Dirs::Thumbnails.path();
 
-                    (photo_paths, thumbnail_dir)
-                });
+                (photo_paths, thumbnail_dir)
+            });
             let _ = Self::gen_thumbnails(photo_paths);
         });
     }
@@ -530,7 +525,7 @@ impl PhotoManager {
 
                 if thumbnail_path.exists() {
                     // info!("Thumbnail already exists for: {:?}", &photo_path);
-                    Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                    dep_mut!(PhotoManager, |photo_manager| {
                         photo_manager.thumbnail_existence_cache.insert(hash);
                     });
 
@@ -685,7 +680,7 @@ impl PhotoManager {
 
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
-                Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+                dep_mut!(PhotoManager, |photo_manager| {
                     photo_manager.thumbnail_existence_cache.insert(hash);
                 });
 

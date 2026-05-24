@@ -5,7 +5,7 @@ use log::error;
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     modal::{
         manager::{ModalManager, TypedModalId},
         save_warning::{SaveWarningModal, SaveWarningResponse, SaveWarningSource},
@@ -61,8 +61,8 @@ impl Session {
     pub fn check_modals(&mut self, current_scene: &OrganizeEditScene) -> Option<OrganizeEditScene> {
         let modal_id = self.save_warning_modal_id.as_ref()?.clone();
 
-        let response = Dependency::<ModalManager>::get()
-            .with_lock(|modal_manager| modal_manager.response_for(&modal_id));
+        let response = dep!(ModalManager, |modal_manager| modal_manager
+            .response_for(&modal_id));
 
         match response {
             Ok(Some(SaveWarningResponse::Save)) => {
@@ -77,7 +77,7 @@ impl Session {
 
                 let result = self.execute_pending_operation();
 
-                Dependency::<ModalManager>::get().with_lock_mut(|modal_manager| {
+                dep_mut!(ModalManager, |modal_manager| {
                     modal_manager.dismiss(modal_id);
                 });
 
@@ -86,14 +86,14 @@ impl Session {
             Ok(Some(SaveWarningResponse::DontSave)) => {
                 let result = self.execute_pending_operation();
 
-                Dependency::<ModalManager>::get().with_lock_mut(|modal_manager| {
+                dep_mut!(ModalManager, |modal_manager| {
                     modal_manager.dismiss(modal_id);
                 });
 
                 return result;
             }
             Ok(Some(SaveWarningResponse::Cancel)) => {
-                Dependency::<ModalManager>::get().with_lock_mut(|modal_manager| {
+                dep_mut!(ModalManager, |modal_manager| {
                     modal_manager.dismiss(modal_id);
                 });
                 self.pending_operation = None;
@@ -141,7 +141,7 @@ impl Session {
         };
 
         Project::save(&path, scene)?;
-        Dependency::<AutoPersisting<Config>>::get().with_lock_mut(|config| {
+        dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
             let _ = config.modify(ConfigModification::SetLastProject(path.clone()));
         });
@@ -200,16 +200,15 @@ impl Session {
                 }
             }
         };
-        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.clear();
         });
-        Dependency::<SelectionManager>::get()
-            .with_lock_mut(|selection_manager| selection_manager.clear());
+        dep_mut!(SelectionManager, |selection_manager| selection_manager
+            .clear());
 
         let scene = Project::load(&path)?;
 
-        let config: Singleton<AutoPersisting<Config>> = Dependency::get();
-        config.with_lock_mut(|config| {
+        dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
             let _ = config.modify(ConfigModification::SetLastProject(path.clone()));
         });
@@ -223,16 +222,16 @@ impl Session {
         self.active_project = None;
         let scene = OrganizeEditScene::new(GalleryScene::new(), None);
 
-        Dependency::<PhotoManager>::get().with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.clear();
         });
-        Dependency::<SelectionManager>::get()
-            .with_lock_mut(|selection_manager| selection_manager.clear());
+        dep_mut!(SelectionManager, |selection_manager| selection_manager
+            .clear());
 
         Ok(scene)
     }
 
     fn has_unsaved_changes(&self) -> bool {
-        Dependency::<PhotoManager>::get().with_lock(|photo_manager| photo_manager.has_photos())
+        dep!(PhotoManager, |photo_manager| photo_manager.has_photos())
     }
 }

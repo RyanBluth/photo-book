@@ -13,7 +13,6 @@ use auto_persisting::AutoPersisting;
 use autosave_manager::AutoSaveManager;
 use config::Config;
 use cursor_manager::CursorManager;
-use dependencies::{Dependency, Singleton, SingletonFor};
 use eframe::{
     Frame,
     egui::{self, Context, Ui, ViewportBuilder},
@@ -204,8 +203,7 @@ impl PhotoBookApp {
     }
 
     fn initialize_scene_manager() -> SceneManager {
-        let config = Dependency::<AutoPersisting<Config>>::get();
-        let last_project_path = config.with_lock_mut(|config| {
+        let last_project_path = dep_mut!(AutoPersisting<Config>, |config| {
             config
                 .read()
                 .ok()
@@ -251,8 +249,7 @@ impl PhotoBookApp {
     }
 
     fn get_last_project_time() -> Option<SystemTime> {
-        let config = Dependency::<AutoPersisting<Config>>::get();
-        let last_project_path = config.with_lock_mut(|config| {
+        let last_project_path = dep_mut!(AutoPersisting<Config>, |config| {
             config
                 .read()
                 .ok()
@@ -293,13 +290,12 @@ impl eframe::App for PhotoBookApp {
         if !self.loaded_fonts {
             self.loaded_fonts = true;
             // Just load all fonts at start up. Maybe there's a better time to do this?
-            let font_manager: Singleton<FontManager> = Dependency::get();
-            font_manager.with_lock_mut(|font_manager| {
+            dep_mut!(FontManager, |font_manager| {
                 font_manager.load_fonts(ctx);
             });
         }
 
-        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+        dep_mut!(CursorManager, |cursor_manager| {
             cursor_manager.begin_frame(ctx);
         });
 
@@ -310,28 +306,27 @@ impl eframe::App for PhotoBookApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.scene_manager.ui(ui);
 
-            let modal_manager: Singleton<ModalManager> = Dependency::get();
-            modal_manager.with_lock_mut(|modal_manager| {
+            dep_mut!(ModalManager, |modal_manager| {
                 modal_manager.show_next(ui);
             });
 
-            Dependency::<DeferredWorkManager>::get().with_lock_mut(|deferred_work_manager| {
+            dep_mut!(DeferredWorkManager, |deferred_work_manager| {
                 deferred_work_manager.end_frame();
             });
         });
 
-        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+        dep_mut!(CursorManager, |cursor_manager| {
             cursor_manager.end_frame(ctx);
         });
 
         // Check for pending operations from modals
-        if let Some(new_scene) = Dependency::<session::Session>::get()
-            .with_lock_mut(|session| session.check_modals(&self.scene_manager.root_scene))
-        {
+        if let Some(new_scene) = dep_mut!(session::Session, |session| {
+            session.check_modals(&self.scene_manager.root_scene)
+        }) {
             self.scene_manager.root_scene = new_scene;
         }
 
-        Dependency::<AutoSaveManager>::get().with_lock_mut(|auto_save_manager| {
+        dep_mut!(AutoSaveManager, |auto_save_manager| {
             let _ = auto_save_manager.auto_save_if_needed(&self.scene_manager.root_scene);
         });
     }

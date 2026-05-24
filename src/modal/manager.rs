@@ -8,7 +8,7 @@ use egui::{Color32, Layout, Vec2};
 use indexmap::IndexMap;
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep_mut,
     id::{ModalId, next_modal_id},
     modal::ModalResponse,
 };
@@ -119,8 +119,7 @@ impl ModalManager {
     }
 
     pub fn push<T: Modal + Send + 'static>(modal: T) -> TypedModalId<T> {
-        let modal_manager: Singleton<ModalManager> = Dependency::get();
-        let id = modal_manager.with_lock_mut(|modal_manager| {
+        let id = dep_mut!(ModalManager, |modal_manager| {
             let id = next_modal_id();
             let boxed: Box<dyn DynModal> = Box::new(modal);
             modal_manager.modals.insert(id, Arc::new(Mutex::new(boxed)));

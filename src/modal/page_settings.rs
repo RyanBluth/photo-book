@@ -1,5 +1,5 @@
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     model::edit_state::EditablePage,
     project_settings::ProjectSettingsManager,
     widget::canvas_info::page_info::{PageInfo, PageInfoState},
@@ -14,7 +14,7 @@ pub struct PageSettingsModal {
 
 impl PageSettingsModal {
     pub fn new() -> Self {
-        let current_page = Dependency::<ProjectSettingsManager>::get().with_lock(|settings| {
+        let current_page = dep!(ProjectSettingsManager, |settings| {
             settings
                 .project_settings
                 .default_page
@@ -48,8 +48,7 @@ impl Modal for PageSettingsModal {
         }
 
         if ui.button("Save").clicked() {
-            let project_settings_manager: Singleton<ProjectSettingsManager> = Dependency::get();
-            project_settings_manager.with_lock_mut(|project_settings_manager| {
+            dep_mut!(ProjectSettingsManager, |project_settings_manager| {
                 project_settings_manager.project_settings.default_page =
                     Some(self.editable_page.value.clone());
             });

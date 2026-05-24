@@ -7,7 +7,7 @@ use egui::{Id, LayerId, Order, StrokeKind, UiBuilder};
 use crate::{
     assets::Asset,
     cursor_manager::CursorManager,
-    dependencies::{Dependency, SingletonFor},
+    dep_mut,
     utils::{IdExt, RectExt},
 };
 
@@ -515,19 +515,19 @@ impl<'a> TransformableWidget<'a> {
                 if handle_rect.contains(pos) {
                     match self.state.handle_mode {
                         TransformHandleMode::Resize(_) => {
-                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                            dep_mut!(CursorManager, |cursor_manager| {
                                 cursor_manager.set_cursor(handle.cursor());
                             });
                         }
                         TransformHandleMode::Rotate => {
-                            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                            dep_mut!(CursorManager, |cursor_manager| {
                                 cursor_manager.set_cursor(CursorIcon::Crosshair);
                             });
                         }
                     }
                     break;
                 } else if rotated_inner_content_rect.contains(pos) {
-                    Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                    dep_mut!(CursorManager, |cursor_manager| {
                         cursor_manager.set_cursor(CursorIcon::Move);
                     });
                 }

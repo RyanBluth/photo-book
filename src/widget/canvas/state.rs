@@ -5,7 +5,7 @@ use eframe::{
 use indexmap::{IndexMap, indexmap};
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
+    dep,
     id::{LayerId, next_layer_id},
     layout::LayoutNode,
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
@@ -52,15 +52,13 @@ impl CanvasState {
             zoom: 1.0,
             offset: Vec2::ZERO,
             multi_select: None,
-            page: EditablePage::new(Dependency::<ProjectSettingsManager>::get().with_lock(
-                |manager| {
-                    manager
-                        .project_settings
-                        .default_page
-                        .clone()
-                        .unwrap_or_default()
-                },
-            )),
+            page: EditablePage::new(dep!(ProjectSettingsManager, |manager| {
+                manager
+                    .project_settings
+                    .default_page
+                    .clone()
+                    .unwrap_or_default()
+            })),
             template: None,
             quick_layout_order: Vec::new(),
             last_quick_layout: None,

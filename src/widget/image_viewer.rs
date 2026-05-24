@@ -5,7 +5,7 @@ use eframe::{
 };
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep_mut,
     photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
@@ -44,16 +44,11 @@ pub struct ImageViewerResponse {
 pub struct ImageViewer<'a> {
     photo: &'a Photo,
     state: &'a mut ImageViewerState,
-    photo_manager: Singleton<PhotoManager>,
 }
 
 impl<'a> ImageViewer<'a> {
     pub fn new(photo: &'a Photo, state: &'a mut ImageViewerState) -> Self {
-        Self {
-            photo,
-            state,
-            photo_manager: Dependency::<PhotoManager>::get(),
-        }
+        Self { photo, state }
     }
 
     pub fn show(self, ui: &mut eframe::egui::Ui) -> ImageViewerResponse {
@@ -253,9 +248,8 @@ impl<'a> Widget for ImageViewer<'a> {
             );
         }
 
-        match self
-            .photo_manager
-            .with_lock_mut(|photo_manager| photo_manager.texture_for(self.photo, ui.ctx()))
+        match dep_mut!(PhotoManager, |photo_manager| photo_manager
+            .texture_for(self.photo, ui.ctx()))
         {
             Ok(Some(texture)) => {
                 let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
@@ -269,7 +263,7 @@ impl<'a> Widget for ImageViewer<'a> {
                 );
                 painter.add(Shape::mesh(mesh));
             }
-            Ok(None) => match self.photo_manager.with_lock_mut(|photo_manager| {
+            Ok(None) => match dep_mut!(PhotoManager, |photo_manager| {
                 photo_manager.thumbnail_texture_for(self.photo, ui.ctx())
             }) {
                 Ok(Some(texture)) => {

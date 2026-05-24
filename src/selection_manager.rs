@@ -4,7 +4,7 @@ use egui::Ui;
 
 use crate::{
     deferred_work_manager::{DeferredWorkHandle, DeferredWorkManager},
-    dependencies::{Dependency, SingletonFor},
+    dep, dep_mut,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -53,10 +53,9 @@ impl SelectionManager {
 
     pub fn last_frame_selection(&self) -> Option<SelectionChange> {
         let last_selection_change = self.last_selection_change.as_ref()?;
-        let should_perform =
-            Dependency::<DeferredWorkManager>::get().with_lock(|deferred_work_manager| {
-                deferred_work_manager.should_perform(last_selection_change.handle)
-            });
+        let should_perform = dep!(DeferredWorkManager, |deferred_work_manager| {
+            deferred_work_manager.should_perform(last_selection_change.handle)
+        });
 
         should_perform.then(|| last_selection_change.change.clone())
     }
@@ -111,8 +110,9 @@ impl SelectionManager {
 
     fn record_change(&mut self, ui: &mut Ui, change: SelectionChange) -> SelectionSnapshot {
         let snapshot = self.snapshot();
-        let handle = Dependency::<DeferredWorkManager>::get()
-            .with_lock_mut(|deferred_work_manager| deferred_work_manager.after_repaint(ui));
+        let handle = dep_mut!(DeferredWorkManager, |deferred_work_manager| {
+            deferred_work_manager.after_repaint(ui)
+        });
 
         self.last_selection_change = Some(DeferredSelectionChange { change, handle });
 

@@ -2,7 +2,7 @@ use egui::{Color32, CursorIcon, Frame, Id, Sense, Ui, UiBuilder, Vec2};
 
 use crate::{
     cursor_manager::CursorManager,
-    dependencies::{Dependency, SingletonFor},
+    dep_mut,
     widget::sectioned_sidebar::section::{
         CollapsableSection, CollapsableSectionResponse, CollapsableSectionState,
         section_header_height,
@@ -174,7 +174,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
                         .rect_filled(line_rect, 0.0, Color32::from_rgb(150, 150, 150));
 
                     if response.hovered() {
-                        Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+                        dep_mut!(CursorManager, |cursor_manager| {
                             cursor_manager.set_cursor(CursorIcon::ResizeRow);
                         });
                     }

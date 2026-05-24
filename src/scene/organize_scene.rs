@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use egui::{widget_text::WidgetText, Ui};
+use egui::{Ui, widget_text::WidgetText};
 use egui_tiles::{Behavior, Linear, LinearDir, TileId, Tiles, Tree, UiResponse};
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     photo::SaveOnDropPhoto,
     photo_manager::PhotoManager,
     selection_manager::SelectionManager,
@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    viewer_scene::ViewerScene, NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition,
+    NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition, viewer_scene::ViewerScene,
 };
 
 #[derive(Debug, Clone)]
@@ -108,8 +108,7 @@ struct GalleryTreeBehavior<'a> {
 
 impl GalleryTreeBehavior<'_> {
     fn open_photo(&mut self, path: &PathBuf) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock(|photo_manager| {
+        dep!(PhotoManager, |photo_manager| {
             if let Some(photo) = photo_manager.photo_database.get_photo(path) {
                 self.navigator
                     .push(SceneTransition::Viewer(ViewerScene::new(photo.clone())));
@@ -118,8 +117,9 @@ impl GalleryTreeBehavior<'_> {
     }
 
     fn scroll_to_photo_path(&mut self) -> Option<PathBuf> {
-        let selection_change = Dependency::<SelectionManager>::get()
-            .with_lock(|selection_manager| selection_manager.last_frame_selection())?;
+        let selection_change = dep!(SelectionManager, |selection_manager| {
+            selection_manager.last_frame_selection()
+        })?;
 
         for path in &selection_change.added_paths {
             self.expand_file_tree_parent_directories(path);
@@ -129,8 +129,8 @@ impl GalleryTreeBehavior<'_> {
     }
 
     fn clear_photo_selection(&mut self) {
-        Dependency::<SelectionManager>::get()
-            .with_lock_mut(|selection_manager| selection_manager.clear());
+        dep_mut!(SelectionManager, |selection_manager| selection_manager
+            .clear());
     }
 
     fn expand_file_tree_parent_directories(&mut self, path: &PathBuf) {
@@ -141,8 +141,7 @@ impl GalleryTreeBehavior<'_> {
     }
 
     fn apply_album_filter(&mut self, album_id: String) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             let mut filter = photo_manager.get_current_filter().clone();
             filter.album = Some(album_id);
             photo_manager.set_current_filter(filter);
@@ -152,12 +151,12 @@ impl GalleryTreeBehavior<'_> {
     }
 
     fn remove_photo(&mut self, path: &PathBuf) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.photo_database.remove_photo(path);
         });
-        Dependency::<SelectionManager>::get()
-            .with_lock_mut(|selection_manager| selection_manager.remove_path(path));
+        dep_mut!(SelectionManager, |selection_manager| {
+            selection_manager.remove_path(path)
+        });
     }
 
     fn ui(&mut self, pane: &GalleryScenePane, ui: &mut Ui) -> UiResponse {
@@ -182,16 +181,16 @@ impl GalleryTreeBehavior<'_> {
                 UiResponse::None
             }
             GalleryScenePane::PhotoInfo => {
-                let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                let selected_images = Dependency::<SelectionManager>::get()
-                    .with_lock(|selection_manager| selection_manager.selected_paths().clone());
+                let selected_images = dep!(SelectionManager, |selection_manager| {
+                    selection_manager.selected_paths().clone()
+                });
 
                 match selected_images.len() {
                     1 => {
                         let Some(selected_image) = selected_images.iter().next() else {
                             return UiResponse::None;
                         };
-                        let mut photo = photo_manager.with_lock(|photo_manager| {
+                        let mut photo = dep!(PhotoManager, |photo_manager| {
                             photo_manager
                                 .photo_database
                                 .get_photo(selected_image)

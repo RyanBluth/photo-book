@@ -34,6 +34,22 @@ macro_rules! dependency {
     };
 }
 
+#[macro_export]
+macro_rules! dep {
+    ($type:ty, |$dep:pat_param| $body:expr $(,)?) => {{
+        type Dependency = $crate::dependencies::Dependency<$type>;
+        <Dependency as $crate::dependencies::SingletonFor<$type>>::get().with_lock(|$dep| $body)
+    }};
+}
+
+#[macro_export]
+macro_rules! dep_mut {
+    ($type:ty, |$dep:pat_param| $body:expr $(,)?) => {{
+        type Dependency = $crate::dependencies::Dependency<$type>;
+        <Dependency as $crate::dependencies::SingletonFor<$type>>::get().with_lock_mut(|$dep| $body)
+    }};
+}
+
 #[derive(Debug)]
 pub struct Singleton<T> {
     lock: Arc<RwLock<T>>,

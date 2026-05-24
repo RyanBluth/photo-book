@@ -1,7 +1,4 @@
-use crate::{
-    dependencies::{Dependency, SingletonFor},
-    photo_manager::PhotoManager,
-};
+use crate::{dep_mut, photo_manager::PhotoManager};
 
 use super::{Modal, ModalActionResponse};
 
@@ -44,8 +41,8 @@ impl Modal for NewAlbumModal {
 
         if (create_clicked || self.submit_requested) && can_create {
             let album_name = self.album_name.trim().to_string();
-            Dependency::<PhotoManager>::get()
-                .with_lock_mut(|photo_manager| photo_manager.create_album(&album_name));
+            dep_mut!(PhotoManager, |photo_manager| photo_manager
+                .create_album(&album_name));
 
             return Some(ModalActionResponse::Confirm);
         }

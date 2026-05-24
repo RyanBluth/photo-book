@@ -1,7 +1,7 @@
 use egui_tiles::UiResponse;
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep_mut,
     photo::{Photo, SaveOnDropPhoto},
     photo_manager::PhotoManager,
     widget::{
@@ -94,8 +94,6 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
         _tile_id: egui_tiles::TileId,
         pane: &mut ViewerScenePane,
     ) -> UiResponse {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
         match pane {
             ViewerScenePane::Viewer => {
                 let viewer_response =
@@ -107,7 +105,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                             self.navigator.pop(ScenePopResponse::None);
                         }
                         image_viewer::Request::Previous => {
-                            photo_manager.with_lock_mut(|photo_manager| {
+                            dep_mut!(PhotoManager, |photo_manager| {
                                 if let Some(prev_photo) = photo_manager
                                     .previous_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()
@@ -118,7 +116,7 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                             });
                         }
                         image_viewer::Request::Next => {
-                            photo_manager.with_lock_mut(|photo_manager| {
+                            dep_mut!(PhotoManager, |photo_manager| {
                                 if let Some(next_photo) = photo_manager
                                     .next_photo(&self.scene_state.photo, ui.ctx())
                                     .unwrap()

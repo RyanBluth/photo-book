@@ -1,6 +1,6 @@
 use crate::assets::Asset;
 use crate::cursor_manager::CursorManager;
-use crate::dependencies::{Dependency, SingletonFor};
+use crate::dep_mut;
 use crate::theme::color;
 use crate::widget::canvas::types::ToolKind;
 use eframe::egui::{self, Image, Sense, Ui, Vec2};
@@ -74,7 +74,7 @@ impl Toolbar {
         };
 
         if response.hovered() {
-            Dependency::<CursorManager>::get().with_lock_mut(|cursor_manager| {
+            dep_mut!(CursorManager, |cursor_manager| {
                 cursor_manager.set_cursor(CursorIcon::PointingHand)
             });
         }

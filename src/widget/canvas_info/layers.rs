@@ -7,7 +7,7 @@ use strum_macros::{Display, EnumIter};
 
 use crate::{
     cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep_mut,
     history::HistoricallyEqual,
     id::{LayerId, next_layer_id},
     model::{self, editable_value::EditableValue},
@@ -506,7 +506,6 @@ pub enum LayersResponse {
 #[derive(Debug)]
 pub struct Layers<'a> {
     layers: &'a mut IndexMap<LayerId, Layer>,
-    photo_manager: Singleton<PhotoManager>,
 }
 
 impl Hash for Layer {
@@ -517,10 +516,7 @@ impl Hash for Layer {
 
 impl<'a> Layers<'a> {
     pub fn new(layers: &'a mut IndexMap<LayerId, Layer>) -> Self {
-        Self {
-            layers,
-            photo_manager: Dependency::get(),
-        }
+        Self { layers }
     }
 
     pub fn show(&mut self, ui: &mut eframe::egui::Ui) -> LayersResponse {
@@ -549,13 +545,12 @@ impl<'a> Layers<'a> {
                             let response = ui.dnd_drag_source(item_id, idx, |ui| {
                                 match &layer.content {
                                     LayerContent::Photo(canvas_photo) => {
-                                        let texture_id =
-                                            self.photo_manager.with_lock_mut(|photo_manager| {
-                                                photo_manager.thumbnail_texture_for(
-                                                    &canvas_photo.photo,
-                                                    ui.ctx(),
-                                                )
-                                            });
+                                        let texture_id = dep_mut!(PhotoManager, |photo_manager| {
+                                            photo_manager.thumbnail_texture_for(
+                                                &canvas_photo.photo,
+                                                ui.ctx(),
+                                            )
+                                        });
 
                                         let image_size =
                                             Vec2::from(canvas_photo.photo.size_with_max_size(50.0));
@@ -639,11 +634,9 @@ impl<'a> Layers<'a> {
                             }
 
                             if ui.rect_contains_pointer(ui.max_rect()) {
-                                Dependency::<CursorManager>::get().with_lock_mut(
-                                    |cursor_manager| {
-                                        cursor_manager.set_cursor(CursorIcon::PointingHand);
-                                    },
-                                );
+                                dep_mut!(CursorManager, |cursor_manager| {
+                                    cursor_manager.set_cursor(CursorIcon::PointingHand);
+                                });
                             }
 
                             if ui.input(|i| i.pointer.primary_clicked())

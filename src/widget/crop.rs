@@ -3,7 +3,7 @@ use eframe::emath::Rot2;
 use eframe::epaint::{Color32, Mesh, Shape};
 use egui::UiBuilder;
 
-use crate::dependencies::{Dependency, SingletonFor};
+use crate::dep_mut;
 use crate::photo_manager::PhotoManager;
 use crate::utils::RectExt;
 use crate::widget::action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind};
@@ -36,13 +36,11 @@ impl<'a> Crop<'a> {
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
         ui.painter().rect_filled(ui.max_rect(), 0.0, Color32::BLACK);
 
-        let texture = Dependency::<PhotoManager>::get()
-            .with_lock_mut(|photo_manager| {
-                photo_manager
-                    .texture_for_photo_with_thumbail_backup(&self.crop_state.photo, ui.ctx())
-            })
-            .unwrap()
-            .unwrap(); // TODO: Don't unwrap
+        let texture = dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.texture_for_photo_with_thumbail_backup(&self.crop_state.photo, ui.ctx())
+        })
+        .unwrap()
+        .unwrap(); // TODO: Don't unwrap
 
         self.crop_state
             .photo_rect

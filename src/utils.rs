@@ -10,11 +10,7 @@ use eframe::{
 };
 use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
-use crate::{
-    cursor_manager::CursorManager,
-    dependencies::{Dependency, Singleton, SingletonFor},
-    model::editable_value::EditableValue,
-};
+use crate::{cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue};
 
 pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -> Vec<Vec<T>> {
     let mut output: Vec<Vec<T>> = (0..partitions).map(|_| Vec::new()).collect();
@@ -393,8 +389,7 @@ impl EguiUiExt for Ui {
         let response = self.allocate_ui(self.max_rect().size(), add_contents);
 
         if response.response.contains_pointer() {
-            let cursor_manager: Singleton<CursorManager> = Dependency::get();
-            cursor_manager.with_lock_mut(|cursor_manager| {
+            dep_mut!(CursorManager, |cursor_manager| {
                 cursor_manager.set_cursor(egui::CursorIcon::PointingHand);
             });
         }

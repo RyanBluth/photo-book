@@ -3,15 +3,15 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    containers::menu::MenuConfig, Align, Color32, Image, Layout, MenuBar, PopupCloseBehavior,
-    Slider, Ui,
+    Align, Color32, Image, Layout, MenuBar, PopupCloseBehavior, Slider, Ui,
+    containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
 
 use crate::{
     assets::Asset,
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     model::photo_grouping::PhotoGrouping,
     photo::Photo,
     photo_database::PhotoQuery,
@@ -34,8 +34,6 @@ impl Default for ImageGalleryState {
 
 pub struct ImageGallery<'a> {
     #[allow(dead_code)]
-    photo_manager: Singleton<PhotoManager>,
-    #[allow(dead_code)]
     state: &'a mut ImageGalleryState,
 }
 
@@ -53,20 +51,19 @@ impl<'a> ImageGallery<'a> {
         state: &'a mut ImageGalleryState,
         scroll_to_path: Option<&PathBuf>,
     ) -> ImageGalleryResponse {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let selection_manager: Singleton<SelectionManager> = Dependency::get();
-        let mut selection_snapshot =
-            selection_manager.with_lock(|selection_manager| selection_manager.snapshot());
+        let mut selection_snapshot = dep!(SelectionManager, |selection_manager| {
+            selection_manager.snapshot()
+        });
 
         // Initialize response with defaults
         let mut primary_action_photo: Option<Photo> = None;
         let mut secondary_action_photo: Option<Photo> = None;
 
-        let has_photos =
-            photo_manager.with_lock(|photo_manager| photo_manager.photo_database.photo_count() > 0);
+        let has_photos = dep!(PhotoManager, |photo_manager| {
+            photo_manager.photo_database.photo_count() > 0
+        });
 
-        let grouped_photos =
-            photo_manager.with_lock_mut(|photo_manager| photo_manager.grouped_photos());
+        let grouped_photos = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
 
         if has_photos {
             let _initial_available_rect = ui.available_rect_before_wrap();
@@ -74,7 +71,7 @@ impl<'a> ImageGallery<'a> {
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
                     if !selection_snapshot.selected_paths.is_empty() {
-                        selection_snapshot = selection_manager.with_lock_mut(|selection_manager| {
+                        selection_snapshot = dep_mut!(SelectionManager, |selection_manager| {
                             selection_manager.clear_this_frame(ui)
                         });
                     }
@@ -185,7 +182,7 @@ impl<'a> ImageGallery<'a> {
                                     row.col(|ui: &mut Ui| {
                                         let photo = &group[offest + i];
                                         let image_response =
-                                            photo_manager.with_lock_mut(|photo_manager| {
+                                            dep_mut!(PhotoManager, |photo_manager| {
                                                 let image = GalleryImage::new(
                                                     photo.clone(),
                                                     photo_manager
@@ -203,16 +200,15 @@ impl<'a> ImageGallery<'a> {
                                                 ctrl: input.modifiers.ctrl,
                                                 shift: input.modifiers.shift,
                                             });
-                                            selection_snapshot = selection_manager.with_lock_mut(
-                                                |selection_manager| {
+                                            selection_snapshot =
+                                                dep_mut!(SelectionManager, |selection_manager| {
                                                     selection_manager.select_path(
                                                         ui,
                                                         &ordered_photo_paths,
                                                         &photo.path,
                                                         modifiers,
                                                     )
-                                                },
-                                            );
+                                                });
                                         }
 
                                         if image_response.double_clicked() {
@@ -263,9 +259,7 @@ impl<'a> ImageGallery<'a> {
 }
 
 fn add_filter_menu(ui: &mut Ui) {
-    let photo_manager: Singleton<PhotoManager> = Dependency::get();
-
-    let get_current_filter = || photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+    let get_current_filter = || dep!(PhotoManager, |pm| pm.get_current_filter().clone());
 
     MenuBar::new()
         .config(MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside))
@@ -305,13 +299,13 @@ fn add_filter_menu(ui: &mut Ui) {
                 }
 
                 if get_current_filter() != new_filter {
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
                 }
             });
 
             ui.menu_button("Tags", |ui| {
                 let mut new_filter = get_current_filter();
-                let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
+                let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
 
                 if available_tags.is_empty() {
                     ui.label("No Tags");
@@ -341,13 +335,13 @@ fn add_filter_menu(ui: &mut Ui) {
                 }
 
                 if get_current_filter() != new_filter {
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
                 }
             });
 
             ui.menu_button("Albums", |ui| {
                 let mut new_filter = get_current_filter();
-                let mut available_albums = photo_manager.with_lock(|pm| {
+                let mut available_albums = dep!(PhotoManager, |pm| {
                     pm.albums_iter()
                         .map(|album| (album.id.clone(), album.name.clone()))
                         .collect::<Vec<_>>()
@@ -373,43 +367,44 @@ fn add_filter_menu(ui: &mut Ui) {
                 }
 
                 if get_current_filter() != new_filter {
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(new_filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
                 }
             });
 
             ui.menu_button("Grouping", |ui| {
-                let new_grouping = photo_manager.with_lock(|pm| pm.get_current_filter().grouping);
+                let new_grouping = dep!(PhotoManager, |pm| pm.get_current_filter().grouping);
 
                 if ui
                     .radio(new_grouping == PhotoGrouping::Date, "Date")
                     .clicked()
                 {
-                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
                     filter.grouping = PhotoGrouping::Date;
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
                 }
 
                 if ui
                     .radio(new_grouping == PhotoGrouping::Rating, "Rating")
                     .clicked()
                 {
-                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
                     filter.grouping = PhotoGrouping::Rating;
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
                 }
 
                 if ui
                     .radio(new_grouping == PhotoGrouping::Tag, "Tag")
                     .clicked()
                 {
-                    let mut filter = photo_manager.with_lock(|pm| pm.get_current_filter().clone());
+                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
                     filter.grouping = PhotoGrouping::Tag;
-                    photo_manager.with_lock_mut(|pm| pm.set_current_filter(filter));
+                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
                 }
             });
 
             if ui.button("Clear All Filters").clicked() {
-                photo_manager.with_lock_mut(|pm| pm.set_current_filter(PhotoQuery::default()));
+                dep_mut!(PhotoManager, |pm| pm
+                    .set_current_filter(PhotoQuery::default()));
             }
         });
 }

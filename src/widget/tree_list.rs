@@ -6,7 +6,7 @@ use egui::{
 use egui_extras::{Column, TableBuilder};
 
 use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     photo_manager::PhotoManager,
     selection_manager::{SelectionManager, SelectionModifiers, SelectionSnapshot},
     theme,
@@ -144,13 +144,14 @@ pub struct TreeListSelection {
 
 impl TreeListSelection {
     pub fn new(ui: &mut Ui) -> Self {
-        let selection_manager = Dependency::<SelectionManager>::get();
-        let mut snapshot =
-            selection_manager.with_lock(|selection_manager| selection_manager.snapshot());
+        let mut snapshot = dep!(SelectionManager, |selection_manager| {
+            selection_manager.snapshot()
+        });
 
         if ui.input(|input| input.key_down(Key::Escape)) && !snapshot.selected_paths.is_empty() {
-            snapshot = selection_manager
-                .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+            snapshot = dep_mut!(SelectionManager, |selection_manager| {
+                selection_manager.clear_this_frame(ui)
+            });
         }
 
         let modifiers = ui.input(|input| SelectionModifiers {
@@ -165,8 +166,9 @@ impl TreeListSelection {
     }
 
     pub fn clear_this_frame(&mut self, ui: &mut Ui) {
-        self.snapshot = Dependency::<SelectionManager>::get()
-            .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+        self.snapshot = dep_mut!(SelectionManager, |selection_manager| {
+            selection_manager.clear_this_frame(ui)
+        });
     }
 
     pub fn select_path(
@@ -176,7 +178,7 @@ impl TreeListSelection {
         path: &PathBuf,
         modifiers: SelectionModifiers,
     ) {
-        self.snapshot = Dependency::<SelectionManager>::get().with_lock_mut(|selection_manager| {
+        self.snapshot = dep_mut!(SelectionManager, |selection_manager| {
             selection_manager.select_path(ui, ordered_paths, path, modifiers)
         });
     }
@@ -205,8 +207,9 @@ impl TreeListSelection {
                 self.select_path(ui, ordered_paths, path, self.modifiers);
             }
             None => {
-                Dependency::<SelectionManager>::get()
-                    .with_lock_mut(|selection_manager| selection_manager.clear_this_frame(ui));
+                dep_mut!(SelectionManager, |selection_manager| {
+                    selection_manager.clear_this_frame(ui)
+                });
             }
         }
     }
@@ -461,15 +464,19 @@ impl TreeListRowUi<'_> {
     }
 
     fn photo_thumbnail(ui: &mut Ui, photo_path: &PathBuf) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let photo_clone =
-            photo_manager.with_lock(|pm| pm.photo_database.get_photo(photo_path).cloned());
+        let photo_clone = dep!(PhotoManager, |pm| pm
+            .photo_database
+            .get_photo(photo_path)
+            .cloned());
 
         let texture_handle = if let Some(photo) = photo_clone {
-            photo_manager.with_lock_mut(|pm| match pm.thumbnail_texture_for(&photo, ui.ctx()) {
-                Ok(Some(texture)) => Some(texture),
-                _ => None,
-            })
+            dep_mut!(
+                PhotoManager,
+                |pm| match pm.thumbnail_texture_for(&photo, ui.ctx()) {
+                    Ok(Some(texture)) => Some(texture),
+                    _ => None,
+                }
+            )
         } else {
             None
         };

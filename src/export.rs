@@ -17,9 +17,8 @@ use smol_egui_skia::EguiSkia;
 
 use thiserror::Error;
 
-use crate::dependencies::{Dependency, Singleton, SingletonFor};
-
 use crate::font_manager::FontManager;
+use crate::{dep, dep_mut};
 
 use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
@@ -114,14 +113,12 @@ impl Exporter {
         }
 
         spawn_blocking(move || {
-            let modal_manager: Singleton<ModalManager> = Dependency::get();
             let progress_modal_id =
                 ModalManager::push(ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0));
 
             let show_export_failure_modal =
                 |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
-                    let modal_manager: Singleton<ModalManager> = Dependency::get();
-                    _ = modal_manager.with_lock_mut(|modal_manager| {
+                    _ = dep_mut!(ModalManager, |modal_manager| {
                         modal_manager.dismiss(progress_modal_id);
                     });
                     ModalManager::push(BasicModal::new(
@@ -145,7 +142,7 @@ impl Exporter {
                 let progress = page_number as f32 / (num_pages as f32 + 1.0); // +1 for the PDF generation
                 let mut tasks = tasks.lock().unwrap();
                 tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
-                _ = modal_manager.with_lock_mut(|modal_manager| {
+                _ = dep_mut!(ModalManager, |modal_manager| {
                     modal_manager.modify(&progress_modal_id, |progress_modal| {
                         progress_modal.progress = progress;
                         progress_modal.message =
@@ -167,7 +164,7 @@ impl Exporter {
 
             let mut tasks = tasks.lock().unwrap();
             tasks.insert(task_id, ExportTaskStatus::Completed);
-            modal_manager.with_lock_mut(|modal_manager| {
+            dep_mut!(ModalManager, |modal_manager| {
                 modal_manager.dismiss(progress_modal_id);
             });
             ctx.request_repaint();
@@ -200,7 +197,6 @@ impl Exporter {
             input.max_texture_side = Self::get_max_texture_size();
         });
 
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
         let mut history_manager = CanvasHistoryManager::preview();
 
         let mut canvas = Canvas::new(
@@ -215,7 +211,7 @@ impl Exporter {
                 | LayerContent::TemplatePhoto {
                     photo: Some(photo), ..
                 } => loop {
-                    let result = photo_manager.with_lock_mut(|photo_manager| {
+                    let result = dep_mut!(PhotoManager, |photo_manager| {
                         photo_manager.texture_for_blocking(&photo.photo, &backend.egui_ctx)
                     });
                     match result {
@@ -237,10 +233,9 @@ impl Exporter {
             }
         }
 
-        let font_manager: Singleton<FontManager> = Dependency::get();
-
-        if let Some(font_definitions) =
-            font_manager.with_lock(|font_manager| font_manager.font_definitions.clone())
+        if let Some(font_definitions) = dep!(FontManager, |font_manager| font_manager
+            .font_definitions
+            .clone())
         {
             backend.egui_ctx.set_fonts((*font_definitions).clone());
         };
@@ -283,7 +278,7 @@ impl Exporter {
             .write_all(&data)
             .map_err(|e| ExportError::FileError(e.to_string()))?;
 
-        photo_manager.with_lock_mut(|pm| {
+        dep_mut!(PhotoManager, |pm| {
             pm.remove_cached_textures_for_context(&backend.egui_ctx);
         });
 

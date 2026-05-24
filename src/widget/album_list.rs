@@ -6,11 +6,11 @@ use std::{
 use egui::{RichText, Ui};
 
 use crate::{
-    dependencies::{Dependency, SingletonFor},
+    dep, dep_mut,
     model::album::AlbumId,
     photo_manager::PhotoManager,
     selection_manager::SelectionModifiers,
-    widget::tree_list::{SelectionStyle, TreeList, TreeListRow, TreeListSelection, ROW_HEIGHT},
+    widget::tree_list::{ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow, TreeListSelection},
 };
 
 const PHOTO_WINDOW_SIZE: usize = 64;
@@ -113,7 +113,7 @@ impl<'a> AlbumList<'a> {
         let mut double_clicked_photo = None;
 
         let (current_album_filter, mut albums): (Option<AlbumId>, Vec<(AlbumId, String, usize)>) =
-            Dependency::<PhotoManager>::get().with_lock(|pm| {
+            dep!(PhotoManager, |pm| {
                 let current_album_filter = pm.get_current_filter().album.clone();
                 let albums = pm
                     .albums_iter()
@@ -254,7 +254,7 @@ impl<'a> AlbumList<'a> {
     ) -> Option<usize> {
         let scroll_to_path = scroll_to_path?;
 
-        Dependency::<PhotoManager>::get().with_lock_mut(|pm| {
+        dep_mut!(PhotoManager, |pm| {
             let mut fallback_album_row = None;
 
             for section in &layout.sections {
@@ -277,7 +277,7 @@ impl<'a> AlbumList<'a> {
     }
 
     fn visible_photo_paths(&self, layout: &AlbumListLayout) -> Vec<PathBuf> {
-        Dependency::<PhotoManager>::get().with_lock_mut(|pm| {
+        dep_mut!(PhotoManager, |pm| {
             let mut paths = Vec::new();
 
             // TODO: Avoid rebuilding all visible paths every frame; range selection only needs this on selection input.
@@ -299,7 +299,7 @@ impl<'a> AlbumList<'a> {
         let window = photo_windows
             .entry((album_id.clone(), window_start))
             .or_insert_with(|| {
-                Dependency::<PhotoManager>::get().with_lock_mut(|pm| {
+                dep_mut!(PhotoManager, |pm| {
                     pm.album_photos_iter(&album_id)
                         .skip(window_start)
                         .take(PHOTO_WINDOW_SIZE)

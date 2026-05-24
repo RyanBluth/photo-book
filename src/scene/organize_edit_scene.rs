@@ -8,7 +8,7 @@ use crate::{
     config::Config,
     cursor_manager::CursorManager,
     debug::DebugSettings,
-    dependencies::{Dependency, Singleton, SingletonFor},
+    dep, dep_mut,
     export::Exporter,
     modal::{
         ModalActionResponse,
@@ -61,9 +61,7 @@ impl OrganizeEditScene {
     }
 
     pub fn show_edit(&mut self) {
-        let project_settings_manager: Singleton<ProjectSettingsManager> = Dependency::get();
-
-        if project_settings_manager.with_lock(|project_settings_manager| {
+        if dep!(ProjectSettingsManager, |project_settings_manager| {
             project_settings_manager
                 .project_settings
                 .default_page
@@ -110,8 +108,7 @@ impl OrganizeEditScene {
             || organize_heading.is_pointer_button_down_on()
             || edit_heading.is_pointer_button_down_on()
         {
-            let cursor_manager: Singleton<CursorManager> = Dependency::get();
-            cursor_manager.with_lock_mut(|cursor_manager| {
+            dep_mut!(CursorManager, |cursor_manager| {
                 cursor_manager.set_cursor(CursorIcon::PointingHand);
             });
         }
@@ -124,12 +121,9 @@ impl OrganizeEditScene {
             self.show_edit();
         }
         if let Some(id) = &self.page_settings_modal_id {
-            let modal_manager: Singleton<ModalManager> = Dependency::get();
+            let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(id));
 
-            let exists = modal_manager.with_lock(|modal_manager| modal_manager.exists(id));
-
-            let modal_response =
-                modal_manager.with_lock(|modal_manager| modal_manager.response_for(id));
+            let modal_response = dep!(ModalManager, |modal_manager| modal_manager.response_for(id));
             match modal_response {
                 Ok(Some(response)) => match response {
                     ModalActionResponse::Confirm => {
@@ -190,7 +184,7 @@ impl Scene for OrganizeEditScene {
             egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Project").clicked() {
-                        Dependency::<Session>::get().with_lock_mut(|session| {
+                        dep_mut!(Session, |session| {
                             match session.new_project() {
                                 Ok(scene) => {
                                     *self = scene;
@@ -205,7 +199,7 @@ impl Scene for OrganizeEditScene {
                     }
 
                     if ui.button("Open").clicked() {
-                        Dependency::<Session>::get().with_lock_mut(|session| {
+                        dep_mut!(Session, |session| {
                             match session.load_project(None) {
                                 Ok(scene) => {
                                     *self = scene;
@@ -226,8 +220,7 @@ impl Scene for OrganizeEditScene {
                     }
 
                     ui.menu_button("Open Recent", |ui| {
-                        let config: Singleton<AutoPersisting<Config>> = Dependency::get();
-                        let recents = config.with_lock_mut(|config| {
+                        let recents = dep_mut!(AutoPersisting<Config>, |config| {
                             config.read().unwrap().recent_projects().to_vec()
                         });
 
@@ -236,7 +229,7 @@ impl Scene for OrganizeEditScene {
                         } else {
                             for recent in &recents {
                                 if ui.button(recent.display().to_string()).clicked() {
-                                    match Dependency::<Session>::get().with_lock_mut(|session| {
+                                    match dep_mut!(Session, |session| {
                                         session.load_project(Some(recent.clone()))
                                     }) {
                                         Ok(scene) => {
@@ -260,9 +253,7 @@ impl Scene for OrganizeEditScene {
                     });
 
                     if ui.button("Save").clicked() {
-                        if let Err(err) = Dependency::<Session>::get()
-                            .with_lock_mut(|session| session.save_project(&self))
-                        {
+                        if let Err(err) = dep_mut!(Session, |session| session.save_project(&self)) {
                             error!("Error saving project: {:?}", err);
                         }
                     }
@@ -295,14 +286,12 @@ impl Scene for OrganizeEditScene {
 
                         match export_path {
                             Ok(Some(export_path)) => {
-                                let exporter: Singleton<Exporter> = Dependency::get();
-
                                 let directory = export_path.parent().unwrap();
                                 let file_name = export_path.file_name().unwrap();
 
                                 match &self.edit {
                                     Some(edit) => {
-                                        exporter.with_lock_mut(|exporter| {
+                                        dep_mut!(Exporter, |exporter| {
                                             exporter.export(
                                                 ui.ctx().clone(),
                                                 edit.read()
@@ -340,8 +329,7 @@ impl Scene for OrganizeEditScene {
                 });
 
                 ui.menu_button("Group By", |ui| {
-                    let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                    photo_manager.with_lock_mut(|photo_manager| {
+                    dep_mut!(PhotoManager, |photo_manager| {
                         if ui.button("Date").clicked() {
                             photo_manager.group_photos_by(PhotoGrouping::Date);
                         }
@@ -359,7 +347,7 @@ impl Scene for OrganizeEditScene {
                 });
 
                 ui.menu_button("Debug", |ui| {
-                    Dependency::<DebugSettings>::get().with_lock_mut(|debug_settings| {
+                    dep_mut!(DebugSettings, |debug_settings| {
                         fn enabled_disabled_suffix(enabled: bool) -> &'static str {
                             if enabled { "(Enabled)" } else { "(Disabled)" }
                         }

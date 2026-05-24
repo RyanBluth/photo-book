@@ -1,10 +1,11 @@
 use egui::{Key, Ui};
 use std::collections::HashSet;
 
-use crate::dependencies::{Dependency, Singleton, SingletonFor};
+use crate::cursor_manager::CursorManager;
 use crate::model::album::AlbumId;
 use crate::photo::{PhotoMetadataField, SaveOnDropPhoto};
 use crate::photo_manager::PhotoManager;
+use crate::{dep, dep_mut};
 
 use super::tag_chips::{TagChips, TagChipsState};
 
@@ -71,10 +72,9 @@ impl<'a> PhotoInfo<'a> {
                                 );
 
                                 if resp.hovered() {
-                                    Dependency::<crate::cursor_manager::CursorManager>::get()
-                                        .with_lock_mut(|cm| {
-                                            cm.set_cursor(egui::CursorIcon::PointingHand);
-                                        });
+                                    dep_mut!(CursorManager, |cm| {
+                                        cm.set_cursor(egui::CursorIcon::PointingHand);
+                                    });
                                 }
 
                                 if resp.clicked() {
@@ -96,8 +96,7 @@ impl<'a> PhotoInfo<'a> {
                             self.state.last_photo_tags = photo_tags.clone();
                         }
 
-                        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-                        let available_tags = photo_manager.with_lock(|pm| pm.all_tags());
+                        let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
 
                         let tag_response = TagChips::new(
                             &mut self.state.selected_tags,
@@ -163,8 +162,7 @@ impl<'a> PhotoInfo<'a> {
 
     fn show_albums(&mut self, ui: &mut Ui) {
         let photo_path = self.photo.path.clone();
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        let (mut available_albums, photo_albums) = photo_manager.with_lock(|pm| {
+        let (mut available_albums, photo_albums) = dep!(PhotoManager, |pm| {
             (
                 pm.albums_iter()
                     .map(|album| (album.id.clone(), album.name.clone()))
@@ -194,12 +192,12 @@ impl<'a> PhotoInfo<'a> {
                     let mut is_selected = self.state.selected_albums.contains(&album_id);
                     if ui.checkbox(&mut is_selected, &album_name).changed() {
                         if is_selected {
-                            photo_manager.with_lock_mut(|pm| {
+                            dep_mut!(PhotoManager, |pm| {
                                 pm.add_to_album(&album_id, &photo_path);
                             });
                             self.state.selected_albums.insert(album_id.clone());
                         } else {
-                            photo_manager.with_lock_mut(|pm| {
+                            dep_mut!(PhotoManager, |pm| {
                                 pm.remove_from_album(&album_id, &photo_path);
                             });
                             self.state.selected_albums.remove(&album_id);

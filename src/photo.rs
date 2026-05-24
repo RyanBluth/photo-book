@@ -10,12 +10,7 @@ use std::{
 };
 use tokio::fs::File as TokioFile;
 
-use crate::{
-    dependencies::{Dependency, Singleton, SingletonFor},
-    dirs::Dirs,
-    photo_manager::PhotoManager,
-    utils::ExifDateTimeExt,
-};
+use crate::{dep, dep_mut, dirs::Dirs, photo_manager::PhotoManager, utils::ExifDateTimeExt};
 
 use eframe::{
     emath::Rot2,
@@ -562,33 +557,27 @@ impl Photo {
     }
 
     pub fn rating(&self) -> PhotoRating {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock(|pm| pm.get_photo_rating(&self.path))
+        dep!(PhotoManager, |pm| pm.get_photo_rating(&self.path))
     }
 
     pub fn set_rating(&self, rating: PhotoRating) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|pm| pm.set_photo_rating(&self.path, rating));
+        dep_mut!(PhotoManager, |pm| pm.set_photo_rating(&self.path, rating));
     }
 
     pub fn tags(&self) -> HashSet<String> {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock(|pm| pm.get_photo_tags(&self.path))
+        dep!(PhotoManager, |pm| pm.get_photo_tags(&self.path))
     }
 
     pub fn set_tags(&self, tags: HashSet<String>) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|pm| pm.set_photo_tags(&self.path, tags));
+        dep_mut!(PhotoManager, |pm| pm.set_photo_tags(&self.path, tags));
     }
 
     pub fn add_tag(&self, tag: String) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|pm| pm.add_photo_tag(&self.path, tag));
+        dep_mut!(PhotoManager, |pm| pm.add_photo_tag(&self.path, tag));
     }
 
     pub fn remove_tag(&self, tag: &String) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|pm| pm.remove_photo_tag(&self.path, tag));
+        dep_mut!(PhotoManager, |pm| pm.remove_photo_tag(&self.path, tag));
     }
 }
 
@@ -626,8 +615,7 @@ impl DerefMut for SaveOnDropPhoto<'_> {
 
 impl<'a> Drop for SaveOnDropPhoto<'a> {
     fn drop(&mut self) {
-        let photo_manager: Singleton<PhotoManager> = Dependency::get();
-        photo_manager.with_lock_mut(|photo_manager| {
+        dep_mut!(PhotoManager, |photo_manager| {
             if let Some(current_photo) = photo_manager.photo_database.get_photo(&self.path) {
                 if current_photo != self.photo {
                     photo_manager.update_photo(self.clone());
