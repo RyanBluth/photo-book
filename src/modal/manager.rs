@@ -4,13 +4,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use egui::{Color32, Layout, Vec2};
+use egui::{Layout, Vec2};
 use indexmap::IndexMap;
 
 use crate::{
     dep_mut,
     id::{ModalId, next_modal_id},
     modal::ModalResponse,
+    theme::color,
 };
 
 use super::Modal;
@@ -183,8 +184,7 @@ impl ModalManager {
                 .ctx()
                 .viewport(|viewport| viewport.this_pass.available_rect);
 
-            ui.painter()
-                .rect_filled(viewport_rect, 0.0, Color32::from_black_alpha(128));
+            ui.painter().rect_filled(viewport_rect, 0.0, color::OVERLAY);
 
             let mut response = None;
 

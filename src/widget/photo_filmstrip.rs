@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use egui::{
-    Align, Color32, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke,
-    StrokeKind, Ui, UiBuilder, Vec2, load::SizedTexture, style::ScrollAnimation,
+    Align, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind,
+    Ui, UiBuilder, Vec2, load::SizedTexture, style::ScrollAnimation,
 };
 
 use crate::{
@@ -81,8 +81,7 @@ impl<'a> PhotoFilmstrip<'a> {
         let cell_height = content_rect.height().max(1.0);
         let cell_width = cell_height * CELL_ASPECT_RATIO;
 
-        ui.painter()
-            .rect_filled(bar_rect, 0.0, Color32::from_gray(34));
+        ui.painter().rect_filled(bar_rect, 0.0, color::SURFACE_DARK);
 
         let row_width = thumbnail_row_width(photos.len(), cell_width);
         let edge_spacing = ((content_rect.width() - row_width) * 0.5).max(CELL_SPACING);
@@ -133,9 +132,9 @@ impl<'a> PhotoFilmstrip<'a> {
         let line_rect =
             Rect::from_center_size(rect.center(), Vec2::new(rect.width(), RESIZE_LINE_HEIGHT));
         let line_color = if response.hovered() || response.dragged() {
-            Color32::from_gray(150)
+            color::SURFACE_EMPHASIS
         } else {
-            Color32::from_gray(74)
+            color::SURFACE_MUTED
         };
 
         ui.painter().rect_filled(line_rect, 0.0, line_color);
@@ -172,19 +171,19 @@ fn thumbnail_cell(
         ui.allocate_exact_size(Vec2::new(cell_width, cell_height), Sense::click());
 
     let background = if selected {
-        Color32::from_rgb(38, 54, 68)
+        color::ACCENT_MUTED
     } else if response.hovered() {
-        Color32::from_rgb(50, 50, 50)
+        color::SURFACE_MUTED
     } else {
-        Color32::from_rgb(22, 22, 22)
+        color::SURFACE_DARK
     };
 
     ui.painter().rect_filled(rect, 4.0, background);
 
     let stroke = if selected {
-        Stroke::new(2.0, color::FOCUSED)
+        Stroke::new(2.0, color::ACCENT)
     } else {
-        Stroke::new(1.0, Color32::from_gray(58))
+        Stroke::new(1.0, color::SURFACE_MUTED)
     };
     ui.painter()
         .rect_stroke(rect, 4.0, stroke, StrokeKind::Inside);
@@ -218,13 +217,13 @@ fn paint_thumbnail(
         }
         Ok(None) => {
             ui.painter()
-                .rect_filled(placeholder_rect, 2.0, color::PLACEHOLDER);
+                .rect_filled(placeholder_rect, 2.0, color::SURFACE_MUTED);
             ui.put(placeholder_rect, Spinner::new());
             ui.ctx().request_repaint();
         }
         Err(_) => {
             ui.painter()
-                .rect_filled(placeholder_rect, 2.0, Color32::from_rgb(130, 30, 30));
+                .rect_filled(placeholder_rect, 2.0, color::ERROR);
         }
     }
 }

@@ -1,7 +1,7 @@
 use eframe::egui::{RichText, Ui};
-use egui::{Color32, ComboBox, Stroke, StrokeKind};
+use egui::{ComboBox, Stroke, StrokeKind};
 
-use crate::utils::EditableValueTextEdit;
+use crate::{theme::color, utils::EditableValueTextEdit};
 
 use super::layers::ShapeToolSettings;
 
@@ -70,8 +70,7 @@ impl<'a> ShapeToolControl<'a> {
                             if let Some((stroke, _)) = self.settings.stroke {
                                 self.settings.stroke = Some((stroke, kind));
                             } else {
-                                self.settings.stroke =
-                                    Some((Stroke::new(1.0, Color32::BLACK), kind));
+                                self.settings.stroke = Some((Stroke::new(1.0, color::BLACK), kind));
                             }
                         }
                         None => self.settings.stroke = None,

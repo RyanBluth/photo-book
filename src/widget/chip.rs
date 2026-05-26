@@ -1,4 +1,6 @@
-use egui::{Color32, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget};
+use egui::{Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget};
+
+use crate::theme::color;
 
 #[derive(Clone)]
 pub struct Chip<'a> {
@@ -117,15 +119,15 @@ impl<'a> Widget for Chip<'a> {
                 let close_hovered =
                     close_rect.contains(response.interact_pointer_pos().unwrap_or_default());
                 let close_bg = if close_hovered {
-                    Color32::from_rgba_unmultiplied(255, 255, 255, 50)
+                    color::WHITE_OVERLAY
                 } else {
-                    Color32::TRANSPARENT
+                    color::TRANSPARENT
                 };
 
                 painter.circle_filled(close_rect.center(), close_button_size / 2.0, close_bg);
 
                 let cross_color = if close_hovered {
-                    Color32::WHITE
+                    color::WHITE
                 } else {
                     text_color
                 };

@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Button, Color32, Layout, Stroke, Vec2};
+use egui::{Button, Layout, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
@@ -132,7 +132,8 @@ impl<'a> Pages<'a> {
                                         response.response.dnd_hover_payload::<usize>(),
                                     ) {
                                         if *hovered_idx != index {
-                                            let stroke = egui::Stroke::new(2.0, Color32::WHITE);
+                                            let stroke =
+                                                egui::Stroke::new(2.0, theme::color::WHITE);
                                             if pointer.y < page_rect.center().y {
                                                 ui.painter().hline(
                                                     page_rect.x_range(),
@@ -168,7 +169,7 @@ impl<'a> Pages<'a> {
                                         ui.painter().rect_stroke(
                                             page_rect.expand(3.0),
                                             4.0,
-                                            Stroke::new(3.0, theme::color::FOCUSED),
+                                            Stroke::new(3.0, theme::color::ACCENT),
                                             egui::StrokeKind::Outside,
                                         );
                                     }
@@ -200,7 +201,7 @@ impl<'a> Pages<'a> {
         }
 
         ui.painter()
-            .rect_filled(ui.available_rect_before_wrap(), 0.0, Color32::from_gray(40));
+            .rect_filled(ui.available_rect_before_wrap(), 0.0, theme::color::SURFACE);
 
         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(20.0);

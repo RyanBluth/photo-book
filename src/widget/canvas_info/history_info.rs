@@ -5,6 +5,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    theme::color,
     utils::EguiUiExt,
 };
 
@@ -75,9 +76,9 @@ impl<'a> HistoryInfo<'a> {
                                                                 .stack
                                                                 .index
                                                         {
-                                                            egui::Color32::GREEN
+                                                            color::SUCCESS
                                                         } else {
-                                                            egui::Color32::WHITE
+                                                            color::WHITE
                                                         },
                                                     ),
                                             );

@@ -14,6 +14,7 @@ use crate::{
     photo::Photo,
     photo_manager::PhotoManager,
     template::TemplateRegion,
+    theme::color,
     utils::{IdExt, Toggle},
     widget::{
         canvas::CanvasPhoto,
@@ -225,7 +226,7 @@ impl Default for TextToolSettings {
         Self {
             font_size: 24.0,
             font_id: FontId::default(),
-            color: Color32::BLACK,
+            color: color::BLACK,
             horizontal_alignment: TextHorizontalAlignment::Left,
             vertical_alignment: TextVerticalAlignment::Top,
             edit_state: CanvasTextEditState::new(24.0),
@@ -243,7 +244,7 @@ pub struct ShapeToolSettings {
 impl Default for ShapeToolSettings {
     fn default() -> Self {
         Self {
-            fill_color: Color32::from_rgb(100, 150, 200), // Nice blue default
+            fill_color: color::BLUE_SOFT,
             stroke: None,
             edit_state: CanvasShapeEditState::default(),
         }
@@ -260,7 +261,7 @@ pub struct LineToolSettings {
 impl Default for LineToolSettings {
     fn default() -> Self {
         Self {
-            color: Color32::BLACK,
+            color: color::BLACK,
             width: 2.0,
             edit_state: CanvasShapeEditState::default(),
         }
@@ -535,11 +536,7 @@ impl<'a> Layers<'a> {
 
                             if layer.selected {
                                 let painter = ui.painter();
-                                painter.rect_filled(
-                                    ui.max_rect(),
-                                    0.0,
-                                    Color32::from_rgb(0, 0, 255),
-                                );
+                                painter.rect_filled(ui.max_rect(), 0.0, color::ACCENT);
                             }
 
                             let response = ui.dnd_drag_source(item_id, idx, |ui| {
@@ -572,7 +569,10 @@ impl<'a> Layers<'a> {
                                             _ => {
                                                 ui.add_sized(
                                                     Vec2::new(70.0, 50.0),
-                                                    RectPlaceholder::new(image_size, Color32::GRAY),
+                                                    RectPlaceholder::new(
+                                                        image_size,
+                                                        color::SURFACE_EMPHASIS,
+                                                    ),
                                                 );
                                             }
                                         };
@@ -607,7 +607,7 @@ impl<'a> Layers<'a> {
                                 response.response.dnd_hover_payload::<usize>(),
                             ) {
                                 let rect = ui.max_rect();
-                                let stroke = egui::Stroke::new(1.0, Color32::WHITE);
+                                let stroke = egui::Stroke::new(1.0, color::WHITE);
 
                                 // Calculate line position once
                                 let line_y = if *hovered_idx == idx {

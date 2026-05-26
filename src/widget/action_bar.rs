@@ -1,6 +1,6 @@
 use egui::{Button, Frame, ImageSource, Ui};
 
-use crate::theme::color::ACTION_BAR;
+use crate::theme::color;
 
 #[derive(Debug, Clone)]
 pub enum ActionItemKind {
@@ -43,7 +43,7 @@ impl<T: Clone> ActionBar<T> {
     pub fn show(&mut self, ui: &mut Ui) -> ActionBarResponse<T> {
         Frame::canvas(ui.style())
             .inner_margin(10.0)
-            .fill(ACTION_BAR)
+            .fill(color::SURFACE_DARK)
             .corner_radius(8.0)
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {

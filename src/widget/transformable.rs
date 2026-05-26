@@ -1,6 +1,6 @@
 use eframe::{
     egui::{self, Button, CursorIcon, Image, Response, Sense, Ui},
-    epaint::{Color32, Pos2, Rect, Stroke, Vec2},
+    epaint::{Pos2, Rect, Stroke, Vec2},
 };
 use egui::{Id, LayerId, Order, StrokeKind, UiBuilder};
 
@@ -8,6 +8,7 @@ use crate::{
     assets::Asset,
     cursor_manager::CursorManager,
     dep_mut,
+    theme::color,
     utils::{IdExt, RectExt},
 };
 
@@ -542,7 +543,7 @@ impl<'a> TransformableWidget<'a> {
         handles: &[(TransformHandle, Pos2)],
     ) {
         let painter = ui.painter();
-        let stroke = Stroke::new(2.0, Color32::GRAY);
+        let stroke = Stroke::new(2.0, color::SURFACE_EMPHASIS);
 
         painter.line_segment([rotated_corners[0], rotated_corners[1]], stroke); // top edge
         painter.line_segment([rotated_corners[1], rotated_corners[3]], stroke); // right edge
@@ -556,11 +557,11 @@ impl<'a> TransformableWidget<'a> {
                 handle_rect,
                 1.0,
                 if Some(handle) == self.state.active_handle.as_ref() {
-                    Color32::RED
+                    color::ERROR
                 } else {
-                    Color32::WHITE
+                    color::WHITE
                 },
-                Stroke::new(2.0, Color32::BLACK),
+                Stroke::new(2.0, color::BLACK),
                 StrokeKind::Outside,
             );
         }
@@ -592,7 +593,7 @@ impl<'a> TransformableWidget<'a> {
                 ui.painter().rect(
                     response.rect,
                     4.0,
-                    Color32::from_gray(40),
+                    color::SURFACE,
                     Stroke::NONE,
                     StrokeKind::Outside,
                 );
@@ -608,14 +609,14 @@ impl<'a> TransformableWidget<'a> {
                         Rect::from_center_size(left_half_rect.center(), button_size),
                         Button::image(
                             Image::from(Asset::resize())
-                                .tint(Color32::WHITE)
+                                .tint(color::WHITE)
                                 .fit_to_exact_size(button_size * 0.8),
                         )
                         .fill(
                             if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                                Color32::from_gray(100)
+                                color::SURFACE_STRONG
                             } else {
-                                Color32::from_gray(50)
+                                color::SURFACE_MUTED
                             },
                         )
                         .sense(Sense::click()),
@@ -630,14 +631,14 @@ impl<'a> TransformableWidget<'a> {
                         Rect::from_center_size(right_half_rect.center(), button_size),
                         Button::image(
                             Image::from(Asset::rotate())
-                                .tint(Color32::WHITE)
+                                .tint(color::WHITE)
                                 .fit_to_exact_size(button_size * 0.8),
                         )
                         .fill(
                             if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                                Color32::from_gray(100)
+                                color::SURFACE_STRONG
                             } else {
-                                Color32::from_gray(50)
+                                color::SURFACE_MUTED
                             },
                         )
                         .sense(Sense::click()),

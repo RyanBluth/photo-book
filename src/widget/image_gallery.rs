@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    Align, Color32, Image, Layout, MenuBar, PopupCloseBehavior, Slider, Ui,
-    containers::menu::MenuConfig,
+    Align, Image, Layout, MenuBar, PopupCloseBehavior, Slider, Ui, containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
@@ -17,6 +16,7 @@ use crate::{
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     selection_manager::{SelectionManager, SelectionModifiers},
+    theme::color,
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
@@ -226,24 +226,21 @@ impl<'a> ImageGallery<'a> {
                         });
                     });
                 });
-                ui.painter().rect_filled(
-                    ui.available_rect_before_wrap(),
-                    0.0,
-                    Color32::from_gray(40),
-                );
+                ui.painter()
+                    .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.add_space(20.0);
                     ui.add(
                         Image::from(Asset::larger())
-                            .tint(Color32::WHITE)
+                            .tint(color::WHITE)
                             .maintain_aspect_ratio(true)
                             .fit_to_exact_size(Vec2::splat(20.0)),
                     );
                     ui.add(Slider::new(&mut state.scale, 0.5..=1.5).show_value(true));
                     ui.add(
                         Image::from(Asset::smaller())
-                            .tint(Color32::WHITE)
+                            .tint(color::WHITE)
                             .maintain_aspect_ratio(true)
                             .fit_to_exact_size(Vec2::splat(20.0)),
                     );
@@ -265,7 +262,7 @@ fn add_filter_menu(ui: &mut Ui) {
         .config(MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside))
         .ui(ui, |ui| {
             ui.painter()
-                .rect_filled(ui.available_rect_before_wrap(), 0.0, Color32::from_gray(40));
+                .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
 
             ui.menu_button("Rating", |ui| {
                 let mut new_filter = get_current_filter();

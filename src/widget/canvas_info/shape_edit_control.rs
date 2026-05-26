@@ -1,7 +1,7 @@
 use eframe::egui::{self, RichText, Ui};
-use egui::{Color32, ComboBox, Stroke, StrokeKind};
+use egui::{ComboBox, Stroke, StrokeKind};
 
-use crate::utils::EditableValueTextEdit;
+use crate::{theme::color, utils::EditableValueTextEdit};
 
 use super::layers::{
     CanvasShapeKind, Layer,
@@ -60,7 +60,7 @@ impl<'a> ShapeEditControl<'a> {
                                 let current_stroke_color = shape
                                     .stroke
                                     .map(|(stroke, _)| stroke.color)
-                                    .unwrap_or(Color32::BLACK);
+                                    .unwrap_or(color::BLACK);
 
                                 ComboBox::from_label("Stoke Kind")
                                     .selected_text(selected_label)

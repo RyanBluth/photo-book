@@ -1,6 +1,6 @@
 use egui::{Button, CursorIcon, Frame, RichText, Sense, TextStyle, UiBuilder, Vec2};
 
-use crate::{cursor_manager::CursorManager, dep_mut, theme::color::ACTION_BAR};
+use crate::{cursor_manager::CursorManager, dep_mut, theme::color};
 
 pub const SECTION_HEADER_INNER_MARGIN: f32 = 8.0;
 
@@ -58,7 +58,8 @@ impl<'a> CollapsableSection<'a> {
                 Vec2::new(ui.available_width(), header_height),
                 Sense::hover(),
             );
-            ui.painter().rect_filled(header_rect, 0.0, ACTION_BAR);
+            ui.painter()
+                .rect_filled(header_rect, 0.0, color::SURFACE_DARK);
 
             let inner_rect = header_rect.shrink(SECTION_HEADER_INNER_MARGIN);
             let mut header_ui = ui.new_child(

@@ -1,8 +1,9 @@
-use egui::{Color32, CursorIcon, Frame, Id, Sense, Ui, UiBuilder, Vec2};
+use egui::{CursorIcon, Frame, Id, Sense, Ui, UiBuilder, Vec2};
 
 use crate::{
     cursor_manager::CursorManager,
     dep_mut,
+    theme::color,
     widget::sectioned_sidebar::section::{
         CollapsableSection, CollapsableSectionResponse, CollapsableSectionState,
         section_header_height,
@@ -171,7 +172,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
                         Vec2::new(rect.width(), RESIZE_LINE_HEIGHT),
                     );
                     ui.painter()
-                        .rect_filled(line_rect, 0.0, Color32::from_rgb(150, 150, 150));
+                        .rect_filled(line_rect, 0.0, color::SURFACE_EMPHASIS);
 
                     if response.hovered() {
                         dep_mut!(CursorManager, |cursor_manager| {

@@ -1,9 +1,12 @@
 use eframe::egui;
-use egui::{Color32, FontId, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
+use egui::{FontId, Pos2, Rect, RichText, Sense, Stroke, StrokeKind, Vec2};
 
 use egui_extras::Column;
 
-use crate::template::{self, Template};
+use crate::{
+    template::{self, Template},
+    theme::color,
+};
 
 use super::spacer::Spacer;
 
@@ -115,7 +118,7 @@ impl TemplatePreview {
                 Rect::from_min_size(available_rect.min, Vec2::new(width, height))
             };
 
-            ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+            ui.painter().rect_filled(page_rect, 0.0, color::WHITE);
 
             let scale = page_rect.width() / template.page.size_pixels().x;
 
@@ -130,8 +133,7 @@ impl TemplatePreview {
 
                 match &region.kind {
                     template::TemplateRegionKind::Image => {
-                        ui.painter()
-                            .rect_filled(region_rect, 0.0, Color32::LIGHT_BLUE);
+                        ui.painter().rect_filled(region_rect, 0.0, color::BLUE_SOFT);
                     }
                     template::TemplateRegionKind::Text {
                         sample_text,
@@ -140,7 +142,7 @@ impl TemplatePreview {
                         ui.painter().rect_stroke(
                             region_rect,
                             0.0,
-                            Stroke::new(2.0, Color32::DARK_GRAY),
+                            Stroke::new(2.0, color::SURFACE_MUTED),
                             StrokeKind::Outside,
                         );
 

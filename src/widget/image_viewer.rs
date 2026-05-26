@@ -1,7 +1,7 @@
 use eframe::{
     egui::{self, Image, Key, Response, Sense, Widget},
     emath::Rot2,
-    epaint::{Color32, Mesh, Pos2, Rect, Shape, Vec2},
+    epaint::{Mesh, Pos2, Rect, Shape, Vec2},
 };
 
 use crate::{
@@ -88,7 +88,7 @@ impl<'a> Widget for ImageViewer<'a> {
 
         let (rect, response) = ui.allocate_exact_size(available_size, Sense::click_and_drag());
 
-        ui.painter().rect_filled(rect, 0.0, Color32::BLACK);
+        ui.painter().rect_filled(rect, 0.0, color::BLACK);
 
         response.request_focus();
 
@@ -256,7 +256,7 @@ impl<'a> Widget for ImageViewer<'a> {
 
                 let painter = ui.painter().with_clip_rect(rect);
                 let mut mesh = Mesh::with_texture(texture.id);
-                mesh.add_rect_with_uv(image_rect, uv, Color32::WHITE);
+                mesh.add_rect_with_uv(image_rect, uv, color::WHITE);
                 mesh.rotate(
                     Rot2::from_angle(self.photo.metadata.rotation().radians()),
                     image_rect.min + Vec2::splat(0.5) * image_rect.size(),
@@ -280,7 +280,7 @@ impl<'a> Widget for ImageViewer<'a> {
                         image_rect
                             .rotate_bb_around_center(self.photo.metadata.rotation().radians()),
                         0.0,
-                        color::PLACEHOLDER,
+                        color::SURFACE_MUTED,
                     );
                 }
             },
@@ -290,7 +290,7 @@ impl<'a> Widget for ImageViewer<'a> {
                     egui::Align2::CENTER_CENTER,
                     format!("Error: {}", error),
                     egui::FontId::default(),
-                    Color32::from_rgb(255, 0, 0),
+                    color::ERROR,
                 );
             }
         }

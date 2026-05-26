@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use egui::{Color32, CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
+use egui::{CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
 use log::{error, info};
 
 use crate::{
@@ -20,6 +20,7 @@ use crate::{
     photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
     session::{Session, SessionError},
+    theme::color,
     utils::{Either, Toggle},
 };
 
@@ -149,7 +150,7 @@ impl Scene for OrganizeEditScene {
         ui.painter().rect_filled(
             Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 50.0)),
             0.0,
-            Color32::from_gray(40),
+            color::SURFACE,
         );
 
         ui.vertical(|ui| {

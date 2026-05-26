@@ -1,16 +1,11 @@
 use eframe::{
     egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
-    epaint::{Color32, Vec2},
+    epaint::Vec2,
 };
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
-use crate::{
-    photo::Photo,
-    theme::{self, color},
-    utils::Truncate,
-    widget::placeholder::RectPlaceholder,
-};
+use crate::{photo::Photo, theme::color, utils::Truncate, widget::placeholder::RectPlaceholder};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -58,13 +53,13 @@ impl Widget for GalleryImage {
                     ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
                     ui.painter()
-                        .rect_filled(ui.max_rect(), 6.0, Color32::from_rgb(15, 15, 15));
+                        .rect_filled(ui.max_rect(), 6.0, color::SURFACE_DARK);
 
                     if self.selected {
                         ui.painter().rect_stroke(
                             ui.max_rect(),
                             4.0,
-                            Stroke::new(3.0, theme::color::FOCUSED),
+                            Stroke::new(3.0, color::ACCENT),
                             StrokeKind::Inside,
                         );
                     }
@@ -138,20 +133,17 @@ impl Widget for GalleryImage {
                                 Ok(None) => {
                                     let response = RectPlaceholder::new(
                                         rotated_scaled_image_size,
-                                        color::PLACEHOLDER,
+                                        color::SURFACE_MUTED,
                                     )
                                     .ui(ui);
 
                                     ui.put(response.rect, Spinner::new());
                                 }
                                 Err(err) => {
-                                    // Show red square for error for now
+                                    // Show themed error placeholder for now.
                                     // TODO: Show error message or something
-                                    RectPlaceholder::new(
-                                        rotated_scaled_image_size,
-                                        Color32::from_rgb(255, 0, 0),
-                                    )
-                                    .ui(ui);
+                                    RectPlaceholder::new(rotated_scaled_image_size, color::ERROR)
+                                        .ui(ui);
                                     error!(
                                         "Failed to load image: {:?}. {:?}",
                                         self.photo.path, err

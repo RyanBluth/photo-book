@@ -491,7 +491,7 @@ impl TreeListRowUi<'_> {
             );
             ui.allocate_rect(rect, Sense::hover());
             ui.painter()
-                .rect_filled(rect, 0.0, theme::color::PLACEHOLDER);
+                .rect_filled(rect, 0.0, theme::color::SURFACE_MUTED);
         }
     }
 }

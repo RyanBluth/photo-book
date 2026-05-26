@@ -1,6 +1,6 @@
 use eframe::{
     egui::{self, FontId, Id},
-    epaint::{Color32, Pos2, Rect, Vec2},
+    epaint::{Pos2, Rect, Vec2},
 };
 use indexmap::{IndexMap, indexmap};
 
@@ -12,6 +12,7 @@ use crate::{
     photo::Photo,
     project_settings::ProjectSettingsManager,
     template::{Template, TemplateRegionKind},
+    theme::color,
     utils::{IdExt, RectExt},
     widget::{
         canvas::types::{IdleTool, ToolState},
@@ -219,7 +220,7 @@ impl CanvasState {
                                 sample_text.clone(),
                                 *font_size,
                                 FontId::default(),
-                                Color32::BLACK,
+                                color::BLACK,
                                 TextHorizontalAlignment::Left,
                                 TextVerticalAlignment::Top,
                             ),

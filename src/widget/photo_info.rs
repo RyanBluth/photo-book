@@ -5,6 +5,7 @@ use crate::cursor_manager::CursorManager;
 use crate::model::album::AlbumId;
 use crate::photo::{PhotoMetadataField, SaveOnDropPhoto};
 use crate::photo_manager::PhotoManager;
+use crate::theme::color;
 use crate::{dep, dep_mut};
 
 use super::tag_chips::{TagChips, TagChipsState};
@@ -46,7 +47,7 @@ impl<'a> PhotoInfo<'a> {
         ui.allocate_ui(ui.available_size(), |ui: &mut egui::Ui| {
             egui::Frame::NONE
                 .inner_margin(egui::Margin::same(12))
-                .fill(egui::Color32::TRANSPARENT)
+                .fill(color::TRANSPARENT)
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
                         ui.label(egui::RichText::new("Rating").small().strong());

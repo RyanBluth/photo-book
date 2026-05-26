@@ -1,10 +1,11 @@
 use eframe::egui::{self, Pos2, Rect, Ui, Vec2};
 use eframe::emath::Rot2;
-use eframe::epaint::{Color32, Mesh, Shape};
+use eframe::epaint::{Mesh, Shape};
 use egui::UiBuilder;
 
 use crate::dep_mut;
 use crate::photo_manager::PhotoManager;
+use crate::theme::color;
 use crate::utils::RectExt;
 use crate::widget::action_bar::{ActionBar, ActionBarResponse, ActionItem, ActionItemKind};
 use crate::widget::auto_center::AutoCenter;
@@ -34,7 +35,7 @@ impl<'a> Crop<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> CropResponse {
-        ui.painter().rect_filled(ui.max_rect(), 0.0, Color32::BLACK);
+        ui.painter().rect_filled(ui.max_rect(), 0.0, color::BLACK);
 
         let texture = dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.texture_for_photo_with_thumbail_backup(&self.crop_state.photo, ui.ctx())
@@ -66,7 +67,7 @@ impl<'a> Crop<'a> {
         mesh.add_rect_with_uv(
             mesh_rect,
             Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
-            Color32::WHITE,
+            color::WHITE,
         );
 
         let mesh_center: Pos2 =
@@ -79,7 +80,7 @@ impl<'a> Crop<'a> {
 
         painter.add(Shape::mesh(mesh.clone()));
 
-        painter.rect_filled(ui.max_rect(), 0.0, Color32::from_black_alpha(150));
+        painter.rect_filled(ui.max_rect(), 0.0, color::OVERLAY);
 
         let mut clipped_painter = painter.clone();
 

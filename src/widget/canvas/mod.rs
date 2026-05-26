@@ -21,13 +21,11 @@ use eframe::{
     },
     emath::Rot2,
     epaint::{Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
-    glow::STATIC_READ,
 };
 use egui::{
-    Align2, Order,
+    Order,
     epaint::{ColorMode, PathStroke},
 };
-use wgpu::Color;
 
 use crate::{
     cursor_manager::CursorManager,
@@ -38,6 +36,7 @@ use crate::{
     photo_manager::PhotoManager,
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::TemplateRegionKind,
+    theme::color,
     utils::{RectExt, Toggle},
     widget::canvas_info::layers::{
         CanvasShapeKind, Layer, LayerContent, TextHorizontalAlignment, TextVerticalAlignment,
@@ -94,11 +93,11 @@ impl<'a> Canvas<'a> {
         );
 
         ui.scope_builder(UiBuilder::new().max_rect(toolbar_rect), |ui| {
-            ui.visuals_mut().widgets.inactive.bg_fill = egui::Color32::from_gray(30);
-            ui.visuals_mut().widgets.hovered.bg_fill = egui::Color32::from_gray(40);
+            ui.visuals_mut().widgets.inactive.bg_fill = color::SURFACE_DARK;
+            ui.visuals_mut().widgets.hovered.bg_fill = color::SURFACE;
 
             egui::Frame::NONE
-                .fill(egui::Color32::from_gray(25))
+                .fill(color::SURFACE_DARK)
                 .inner_margin(8.0)
                 .show(ui, |ui| {
                     if let ToolbarResponse::ToolChanged(tool) =
@@ -195,8 +194,8 @@ impl<'a> Canvas<'a> {
             }
         });
 
-        ui.painter().rect_filled(canvas_rect, 0.0, Color32::BLACK);
-        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+        ui.painter().rect_filled(canvas_rect, 0.0, color::BLACK);
+        ui.painter().rect_filled(page_rect, 0.0, color::WHITE);
 
         self.draw_template(ui, page_rect);
 
@@ -428,13 +427,13 @@ impl<'a> Canvas<'a> {
                 ui.painter().rect(
                     selection_box,
                     0.0,
-                    Color32::from_rgba_unmultiplied(0, 0, 255, 128),
-                    Stroke::new(2.0, Color32::from_rgba_unmultiplied(0, 0, 255, 128)),
+                    color::SELECTION_RECT,
+                    Stroke::new(2.0, color::SELECTION_RECT),
                     StrokeKind::Middle,
                 );
             }
             ActiveTool::Text { start_pos } => {
-                let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
+                let stroke = Stroke::new(DASH_LINE_STROKE, color::BLACK);
                 let rect = Rect::from_two_pos(*start_pos, mouse_pos);
                 let shape = Shape::dashed_line(
                     &[
@@ -544,7 +543,7 @@ impl<'a> Canvas<'a> {
         let page_rect: Rect =
             Rect::from_center_size(rect.center(), self.state.page.size_pixels() * zoom);
 
-        ui.painter().rect_filled(page_rect, 0.0, Color32::WHITE);
+        ui.painter().rect_filled(page_rect, 0.0, color::WHITE);
 
         let current_zoom = self.state.zoom;
         self.state.zoom = zoom;
@@ -568,8 +567,7 @@ impl<'a> Canvas<'a> {
 
                 match &region.kind {
                     TemplateRegionKind::Image => {
-                        ui.painter()
-                            .rect_filled(region_rect, 0.0, Color32::LIGHT_BLUE);
+                        ui.painter().rect_filled(region_rect, 0.0, color::BLUE_SOFT);
                     }
                     TemplateRegionKind::Text {
                         sample_text: _,
@@ -578,7 +576,7 @@ impl<'a> Canvas<'a> {
                         ui.painter().rect_stroke(
                             region_rect,
                             0.0,
-                            Stroke::new(2.0, Color32::GRAY.gamma_multiply(0.5)),
+                            Stroke::new(2.0, color::SURFACE_MUTED),
                             StrokeKind::Outside,
                         );
                     }
@@ -791,10 +789,11 @@ impl<'a> Canvas<'a> {
                             dep_mut!(PhotoManager, |photo_manager| {
                                 match photo_manager
                                     .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                                { Ok(Some(texture)) => {
-                                    let mut transform_state = layer.transform_state.clone();
+                                {
+                                    Ok(Some(texture)) => {
+                                        let mut transform_state = layer.transform_state.clone();
 
-                                    let transform_response = TransformableWidget::new(
+                                        let transform_response = TransformableWidget::new(
                                     &mut transform_state,
                                 )
                                 .show(
@@ -821,7 +820,7 @@ impl<'a> Canvas<'a> {
                                         let painter = ui.painter();
                                         let mut mesh = Mesh::with_texture(texture.id);
 
-                                        mesh.add_rect_with_uv(mesh_rect, photo.crop, Color32::WHITE);
+                                        mesh.add_rect_with_uv(mesh_rect, photo.crop, color::WHITE);
 
                                         let mesh_center: Pos2 =
                                             mesh_rect.min + Vec2::splat(0.5) * mesh_rect.size();
@@ -841,12 +840,12 @@ impl<'a> Canvas<'a> {
                                     },
                                 );
 
-                                    layer.transform_state = transform_state;
+                                        layer.transform_state = transform_state;
 
-                                    Some(transform_response)
-                                } _ => {
-                                    None
-                                }}
+                                        Some(transform_response)
+                                    }
+                                    _ => None,
+                                }
                             })
                         },
                     )
@@ -887,7 +886,7 @@ impl<'a> Canvas<'a> {
                         true,
                         |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
                             if is_editing && !is_preview {
-                                let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
+                                let stroke = Stroke::new(DASH_LINE_STROKE, color::BLACK);
                                 let shape = Shape::dashed_line(
                                     &[
                                         transformed_rect.left_top(),
@@ -1048,7 +1047,7 @@ impl<'a> Canvas<'a> {
                             mesh.add_rect_with_uv(
                                 scaled_rect.center_within(rect),
                                 Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 }),
-                                Color32::WHITE,
+                                color::WHITE,
                             );
 
                             let mesh_center: Pos2 =
@@ -1070,7 +1069,7 @@ impl<'a> Canvas<'a> {
                     ui.painter().rect_stroke(
                         rect,
                         0.0,
-                        Stroke::new(2.0, Color32::GREEN),
+                        Stroke::new(2.0, color::SUCCESS),
                         StrokeKind::Outside,
                     );
                 }
@@ -1112,7 +1111,7 @@ impl<'a> Canvas<'a> {
                 );
 
                 if is_editing {
-                    let stroke = Stroke::new(DASH_LINE_STROKE, Color32::BLACK);
+                    let stroke = Stroke::new(DASH_LINE_STROKE, color::BLACK);
                     let shape = Shape::dashed_line(
                         &[
                             rect.left_top(),
@@ -1180,7 +1179,7 @@ impl<'a> Canvas<'a> {
                     ui.painter().rect_stroke(
                         rect,
                         0.0,
-                        Stroke::new(2.0, Color32::GREEN),
+                        Stroke::new(2.0, color::SUCCESS),
                         StrokeKind::Outside,
                     );
                 }
@@ -1347,7 +1346,7 @@ impl<'a> Canvas<'a> {
 
             // Draw circle background
             ui.painter()
-                .circle_filled(circle_rect.center(), circle_size / 2.0, Color32::RED);
+                .circle_filled(circle_rect.center(), circle_size / 2.0, color::ERROR);
 
             // Draw number
             ui.painter().text(
@@ -1355,7 +1354,7 @@ impl<'a> Canvas<'a> {
                 egui::Align2::CENTER_CENTER,
                 (index + 1).to_string(),
                 FontId::proportional(14.0),
-                Color32::WHITE,
+                color::WHITE,
             );
         }
     }
@@ -1409,7 +1408,7 @@ impl<'a> Canvas<'a> {
                     .min_size(rect.size())
                     .desired_width(rect.width())
                     .lock_focus(true)
-                    .background_color(Color32::TRANSPARENT)
+                    .background_color(color::TRANSPARENT)
                     .horizontal_align(horizontal_alignment)
                     .vertical_align(vertical_alignment);
 

@@ -59,16 +59,16 @@ impl Toolbar {
         ui: &mut Ui,
         icon: egui::ImageSource,
         tool: ToolKind,
-        _tooltip: &str,
+        tooltip: &str,
     ) -> bool {
         let is_active = self.current_tool == tool;
 
         let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
 
         let background_color = if is_active {
-            color::SELECTED_TOOL_BACKGROUND
+            color::WHITE
         } else if response.hovered() {
-            color::HOVER_TOOL_BACKGROUND
+            color::SURFACE_MUTED
         } else {
             ui.style().visuals.window_fill()
         };
@@ -84,14 +84,14 @@ impl Toolbar {
         let tint_color = if is_active {
             ui.style().visuals.window_fill()
         } else {
-            color::SELECTED_TOOL_BACKGROUND
+            color::WHITE
         };
 
         let image = Image::new(icon).tint(tint_color).shrink_to_fit();
 
         ui.put(rect.shrink(2.0), image);
 
-        response.clicked()
+        response.on_hover_text(tooltip).clicked()
     }
 }
 
