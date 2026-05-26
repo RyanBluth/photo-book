@@ -6,6 +6,7 @@ use crate::{
     photo_manager::PhotoManager,
     widget::{
         image_viewer::{self, ImageViewer, ImageViewerState},
+        photo_filmstrip::{PhotoFilmstrip, PhotoFilmstripState},
         photo_info::{PhotoInfo, PhotoInfoState},
     },
 };
@@ -15,6 +16,7 @@ use super::{NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse
 pub struct ViewerSceneState {
     photo: Photo,
     viewer_state: ImageViewerState,
+    photo_filmstrip_state: PhotoFilmstripState,
     photo_info_state: PhotoInfoState,
 }
 
@@ -23,6 +25,7 @@ impl ViewerSceneState {
         Self {
             photo,
             viewer_state: ImageViewerState::default(),
+            photo_filmstrip_state: PhotoFilmstripState::default(),
             photo_info_state: PhotoInfoState::new(),
         }
     }
@@ -65,6 +68,15 @@ impl ViewerScene {
 impl Scene for ViewerScene {
     fn ui(&mut self, ui: &mut egui::Ui) -> SceneResponse {
         let mut navigator = Navigator::new();
+
+        let filmstrip_response =
+            PhotoFilmstrip::new(&self.state.photo, &mut self.state.photo_filmstrip_state).show(ui);
+        if let Some(photo) = filmstrip_response.selected_photo {
+            if photo.path != self.state.photo.path {
+                self.state.photo = photo;
+                self.state.viewer_state = ImageViewerState::default();
+            }
+        }
 
         self.tree.ui(
             &mut ViewerTreeBehavior {
