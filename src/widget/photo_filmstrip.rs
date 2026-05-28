@@ -112,6 +112,12 @@ impl<'a> PhotoFilmstrip<'a> {
                                 self.state.centered_photo_path = Some(photo.path.clone());
                             }
 
+                            if response.hovered() {
+                                dep_mut!(PhotoManager, |photo_manager| {
+                                    let _ = photo_manager.preload_texture(&photo, ui.ctx());
+                                });
+                            }
+
                             if response.clicked() {
                                 selected_photo = Some(photo);
                             }

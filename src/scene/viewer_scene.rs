@@ -18,6 +18,7 @@ pub struct ViewerSceneState {
     viewer_state: ImageViewerState,
     photo_filmstrip_state: PhotoFilmstripState,
     photo_info_state: PhotoInfoState,
+    was_paging_key_down: bool,
 }
 
 impl ViewerSceneState {
@@ -27,6 +28,7 @@ impl ViewerSceneState {
             viewer_state: ImageViewerState::default(),
             photo_filmstrip_state: PhotoFilmstripState::default(),
             photo_info_state: PhotoInfoState::new(),
+            was_paging_key_down: false,
         }
     }
 }
@@ -85,6 +87,18 @@ impl Scene for ViewerScene {
             },
             ui,
         );
+
+        let paging_key_down = ui.input(|input| {
+            input.key_down(egui::Key::ArrowLeft) || input.key_down(egui::Key::ArrowRight)
+        });
+        let is_holding_paging_key = paging_key_down && self.state.was_paging_key_down;
+        self.state.was_paging_key_down = paging_key_down;
+
+        if !is_holding_paging_key {
+            dep_mut!(PhotoManager, |photo_manager| {
+                let _ = photo_manager.preload_surrounding_textures(&self.state.photo, ui.ctx());
+            });
+        }
 
         match navigator.process_pending_request() {
             Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),

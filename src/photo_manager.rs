@@ -41,6 +41,10 @@ use fast_image_resize::{self as fr, ResizeOptions};
 use crate::utils;
 
 const THUMBNAIL_SIZE: f32 = 512.0;
+const FULL_RES_PRELOAD_COUNT: usize = 4;
+const FULL_RES_PRELOAD_START_BUDGET: usize = 4;
+const FULL_RES_PRELOAD_READY_BUDGET: usize = 2;
+const FULL_RES_CACHE_CAPACITY: usize = 20;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -71,6 +75,8 @@ pub struct PhotoMetadata {
 struct ContextCache {
     texture_cache: HashMap<String, SizedTexture>,
     pending_textures: HashSet<String>,
+    full_res_accesses: HashMap<String, u64>,
+    full_res_access_counter: u64,
 }
 
 #[derive(Debug)]
@@ -333,13 +339,13 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let uri = photo.uri();
         let cache = self.get_cache_mut(ctx);
-        Self::load_texture(
-            &photo.uri(),
-            ctx,
-            &mut cache.texture_cache,
-            &mut cache.pending_textures,
-        )
+        let result = Self::load_full_res_texture(&uri, ctx, cache);
+
+        Self::evict_full_res_textures(ctx, cache, &uri);
+
+        result
     }
 
     pub fn texture_for_blocking(
@@ -347,13 +353,13 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let uri = photo.uri();
         let cache = self.get_cache_mut(ctx);
-        Self::load_texture_blocking(
-            &photo.uri(),
-            ctx,
-            &mut cache.texture_cache,
-            &mut cache.pending_textures,
-        )
+        let result = Self::load_full_res_texture_blocking(&uri, ctx, cache);
+
+        Self::evict_full_res_textures(ctx, cache, &uri);
+
+        result
     }
 
     pub fn texture_for_photo_with_thumbail_backup(
@@ -361,16 +367,17 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let uri = photo.uri();
+        let thumbnail_uri = photo.thumbnail_uri();
         let cache = self.get_cache_mut(ctx);
-        match Self::load_texture(
-            &photo.uri(),
-            ctx,
-            &mut cache.texture_cache,
-            &mut cache.pending_textures,
-        ) {
+        let result = match Self::load_full_res_texture(&uri, ctx, cache) {
             Result::Ok(Some(tex)) => Ok(Some(tex)),
-            _ => Ok(cache.texture_cache.get(&photo.thumbnail_uri()).copied()),
-        }
+            _ => Ok(cache.texture_cache.get(&thumbnail_uri).copied()),
+        };
+
+        Self::evict_full_res_textures(ctx, cache, &uri);
+
+        result
     }
 
     #[allow(dead_code)]
@@ -378,16 +385,120 @@ impl PhotoManager {
         match self.photo_database.get_photo_by_index(at) {
             Some(photo) => {
                 let photo = photo.clone();
+                let uri = photo.uri();
                 let cache = self.get_cache_mut(ctx);
-                Self::load_texture(
-                    &photo.uri(),
-                    ctx,
-                    &mut cache.texture_cache,
-                    &mut cache.pending_textures,
-                )
+                let result = Self::load_full_res_texture(&uri, ctx, cache);
+
+                Self::evict_full_res_textures(ctx, cache, &uri);
+
+                result
             }
             _ => Ok(None),
         }
+    }
+
+    pub fn preload_texture(&mut self, photo: &Photo, ctx: &Context) -> anyhow::Result<()> {
+        let uri = photo.uri();
+
+        let cache = self.get_cache_mut(ctx);
+        let result = Self::load_full_res_texture(&uri, ctx, cache).map(|_| ());
+
+        Self::evict_full_res_textures(ctx, cache, &uri);
+
+        result
+    }
+
+    pub fn preload_surrounding_textures(
+        &mut self,
+        current_photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<()> {
+        let current_uri = current_photo.uri();
+        let preload_uris = self.surrounding_preload_uris(current_photo);
+
+        let cache = self.get_cache_mut(ctx);
+
+        let mut first_error = Self::load_full_res_texture(&current_uri, ctx, cache)
+            .map(|_| ())
+            .err();
+
+        let mut ready_polls = 0;
+        let mut made_progress = false;
+        for uri in preload_uris.iter() {
+            if ready_polls >= FULL_RES_PRELOAD_READY_BUDGET {
+                break;
+            }
+            if !cache.pending_textures.contains(uri) {
+                continue;
+            }
+
+            ready_polls += 1;
+            match Self::load_full_res_texture(uri, ctx, cache) {
+                Result::Ok(Some(_)) => {
+                    made_progress = true;
+                }
+                Result::Ok(None) => {}
+                Result::Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+
+        let mut preload_attempts = 0;
+        for uri in preload_uris.iter() {
+            if preload_attempts >= FULL_RES_PRELOAD_START_BUDGET {
+                break;
+            }
+
+            if cache.texture_cache.contains_key(uri) || cache.pending_textures.contains(uri) {
+                continue;
+            }
+
+            preload_attempts += 1;
+            match Self::load_full_res_texture(uri, ctx, cache) {
+                Result::Ok(Some(_)) => {
+                    made_progress = true;
+                }
+                Result::Ok(None) => {}
+                Result::Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+
+        if made_progress || preload_attempts > 0 {
+            ctx.request_repaint();
+        }
+
+        Self::evict_full_res_textures(ctx, cache, &current_uri);
+
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn surrounding_preload_uris(&self, current_photo: &Photo) -> Vec<String> {
+        let Some(query_result) = &self.current_query_result else {
+            return Vec::new();
+        };
+
+        let mut preload_uris = Vec::new();
+        let mut next_photo = current_photo.clone();
+        let mut previous_photo = current_photo.clone();
+        for _ in 0..FULL_RES_PRELOAD_COUNT {
+            if let Some(photo) = query_result.photo_after(&next_photo) {
+                preload_uris.push(photo.uri());
+                next_photo = photo;
+            }
+            if let Some(photo) = query_result.photo_before(&previous_photo) {
+                preload_uris.push(photo.uri());
+                previous_photo = photo;
+            }
+        }
+
+        preload_uris
     }
 
     pub fn next_photo(
@@ -417,6 +528,69 @@ impl PhotoManager {
         self.photo_database.get_photo_index(&photo.path)
     }
 
+    fn load_full_res_texture(
+        uri: &str,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        Self::touch_full_res_texture(cache, uri);
+        let result = Self::load_texture(
+            uri,
+            ctx,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
+        );
+        if result.is_err() {
+            cache.full_res_accesses.remove(uri);
+        }
+        result
+    }
+
+    fn load_full_res_texture_blocking(
+        uri: &str,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        Self::touch_full_res_texture(cache, uri);
+        let result = Self::load_texture_blocking(
+            uri,
+            ctx,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
+        );
+        if result.is_err() {
+            cache.full_res_accesses.remove(uri);
+        }
+        result
+    }
+
+    fn touch_full_res_texture(cache: &mut ContextCache, uri: &str) {
+        cache.full_res_access_counter = cache.full_res_access_counter.saturating_add(1);
+        cache
+            .full_res_accesses
+            .insert(uri.to_string(), cache.full_res_access_counter);
+    }
+
+    fn evict_full_res_textures(ctx: &Context, cache: &mut ContextCache, protected_uri: &str) {
+        let cache_capacity = FULL_RES_CACHE_CAPACITY.max(1);
+        while cache.full_res_accesses.len() > cache_capacity {
+            let Some(uri) = cache
+                .full_res_accesses
+                .iter()
+                .filter(|(uri, _)| uri.as_str() != protected_uri)
+                .min_by_key(|(_, last_access)| *last_access)
+                .map(|(uri, _)| uri.clone())
+            else {
+                break;
+            };
+
+            cache.full_res_accesses.remove(&uri);
+            cache.texture_cache.remove(&uri);
+            cache.pending_textures.remove(&uri);
+            ctx.forget_image(&uri);
+        }
+    }
+
     fn load_texture(
         uri: &str,
         ctx: &Context,
@@ -441,10 +615,12 @@ impl PhotoManager {
                         Ok(None)
                     }
                     Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                        pending_textures.remove(uri);
                         texture_cache.insert(uri.to_string(), texture);
                         Ok(Some(texture))
                     }
                     Result::Err(err) => {
+                        pending_textures.remove(uri);
                         error!("Failed to load texture {:?}", err);
                         Err(anyhow!(err))
                     }
@@ -477,10 +653,14 @@ impl PhotoManager {
                         Ok(None)
                     }
                     Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                        pending_textures.remove(uri);
                         texture_cache.insert(uri.to_string(), texture);
                         Ok(Some(texture))
                     }
-                    Result::Err(err) => Err(anyhow!(err)),
+                    Result::Err(err) => {
+                        pending_textures.remove(uri);
+                        Err(anyhow!(err))
+                    }
                 }
             }
         }

@@ -211,6 +211,13 @@ impl<'a> ImageGallery<'a> {
                                                 });
                                         }
 
+                                        if image_response.hovered() {
+                                            dep_mut!(PhotoManager, |photo_manager| {
+                                                let _ =
+                                                    photo_manager.preload_texture(photo, ui.ctx());
+                                            });
+                                        }
+
                                         if image_response.double_clicked() {
                                             primary_action_photo = Some(photo.clone());
                                         } else if image_response.secondary_clicked() {
