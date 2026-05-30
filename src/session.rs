@@ -45,6 +45,7 @@ impl From<native_dialog::Error> for SessionError {
 
 pub struct Session {
     pub active_project: Option<PathBuf>,
+    saved_project: Option<Project>,
     save_warning_modal_id: Option<TypedModalId<SaveWarningModal>>,
     pending_operation: Option<PendingOperation>,
 }
@@ -53,6 +54,7 @@ impl Session {
     pub fn new() -> Self {
         Self {
             active_project: None,
+            saved_project: None,
             save_warning_modal_id: None,
             pending_operation: None,
         }
@@ -111,9 +113,10 @@ impl Session {
 
     pub fn load_project(
         &mut self,
+        current_scene: &OrganizeEditScene,
         path: Option<PathBuf>,
     ) -> Result<OrganizeEditScene, SessionError> {
-        if self.has_unsaved_changes() {
+        if self.has_unsaved_changes(current_scene) {
             self.pending_operation = Some(PendingOperation::LoadProject(path.clone()));
             self.save_warning_modal_id = Some(ModalManager::push(SaveWarningModal::new(
                 SaveWarningSource::LoadProject(path),
@@ -129,7 +132,7 @@ impl Session {
             Some(p) => p.clone(),
             None => {
                 let save_path = native_dialog::DialogBuilder::file()
-                    .add_filter("Photobook Project", &["rpb"])
+                    .add_filter("Photo Book Collection", &["rpb"])
                     .save_single_file()
                     .show()?;
 
@@ -140,18 +143,28 @@ impl Session {
             }
         };
 
-        Project::save(&path, scene)?;
+        let project = Project::new(scene);
+        Project::save_project(&path, &project)?;
         dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
             let _ = config.modify(ConfigModification::SetLastProject(path.clone()));
         });
 
+        self.saved_project = Some(project);
         self.active_project = Some(path.clone());
         Ok(())
     }
 
-    pub fn new_project(&mut self) -> Result<OrganizeEditScene, SessionError> {
-        if self.has_unsaved_changes() {
+    pub fn mark_project_loaded(&mut self, path: PathBuf, project: Project) {
+        self.active_project = Some(path);
+        self.saved_project = Some(project);
+    }
+
+    pub fn new_project(
+        &mut self,
+        current_scene: &OrganizeEditScene,
+    ) -> Result<OrganizeEditScene, SessionError> {
+        if self.has_unsaved_changes(current_scene) {
             self.pending_operation = Some(PendingOperation::NewProject);
             self.save_warning_modal_id = Some(ModalManager::push(SaveWarningModal::new(
                 SaveWarningSource::NewProject,
@@ -190,7 +203,7 @@ impl Session {
             Some(p) => p,
             None => {
                 let open_path = native_dialog::DialogBuilder::file()
-                    .add_filter("Photobook Project", &["rpb"])
+                    .add_filter("Photo Book Collection", &["rpb"])
                     .open_single_file()
                     .show()?;
 
@@ -206,20 +219,22 @@ impl Session {
         dep_mut!(SelectionManager, |selection_manager| selection_manager
             .clear());
 
-        let scene = Project::load(&path)?;
+        let project = Project::load_project(&path)?;
+        let scene = project.clone().into();
 
         dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
             let _ = config.modify(ConfigModification::SetLastProject(path.clone()));
         });
 
-        self.active_project = Some(path.clone());
+        self.mark_project_loaded(path.clone(), project);
 
         Ok(scene)
     }
 
     fn new_project_internal(&mut self) -> Result<OrganizeEditScene, SessionError> {
         self.active_project = None;
+        self.saved_project = None;
         let scene = OrganizeEditScene::new(GalleryScene::new(), None);
 
         dep_mut!(PhotoManager, |photo_manager| {
@@ -231,7 +246,77 @@ impl Session {
         Ok(scene)
     }
 
-    fn has_unsaved_changes(&self) -> bool {
-        dep!(PhotoManager, |photo_manager| photo_manager.has_photos())
+    fn has_unsaved_changes(&self, current_scene: &OrganizeEditScene) -> bool {
+        if !self.has_project_content(current_scene) {
+            return false;
+        }
+
+        let current_project = Project::new(current_scene);
+        self.saved_project
+            .as_ref()
+            .map(|saved_project| saved_project != &current_project)
+            .unwrap_or(true)
+    }
+
+    fn has_project_content(&self, current_scene: &OrganizeEditScene) -> bool {
+        dep!(PhotoManager, |photo_manager| photo_manager.has_photos()) || current_scene.has_books()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::{
+        id::next_page_id,
+        model::{edit_state::EditablePage, page::Page, unit::Unit},
+        scene::organize_edit_scene::Book,
+        widget::canvas::CanvasState,
+    };
+
+    fn scene_with_book(width: f32, height: f32) -> OrganizeEditScene {
+        let page_id = next_page_id();
+        let mut pages = IndexMap::new();
+        pages.insert(
+            page_id,
+            CanvasState::with_layers(
+                IndexMap::new(),
+                EditablePage::new(Page::new(width, height, 300, Unit::Inches)),
+                None,
+                Vec::new(),
+            ),
+        );
+
+        let state = crate::scene::canvas_scene::CanvasSceneState::with_pages(pages, page_id);
+        OrganizeEditScene::with_books(
+            GalleryScene::new(),
+            vec![Book::with_state(
+                "book-1".to_string(),
+                "Book 1".to_string(),
+                state,
+            )],
+        )
+    }
+
+    #[test]
+    fn saved_book_only_collection_is_not_unsaved() {
+        dep_mut!(PhotoManager, |photo_manager| photo_manager.clear());
+        let scene = scene_with_book(6.0, 8.0);
+        let mut session = Session::new();
+        session.saved_project = Some(Project::new(&scene));
+
+        assert!(!session.has_unsaved_changes(&scene));
+    }
+
+    #[test]
+    fn modified_book_collection_is_unsaved() {
+        dep_mut!(PhotoManager, |photo_manager| photo_manager.clear());
+        let saved_scene = scene_with_book(6.0, 8.0);
+        let modified_scene = scene_with_book(10.0, 12.0);
+        let mut session = Session::new();
+        session.saved_project = Some(Project::new(&saved_scene));
+
+        assert!(session.has_unsaved_changes(&modified_scene));
     }
 }

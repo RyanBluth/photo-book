@@ -1,12 +1,15 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
-use egui::{CursorIcon, Pos2, Rect, RichText, Sense, Ui, Vec2};
+use egui::{Id, Pos2, Rect, Ui};
+use egui_tiles::Tree;
 use log::{error, info};
 
 use crate::{
     auto_persisting::AutoPersisting,
     config::Config,
-    cursor_manager::CursorManager,
     debug::DebugSettings,
     dep, dep_mut,
     export::Exporter,
@@ -14,413 +17,794 @@ use crate::{
         ModalActionResponse,
         basic::BasicModal,
         manager::{ModalManager, TypedModalId},
+        name_prompt::{NamePromptModal, NamePromptResponse},
         page_settings::PageSettingsModal,
     },
     model::photo_grouping::PhotoGrouping,
     photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager,
+    selection_manager::SelectionManager,
     session::{Session, SessionError},
     theme::color,
-    utils::{Either, Toggle},
+    utils::Toggle,
+    widget::{
+        book_list::BookListEntry,
+        left_sidebar::{LeftSidebar, LeftSidebarResponse, LeftSidebarState},
+    },
 };
 
 use super::{
     Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
-    canvas_scene::CanvasScene,
+    canvas_scene::{CanvasScene, CanvasSceneState},
     organize_scene::GalleryScene,
+    viewer_scene::ViewerScene,
 };
+
+mod book;
+mod workspace;
+
+use book::OpenBookEditor;
+pub use book::{Book, BookId};
+use workspace::{WorkspaceAction, WorkspacePane};
 
 #[derive(Debug, Clone)]
 pub struct OrganizeEditScene {
     pub organize: Arc<RwLock<GalleryScene>>,
-    pub edit: Option<Arc<RwLock<CanvasScene>>>,
-    current: Either<Arc<RwLock<GalleryScene>>, Arc<RwLock<CanvasScene>>>,
+    pub books: Vec<Book>,
+    open_books: Vec<OpenBookEditor>,
+    workspace_tabs: Tree<WorkspacePane>,
+    selected_book_id: Option<BookId>,
+    left_sidebar_state: LeftSidebarState,
     page_settings_modal_id: Option<TypedModalId<PageSettingsModal>>,
+    new_book_modal_id: Option<TypedModalId<NamePromptModal>>,
+    pending_new_book_name: Option<String>,
 }
 
 impl OrganizeEditScene {
     pub fn new(organize: GalleryScene, edit: Option<CanvasScene>) -> Self {
+        let books = edit
+            .map(|edit| {
+                Book::with_state(
+                    uuid::Uuid::new_v4().to_string(),
+                    "Book 1".to_string(),
+                    edit.state,
+                )
+            })
+            .into_iter()
+            .collect();
+
+        Self::with_books(organize, books)
+    }
+
+    pub fn with_books(organize: GalleryScene, books: Vec<Book>) -> Self {
         let organize_scene: Arc<RwLock<GalleryScene>> = Arc::new(RwLock::new(organize));
-        let edit = edit.map(|edit| Arc::new(RwLock::new(edit)));
         Self {
             organize: organize_scene.clone(),
-            edit: edit,
-            current: Either::Left(organize_scene.clone()),
+            books,
+            open_books: Vec::new(),
+            workspace_tabs: Self::initial_workspace_tabs(),
+            selected_book_id: None,
+            left_sidebar_state: LeftSidebarState::default(),
             page_settings_modal_id: None,
+            new_book_modal_id: None,
+            pending_new_book_name: None,
         }
     }
 
     pub fn show_organize(&mut self) {
-        self.current = Either::Left(self.organize.clone());
-        // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
-        // Introduce some sort of shared state between the two scenes
-        if let Some(edit) = &self.edit {
-            self.organize.write().unwrap().state.image_gallery_state =
-                edit.read().unwrap().state.gallery_state.clone();
-        }
+        self.persist_active_book_state();
+        self.sync_organize_gallery_from_edit();
+        self.activate_gallery_tab();
+        self.selected_book_id = None;
     }
 
-    pub fn show_edit(&mut self) {
+    pub fn books_snapshot(&self) -> Vec<Book> {
+        let mut books = self.books.clone();
+
+        for open_book in &self.open_books {
+            if let Some(book) = books
+                .iter_mut()
+                .find(|book| book.id.as_str() == open_book.book_id.as_str())
+            {
+                book.state = open_book.scene.read().unwrap().state.clone();
+            }
+        }
+
+        books
+    }
+
+    pub fn has_books(&self) -> bool {
+        !self.books_snapshot().is_empty()
+    }
+
+    fn request_create_book(&mut self) {
+        if self.new_book_modal_id.is_some() {
+            return;
+        }
+
+        self.new_book_modal_id = Some(ModalManager::push(NamePromptModal::new(
+            "New Book",
+            "Book name",
+            "Create",
+        )));
+    }
+
+    fn create_book(&mut self, name: String) {
+        self.persist_active_book_state();
+
+        let mut book = Book::new(name);
+        book.state.gallery_state = self
+            .organize
+            .read()
+            .unwrap()
+            .state
+            .image_gallery_state
+            .clone();
+
+        let book_id = book.id.clone();
+        self.books.push(book);
+        self.select_book(&book_id);
+    }
+
+    fn create_book_or_request_page_settings(&mut self, name: String) {
         if dep!(ProjectSettingsManager, |project_settings_manager| {
             project_settings_manager
                 .project_settings
                 .default_page
                 .is_none()
         }) {
-            self.page_settings_modal_id = Some(ModalManager::push(PageSettingsModal::new()));
+            self.pending_new_book_name = Some(name);
+            if self.page_settings_modal_id.is_none() {
+                self.page_settings_modal_id = Some(ModalManager::push(PageSettingsModal::new()));
+            }
             return;
         }
 
-        if let Some(edit) = &self.edit {
-            self.current = Either::Right(edit.clone());
+        self.create_book(name);
+    }
+
+    fn canvas_scene_for_book(book_id: &str, state: CanvasSceneState) -> CanvasScene {
+        CanvasScene::with_state_and_tree_id(state, Id::new("canvas_scene_tree").with(book_id))
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn select_book(&mut self, book_id: &str) {
+        if self.selected_book_id.as_deref() == Some(book_id)
+            && self.open_books.iter().any(|open| open.book_id == book_id)
+        {
+            self.activate_book_tab(book_id);
+            return;
         }
 
-        if let Some(edit) = &self.edit {
-            // TODO: This is a bit of a hack to keep the gallery state in sync between the two scenes
-            // Introduce some sort of shared state between the two scene
-            edit.write().unwrap().state.gallery_state = self
-                .organize
-                .read()
-                .unwrap()
-                .state
-                .image_gallery_state
-                .clone();
+        self.persist_active_book_state();
+
+        if let Some(open_book_id) = self
+            .open_books
+            .iter()
+            .find(|open_book| open_book.book_id.as_str() == book_id)
+            .map(|open_book| open_book.book_id.clone())
+        {
+            self.activate_book_tab(book_id);
+            self.selected_book_id = Some(open_book_id);
+            return;
+        }
+
+        let Some(book) = self.books.iter().find(|book| book.id == book_id).cloned() else {
+            return;
+        };
+
+        let edit_scene = Arc::new(RwLock::new(Self::canvas_scene_for_book(
+            book_id, book.state,
+        )));
+        let tile_id = self.insert_book_tab(book_id.to_string());
+        self.open_books.push(OpenBookEditor {
+            book_id: book_id.to_string(),
+            scene: edit_scene.clone(),
+            tile_id,
+        });
+        self.selected_book_id = Some(book_id.to_string());
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn persist_active_book_state(&mut self) {
+        let open_book_ids = self
+            .open_books
+            .iter()
+            .map(|open_book| open_book.book_id.clone())
+            .collect::<Vec<_>>();
+
+        for book_id in open_book_ids {
+            self.persist_book_state(&book_id);
+        }
+
+        if let Some(selected_book_id) = self.selected_book_id.clone() {
+            self.persist_book_state(&selected_book_id);
         }
     }
 
-    fn mode_selector(&mut self, ui: &mut Ui) {
-        ui.style_mut().interaction.selectable_labels = false;
+    pub(in crate::scene::organize_edit_scene) fn persist_book_state(&mut self, book_id: &str) {
+        let state = self
+            .open_books
+            .iter()
+            .find(|open_book| open_book.book_id.as_str() == book_id)
+            .map(|open_book| open_book.scene.read().unwrap().state.clone());
 
-        let mut organize_text = RichText::new("Organize");
-        let mut edit_text = RichText::new("Edit");
+        let Some(state) = state else {
+            return;
+        };
 
-        if self.current.is_left() {
-            organize_text = organize_text.strong();
-        } else {
-            edit_text = edit_text.strong();
-        }
-
-        let organize_heading = ui.heading(organize_text).interact(Sense::click());
-        let edit_heading = ui.heading(edit_text).interact(Sense::click());
-
-        if organize_heading.hovered()
-            || edit_heading.hovered()
-            || organize_heading.is_pointer_button_down_on()
-            || edit_heading.is_pointer_button_down_on()
+        if let Some(book) = self
+            .books
+            .iter_mut()
+            .find(|book| book.id.as_str() == book_id)
         {
-            dep_mut!(CursorManager, |cursor_manager| {
-                cursor_manager.set_cursor(CursorIcon::PointingHand);
-            });
+            book.state = state;
+        }
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn sync_organize_gallery_from_edit(&mut self) {
+        if let Some(book_state) = self.selected_book_state() {
+            self.organize.write().unwrap().state.image_gallery_state = book_state.gallery_state;
+        }
+    }
+
+    fn book_list_entries(&self) -> Vec<BookListEntry> {
+        let mut entries = self.books.iter().map(Book::list_entry).collect::<Vec<_>>();
+
+        for open_book in &self.open_books {
+            if let Some(entry) = entries
+                .iter_mut()
+                .find(|entry| entry.id.as_str() == open_book.book_id.as_str())
+            {
+                entry.page_count = open_book
+                    .scene
+                    .read()
+                    .unwrap()
+                    .state
+                    .pages_state
+                    .pages
+                    .len();
+            }
         }
 
-        if organize_heading.clicked() {
-            self.show_organize();
+        entries
+    }
+
+    fn selected_book_state(&self) -> Option<CanvasSceneState> {
+        if let Some(selected_book_id) = &self.selected_book_id
+            && let Some(open_book) = self
+                .open_books
+                .iter()
+                .find(|open_book| open_book.book_id.as_str() == selected_book_id.as_str())
+        {
+            return Some(open_book.scene.read().unwrap().state.clone());
         }
 
-        if edit_heading.clicked() {
-            self.show_edit();
-        }
-        if let Some(id) = &self.page_settings_modal_id {
-            let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(id));
+        let selected_book_id = self.selected_book_id.as_ref()?;
+        self.books
+            .iter()
+            .find(|book| book.id.as_str() == selected_book_id.as_str())
+            .map(|book| book.state.clone())
+    }
 
-            let modal_response = dep!(ModalManager, |modal_manager| modal_manager.response_for(id));
-            match modal_response {
-                Ok(Some(response)) => match response {
-                    ModalActionResponse::Confirm => {
-                        if self.edit.is_none() {
-                            self.edit = Some(Arc::new(RwLock::new(CanvasScene::new())));
+    fn export_book_state(&self) -> Option<CanvasSceneState> {
+        self.selected_book_state().or_else(|| {
+            let books = self.books_snapshot();
+            if books.len() == 1 {
+                books.first().map(|book| book.state.clone())
+            } else {
+                None
+            }
+        })
+    }
+
+    fn scroll_to_photo_path(&mut self) -> Option<PathBuf> {
+        let selection_change = dep!(SelectionManager, |selection_manager| {
+            selection_manager.last_frame_selection()
+        })?;
+
+        for path in &selection_change.added_paths {
+            self.left_sidebar_state
+                .file_tree_state
+                .expand_parent_directories(path);
+        }
+
+        selection_change.added_paths.first().cloned()
+    }
+
+    fn clear_photo_selection(&mut self) {
+        dep_mut!(SelectionManager, |selection_manager| selection_manager
+            .clear());
+    }
+
+    fn apply_album_filter(&mut self, album_id: String) {
+        dep_mut!(PhotoManager, |photo_manager| {
+            let mut filter = photo_manager.get_current_filter().clone();
+            filter.album = Some(album_id);
+            photo_manager.set_current_filter(filter);
+        });
+
+        self.clear_photo_selection();
+    }
+
+    fn remove_photo(&mut self, path: &PathBuf) {
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.photo_database.remove_photo(path);
+        });
+        dep_mut!(SelectionManager, |selection_manager| {
+            selection_manager.remove_path(path)
+        });
+    }
+
+    fn open_photo_response(&self, path: &PathBuf) -> Option<SceneResponse> {
+        dep!(PhotoManager, |photo_manager| {
+            photo_manager
+                .photo_database
+                .get_photo(path)
+                .cloned()
+                .map(|photo| SceneResponse::Push(SceneTransition::Viewer(ViewerScene::new(photo))))
+        })
+    }
+
+    fn handle_left_sidebar_response(
+        &mut self,
+        sidebar_response: LeftSidebarResponse,
+    ) -> (Option<SceneResponse>, Option<WorkspaceAction>) {
+        let mut workspace_action = None;
+
+        if sidebar_response.create_book {
+            workspace_action = Some(WorkspaceAction::CreateBook);
+        }
+
+        if let Some(book_list_response) = sidebar_response.book_list_response
+            && let Some(book_id) = book_list_response.selected
+        {
+            workspace_action = Some(WorkspaceAction::SelectBook(book_id));
+        }
+
+        if let Some(album_list_response) = sidebar_response.album_list_response {
+            if let Some(album_id) = album_list_response.selected {
+                self.apply_album_filter(album_id);
+            }
+
+            if let Some(double_clicked_path) = album_list_response.double_clicked_photo {
+                return (
+                    self.open_photo_response(&double_clicked_path),
+                    workspace_action,
+                );
+            }
+        }
+
+        if let Some(file_tree_response) = sidebar_response.file_tree_response {
+            if let Some(double_clicked_path) = file_tree_response.double_clicked {
+                return (
+                    self.open_photo_response(&double_clicked_path),
+                    workspace_action,
+                );
+            }
+
+            if let Some(removed_path) = file_tree_response.removed {
+                self.remove_photo(&removed_path);
+            }
+        }
+
+        (None, workspace_action)
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn apply_workspace_action(
+        &mut self,
+        action: WorkspaceAction,
+    ) {
+        match action {
+            WorkspaceAction::CreateBook => self.request_create_book(),
+            WorkspaceAction::SelectBook(book_id) => self.select_book(&book_id),
+        }
+    }
+
+    fn check_new_book_modal(&mut self) {
+        let Some(id) = self.new_book_modal_id else {
+            return;
+        };
+
+        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(&id));
+
+        let modal_response = dep!(ModalManager, |modal_manager| modal_manager
+            .response_for(&id));
+        if let Ok(Some(NamePromptResponse::Confirm { name })) = modal_response {
+            self.create_book_or_request_page_settings(name);
+        }
+
+        if !exists {
+            self.new_book_modal_id = None;
+        }
+    }
+
+    fn check_page_settings_modal(&mut self) {
+        let Some(id) = self.page_settings_modal_id else {
+            return;
+        };
+
+        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(&id));
+
+        let modal_response = dep!(ModalManager, |modal_manager| modal_manager
+            .response_for(&id));
+        if let Ok(Some(ModalActionResponse::Confirm)) = modal_response {
+            if let Some(name) = self.pending_new_book_name.take() {
+                self.create_book(name);
+            } else {
+                self.persist_active_book_state();
+            }
+        }
+
+        if !exists {
+            self.page_settings_modal_id = None;
+            self.pending_new_book_name = None;
+        }
+    }
+
+    fn menu_bar(&mut self, ui: &mut Ui) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("New Collection").clicked() {
+                    dep_mut!(Session, |session| {
+                        match session.new_project(self) {
+                            Ok(scene) => {
+                                *self = scene;
+                                self.show_organize();
+                            }
+                            Err(SessionError::WaitingForUserInput) => {}
+                            Err(e) => {
+                                error!("Error creating new collection: {:?}", e);
+                            }
                         }
-                        self.show_edit();
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
+                    })
+                }
 
-            if !exists {
-                self.page_settings_modal_id = None;
-            }
+                if ui.button("Open Collection").clicked() {
+                    dep_mut!(Session, |session| {
+                        match session.load_project(self, None) {
+                            Ok(scene) => {
+                                *self = scene;
+                                self.show_organize();
+                            }
+                            Err(SessionError::WaitingForUserInput) => {}
+                            Err(err) => {
+                                error!("Error loading collection: {:?}", err);
+
+                                ModalManager::push(BasicModal::new(
+                                    "Error",
+                                    format!("Error loading collection: {:?}", err),
+                                    "OK",
+                                ));
+                            }
+                        }
+                    })
+                }
+
+                ui.menu_button("Open Recent", |ui| {
+                    let recents = dep_mut!(AutoPersisting<Config>, |config| {
+                        config.read().unwrap().recent_projects().to_vec()
+                    });
+
+                    if recents.is_empty() {
+                        ui.label("No recent collections");
+                    } else {
+                        for recent in &recents {
+                            if ui.button(recent.display().to_string()).clicked() {
+                                match dep_mut!(Session, |session| {
+                                    session.load_project(self, Some(recent.clone()))
+                                }) {
+                                    Ok(scene) => {
+                                        *self = scene;
+                                        self.show_organize();
+                                    }
+                                    Err(SessionError::WaitingForUserInput) => {}
+                                    Err(err) => {
+                                        error!("Error loading collection: {:?}", err);
+
+                                        ModalManager::push(BasicModal::new(
+                                            "Error",
+                                            format!("Error loading collection: {:?}", err),
+                                            "OK",
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+
+                if ui.button("Save").clicked() {
+                    self.persist_active_book_state();
+                    if let Err(err) = dep_mut!(Session, |session| session.save_project(&self)) {
+                        error!("Error saving collection: {:?}", err);
+                    }
+                }
+
+                if ui.button("Import").clicked() {
+                    let import_dir = native_dialog::DialogBuilder::file()
+                        .add_filter("Images", &["png", "jpg", "jpeg"])
+                        .open_single_dir()
+                        .show();
+
+                    match import_dir {
+                        Ok(Some(import_dir)) => {
+                            info!("Imported {:?}", import_dir);
+                            let _ = PhotoManager::load_directory(import_dir.clone());
+                        }
+                        Err(e) => {
+                            error!("Error opening import file dialog: {:?}", e);
+                        }
+                        Ok(None) => {
+                            info!("No import directory selected");
+                        }
+                    }
+                }
+
+                if ui.button("Export").clicked() {
+                    self.persist_active_book_state();
+
+                    let export_path = native_dialog::DialogBuilder::file()
+                        .set_filename("export.pdf")
+                        .save_single_file()
+                        .show();
+
+                    match export_path {
+                        Ok(Some(export_path)) => {
+                            let directory = export_path.parent().unwrap();
+                            let file_name = export_path.file_name().unwrap();
+
+                            match self.export_book_state() {
+                                Some(book_state) => {
+                                    dep_mut!(Exporter, |exporter| {
+                                        exporter.export(
+                                            ui.ctx().clone(),
+                                            book_state
+                                                .pages_state
+                                                .pages
+                                                .values()
+                                                .cloned()
+                                                .collect::<Vec<_>>(),
+                                            directory.into(),
+                                            file_name.to_str().unwrap(),
+                                        );
+                                    });
+                                }
+                                None => {
+                                    ModalManager::push(BasicModal::new(
+                                        "Error",
+                                        "Select a book to export",
+                                        "OK",
+                                    ));
+                                }
+                            };
+                        }
+                        Err(e) => {
+                            error!("Error opening export file dialog: {:?}", e);
+                        }
+                        Ok(None) => {
+                            info!("No export directory selected");
+                        }
+                    }
+                }
+            });
+
+            ui.menu_button("Group By", |ui| {
+                dep_mut!(PhotoManager, |photo_manager| {
+                    if ui.button("Date").clicked() {
+                        photo_manager.group_photos_by(PhotoGrouping::Date);
+                    }
+                    if ui.button("Rating").clicked() {
+                        photo_manager.group_photos_by(PhotoGrouping::Rating);
+                    }
+                });
+            });
+
+            ui.menu_button("Collection Settings", |ui| {
+                if ui.button("Page Settings").clicked() {
+                    self.page_settings_modal_id =
+                        Some(ModalManager::push(PageSettingsModal::new()));
+                }
+            });
+
+            ui.menu_button("Debug", |ui| {
+                dep_mut!(DebugSettings, |debug_settings| {
+                    fn enabled_disabled_suffix(enabled: bool) -> &'static str {
+                        if enabled { "(Enabled)" } else { "(Disabled)" }
+                    }
+
+                    if ui
+                        .button(format!(
+                            "Quick Layout Numbers:{}",
+                            enabled_disabled_suffix(debug_settings.show_quick_layout_order)
+                        ))
+                        .clicked()
+                    {
+                        debug_settings.show_quick_layout_order.toggle();
+                    }
+                });
+            })
+        });
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn collection_mode_ui(
+        &mut self,
+        ui: &mut Ui,
+    ) -> (SceneResponse, Option<WorkspaceAction>) {
+        let scroll_to_photo_path = self.scroll_to_photo_path();
+        let book_entries = self.book_list_entries();
+        let selected_book_id = self.selected_book_id.clone();
+        let mut sidebar_response = None;
+
+        egui::Panel::left("collection_gallery_sidebar")
+            .resizable(true)
+            .default_size(300.0)
+            .size_range(240.0..=480.0)
+            .show_inside(ui, |ui| {
+                sidebar_response = Some(LeftSidebar::new(&mut self.left_sidebar_state).show(
+                    ui,
+                    scroll_to_photo_path.as_ref(),
+                    &book_entries,
+                    selected_book_id.as_deref(),
+                ));
+            });
+
+        let content_response = egui::CentralPanel::default()
+            .show_inside(ui, |ui| self.organize.write().unwrap().ui(ui))
+            .inner;
+
+        let (pending_response, workspace_action) = match sidebar_response {
+            Some(response) => self.handle_left_sidebar_response(response),
+            None => (None, None),
+        };
+
+        let scene_response = pending_response.unwrap_or(content_response);
+
+        (scene_response, workspace_action)
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn handle_child_scene_response(
+        &mut self,
+        scene_response: SceneResponse,
+    ) -> SceneResponse {
+        match scene_response {
+            SceneResponse::Push(transition) => match transition {
+                SceneTransition::Gallery(scene) => {
+                    *self.organize.write().unwrap() = scene;
+                    self.show_organize();
+                    SceneResponse::None
+                }
+                SceneTransition::Canvas(scene) => {
+                    let state = scene.state;
+                    let book_id = if let Some(selected_book_id) = self.selected_book_id.clone()
+                        && let Some(book) = self
+                            .books
+                            .iter_mut()
+                            .find(|book| book.id.as_str() == selected_book_id.as_str())
+                    {
+                        book.state = state.clone();
+                        selected_book_id
+                    } else {
+                        let book_id = uuid::Uuid::new_v4().to_string();
+                        self.books.push(Book::with_state(
+                            book_id.clone(),
+                            format!("Book {}", self.books.len() + 1),
+                            state.clone(),
+                        ));
+                        book_id
+                    };
+
+                    if let Some(open_book) = self
+                        .open_books
+                        .iter_mut()
+                        .find(|open_book| open_book.book_id == book_id)
+                    {
+                        open_book.scene.write().unwrap().state = state;
+                    } else {
+                        let edit_scene =
+                            Arc::new(RwLock::new(Self::canvas_scene_for_book(&book_id, state)));
+                        let tile_id = self.insert_book_tab(book_id.clone());
+                        self.open_books.push(OpenBookEditor {
+                            book_id: book_id.clone(),
+                            scene: edit_scene.clone(),
+                            tile_id,
+                        });
+                    }
+
+                    self.activate_book_tab(&book_id);
+                    self.selected_book_id = Some(book_id);
+                    SceneResponse::None
+                }
+                _ => SceneResponse::Push(transition),
+            },
+            _ => scene_response,
         }
     }
 }
 
 impl Scene for OrganizeEditScene {
     fn ui(&mut self, ui: &mut Ui) -> SceneResponse {
+        self.check_new_book_modal();
+        self.check_page_settings_modal();
+
         ui.painter().rect_filled(
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 50.0)),
+            Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 34.0)),
             0.0,
             color::SURFACE,
         );
 
         ui.vertical(|ui| {
-            ui.allocate_ui(Vec2::new(ui.available_width(), 50.0), |ui| {
-                let top_nav_button_width: f32 = ui.memory_mut(|memory: &mut egui::Memory| {
-                    memory
-                        .data
-                        .get_persisted("top_nav_button_width".into())
-                        .unwrap_or_default()
-                });
+            self.menu_bar(ui);
+            ui.add_space(8.0);
 
-                ui.add_space(10.0);
-
-                ui.horizontal(|ui| {
-                    ui.add_space(ui.available_width() / 2.0 - top_nav_button_width / 2.0);
-
-                    let nav_buttons_response = ui.horizontal(|ui| {
-                        self.mode_selector(ui);
-                    });
-
-                    ui.memory_mut(|memory| {
-                        memory.data.insert_persisted(
-                            "top_nav_button_width".into(),
-                            nav_buttons_response.response.rect.width(),
-                        );
-                    });
-                });
-            });
-
-            ui.add_space(-20.0);
-
-            egui::MenuBar::new().ui(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Project").clicked() {
-                        dep_mut!(Session, |session| {
-                            match session.new_project() {
-                                Ok(scene) => {
-                                    *self = scene;
-                                    self.show_organize();
-                                }
-                                Err(SessionError::WaitingForUserInput) => {}
-                                Err(e) => {
-                                    error!("Error creating new project: {:?}", e);
-                                }
-                            }
-                        })
-                    }
-
-                    if ui.button("Open").clicked() {
-                        dep_mut!(Session, |session| {
-                            match session.load_project(None) {
-                                Ok(scene) => {
-                                    *self = scene;
-                                    self.show_organize();
-                                }
-                                Err(SessionError::WaitingForUserInput) => {}
-                                Err(err) => {
-                                    error!("Error loading project: {:?}", err);
-
-                                    ModalManager::push(BasicModal::new(
-                                        "Error",
-                                        format!("Error loading project: {:?}", err),
-                                        "OK",
-                                    ));
-                                }
-                            }
-                        })
-                    }
-
-                    ui.menu_button("Open Recent", |ui| {
-                        let recents = dep_mut!(AutoPersisting<Config>, |config| {
-                            config.read().unwrap().recent_projects().to_vec()
-                        });
-
-                        if recents.is_empty() {
-                            ui.label("No recent projects");
-                        } else {
-                            for recent in &recents {
-                                if ui.button(recent.display().to_string()).clicked() {
-                                    match dep_mut!(Session, |session| {
-                                        session.load_project(Some(recent.clone()))
-                                    }) {
-                                        Ok(scene) => {
-                                            *self = scene;
-                                            self.show_organize();
-                                        }
-                                        Err(SessionError::WaitingForUserInput) => {}
-                                        Err(err) => {
-                                            error!("Error loading project: {:?}", err);
-
-                                            ModalManager::push(BasicModal::new(
-                                                "Error",
-                                                format!("Error loading project: {:?}", err),
-                                                "OK",
-                                            ));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    });
-
-                    if ui.button("Save").clicked() {
-                        if let Err(err) = dep_mut!(Session, |session| session.save_project(&self)) {
-                            error!("Error saving project: {:?}", err);
-                        }
-                    }
-
-                    if ui.button("Import").clicked() {
-                        let import_dir = native_dialog::DialogBuilder::file()
-                            .add_filter("Images", &["png", "jpg", "jpeg"])
-                            .open_single_dir()
-                            .show();
-
-                        match import_dir {
-                            Ok(Some(import_dir)) => {
-                                info!("Imported {:?}", import_dir);
-                                let _ = PhotoManager::load_directory(import_dir.clone());
-                            }
-                            Err(e) => {
-                                error!("Error opening import file dialog: {:?}", e);
-                            }
-                            Ok(None) => {
-                                info!("No import directory selected");
-                            }
-                        }
-                    }
-
-                    if ui.button("Export").clicked() {
-                        let export_path = native_dialog::DialogBuilder::file()
-                            .set_filename("export.pdf")
-                            .save_single_file()
-                            .show();
-
-                        match export_path {
-                            Ok(Some(export_path)) => {
-                                let directory = export_path.parent().unwrap();
-                                let file_name = export_path.file_name().unwrap();
-
-                                match &self.edit {
-                                    Some(edit) => {
-                                        dep_mut!(Exporter, |exporter| {
-                                            exporter.export(
-                                                ui.ctx().clone(),
-                                                edit.read()
-                                                    .unwrap()
-                                                    .state
-                                                    .pages_state
-                                                    .pages
-                                                    .values()
-                                                    .into_iter()
-                                                    .map(|x| x.clone())
-                                                    .collect::<Vec<_>>(),
-                                                directory.into(),
-                                                file_name.to_str().unwrap(),
-                                            );
-                                        });
-                                    }
-                                    None => {
-                                        // Show alert
-                                        ModalManager::push(BasicModal::new(
-                                            "Error",
-                                            "Nothing to export",
-                                            "OK",
-                                        ));
-                                    }
-                                };
-                            }
-                            Err(e) => {
-                                error!("Error opening export file dialog: {:?}", e);
-                            }
-                            Ok(None) => {
-                                info!("No export directory selected");
-                            }
-                        }
-                    }
-                });
-
-                ui.menu_button("Group By", |ui| {
-                    dep_mut!(PhotoManager, |photo_manager| {
-                        if ui.button("Date").clicked() {
-                            photo_manager.group_photos_by(PhotoGrouping::Date);
-                        }
-                        if ui.button("Rating").clicked() {
-                            photo_manager.group_photos_by(PhotoGrouping::Rating);
-                        }
-                    });
-                });
-
-                ui.menu_button("Project Settings", |ui| {
-                    if ui.button("Page Settings").clicked() {
-                        self.page_settings_modal_id =
-                            Some(ModalManager::push(PageSettingsModal::new()));
-                    }
-                });
-
-                ui.menu_button("Debug", |ui| {
-                    dep_mut!(DebugSettings, |debug_settings| {
-                        fn enabled_disabled_suffix(enabled: bool) -> &'static str {
-                            if enabled { "(Enabled)" } else { "(Disabled)" }
-                        }
-
-                        if ui
-                            .button(format!(
-                                "Quick Layout Numbers:{}",
-                                enabled_disabled_suffix(debug_settings.show_quick_layout_order)
-                            ))
-                            .clicked()
-                        {
-                            debug_settings.show_quick_layout_order.toggle();
-                        }
-                    });
-                })
-            });
-
-            ui.add_space(10.0);
-
-            let scene_response: SceneResponse = ui
-                .allocate_ui(
-                    Vec2::new(ui.available_width(), ui.available_height()),
-                    |ui| match &self.current {
-                        Either::Left(organize) => {
-                            let mut organize = organize.write().unwrap();
-                            organize.ui(ui)
-                        }
-                        Either::Right(edit) => {
-                            let mut edit = edit.write().unwrap();
-                            edit.ui(ui)
-                        }
-                    },
-                )
-                .inner;
-
-            // Act as the navigator for certain scene transitions
-            // TODO: Is there a more elegant way to do this?
-            match scene_response {
-                SceneResponse::Push(transition) => match transition {
-                    SceneTransition::Gallery(scene) => {
-                        *self.organize.write().unwrap() = scene;
-                        self.show_organize();
-                        SceneResponse::None
-                    }
-                    SceneTransition::Canvas(mut scene) => {
-                        scene.state.gallery_state = self
-                            .organize
-                            .read()
-                            .unwrap()
-                            .state
-                            .image_gallery_state
-                            .clone();
-                        self.edit = Some(Arc::new(RwLock::new(scene)));
-                        self.show_edit();
-                        SceneResponse::None
-                    }
-                    _ => SceneResponse::Push(transition),
-                },
-                _ => scene_response,
-            }
+            self.workspace_tabs_ui(ui)
         })
         .inner
     }
 
     fn popped(&mut self, popped_scene_response: ScenePopResponse) {
-        match self.current {
-            Either::Left(ref mut organize) => {
-                organize.write().unwrap().popped(popped_scene_response);
-            }
-            Either::Right(ref mut edit) => {
-                edit.write().unwrap().popped(popped_scene_response);
-            }
+        if let Some(selected_book_id) = &self.selected_book_id
+            && let Some(open_book) = self
+                .open_books
+                .iter()
+                .find(|open_book| open_book.book_id.as_str() == selected_book_id.as_str())
+        {
+            open_book
+                .scene
+                .write()
+                .unwrap()
+                .popped(popped_scene_response);
+        } else {
+            self.organize.write().unwrap().popped(popped_scene_response);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use indexmap::IndexMap;
+
+    use super::*;
+    use crate::{
+        id::next_page_id,
+        model::{edit_state::EditablePage, page::Page, unit::Unit},
+        project::Project,
+        widget::canvas::CanvasState,
+    };
+
+    fn canvas_scene_state(width: f32, height: f32) -> CanvasSceneState {
+        let page_id = next_page_id();
+        let mut pages = IndexMap::new();
+        pages.insert(
+            page_id,
+            CanvasState::with_layers(
+                IndexMap::new(),
+                EditablePage::new(Page::new(width, height, 300, Unit::Inches)),
+                None,
+                Vec::new(),
+            ),
+        );
+        CanvasSceneState::with_pages(pages, page_id)
+    }
+
+    #[test]
+    fn project_new_uses_open_book_editor_state() {
+        let mut scene = OrganizeEditScene::with_books(
+            GalleryScene::new(),
+            vec![Book::with_state(
+                "book-1".to_string(),
+                "Book 1".to_string(),
+                canvas_scene_state(6.0, 8.0),
+            )],
+        );
+
+        scene.select_book("book-1");
+        scene.open_books[0].scene.write().unwrap().state = canvas_scene_state(10.0, 12.0);
+
+        let project = Project::new(&scene);
+
+        assert_eq!(project.books.len(), 1);
+        assert_eq!(project.books[0].id, "book-1");
+        assert_eq!(project.books[0].pages[0].page.width, 10.0);
+        assert_eq!(project.books[0].pages[0].page.height, 12.0);
     }
 }

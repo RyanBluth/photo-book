@@ -162,11 +162,18 @@ impl ModalManager {
     }
 
     pub fn show_next(&mut self, ui: &mut egui::Ui) {
-        self.responses.values().for_each(|response| {
-            if response.lock().unwrap().should_close() {
-                self.modals.pop();
-            }
-        });
+        let modal_ids_to_close = self
+            .responses
+            .iter()
+            .filter_map(|(modal_id, response)| {
+                response.lock().unwrap().should_close().then_some(*modal_id)
+            })
+            .collect::<Vec<_>>();
+
+        for modal_id in modal_ids_to_close {
+            self.modals.shift_remove(&modal_id);
+        }
+
         self.responses.clear();
 
         match self.modals.keys().last() {

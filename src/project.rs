@@ -17,8 +17,8 @@ use crate::{
     photo_manager::PhotoManager,
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
-        canvas_scene::{CanvasScene, CanvasSceneState},
-        organize_edit_scene::OrganizeEditScene,
+        canvas_scene::CanvasSceneState,
+        organize_edit_scene::{Book as AppBook, OrganizeEditScene},
         organize_scene::GalleryScene,
     },
     template::{
@@ -40,7 +40,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 4;
+pub const PROJECT_VERSION: u32 = 6;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -54,10 +54,10 @@ pub enum ProjectError {
     SavefileError(#[from] savefile::SavefileError),
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Project {
     pub photos: Vec<Photo>,
-    pub pages: Vec<CanvasPage>,
+    pub books: Vec<ProjectBook>,
     pub group_by: ProjectPhotoGrouping,
     pub project_settings: ProjectSettings,
     pub albums: Vec<Album>,
@@ -78,239 +78,11 @@ impl Project {
                 .collect()
         });
 
-        let mut app_pages = match &root_scene.edit {
-            Some(edit) => edit.read().unwrap().state.pages_state.pages.clone(),
-            None => IndexMap::new(),
-        };
-
-        let pages: Vec<CanvasPage> = app_pages
-            .values_mut()
-            .map(|canvas_state| {
-                let layers = canvas_state
-                    .layers
-                    .values_mut()
-                    .map(|layer| {
-                        layer.transform_edit_state.update(&layer.transform_state);
-
-                        Layer {
-                            content: match layer.content.clone() {
-                                AppLayerContent::Photo(canvas_photo) => {
-                                    LayerContent::Photo(CanvasPhoto {
-                                        photo: Photo {
-                                            path: canvas_photo.photo.path.clone(),
-                                            rating: dep!(PhotoManager, |photo_manager| {
-                                                photo_manager
-                                                    .get_photo_rating(&canvas_photo.photo.path)
-                                            }),
-                                            tags: dep!(PhotoManager, |photo_manager| {
-                                                photo_manager
-                                                    .get_photo_tags(&canvas_photo.photo.path)
-                                                    .into()
-                                            }),
-                                        },
-                                        crop: canvas_photo.crop.into(),
-                                    })
-                                }
-                                AppLayerContent::Text(canvas_text) => {
-                                    LayerContent::Text(CanvasText {
-                                        text: canvas_text.text,
-                                        font_size: canvas_text.font_size,
-                                        font_id: canvas_text.font_id.into(),
-                                        color: canvas_text.color.into(),
-                                        horizontal_alignment: match canvas_text.horizontal_alignment
-                                        {
-                                            AppTextHorizontalAlignment::Left => {
-                                                TextHorizontalAlignment::Left
-                                            }
-                                            AppTextHorizontalAlignment::Center => {
-                                                TextHorizontalAlignment::Center
-                                            }
-                                            AppTextHorizontalAlignment::Right => {
-                                                TextHorizontalAlignment::Right
-                                            }
-                                        },
-                                        vertical_alignment: match canvas_text.vertical_alignment {
-                                            AppTextVerticalAlignment::Top => {
-                                                TextVerticalAlignment::Top
-                                            }
-                                            AppTextVerticalAlignment::Center => {
-                                                TextVerticalAlignment::Center
-                                            }
-                                            AppTextVerticalAlignment::Bottom => {
-                                                TextVerticalAlignment::Bottom
-                                            }
-                                        },
-                                    })
-                                }
-                                AppLayerContent::TemplatePhoto {
-                                    region,
-                                    photo,
-                                    scale_mode,
-                                } => LayerContent::TemplatePhoto {
-                                    region: TemplateRegion {
-                                        relative_position: region.relative_position.into(),
-                                        relative_size: region.relative_size.into(),
-                                        kind: match region.kind {
-                                            AppTemplateRegionKind::Image => {
-                                                TemplateRegionKind::Image
-                                            }
-                                            AppTemplateRegionKind::Text {
-                                                sample_text,
-                                                font_size,
-                                            } => TemplateRegionKind::Text {
-                                                sample_text,
-                                                font_size,
-                                            },
-                                        },
-                                    },
-                                    photo: photo.map(|canvas_photo| CanvasPhoto {
-                                        photo: Photo {
-                                            path: canvas_photo.photo.path.clone(),
-                                            rating: dep!(PhotoManager, |photo_manager| {
-                                                photo_manager
-                                                    .get_photo_rating(&canvas_photo.photo.path)
-                                            }),
-                                            tags: dep!(PhotoManager, |photo_manager| {
-                                                photo_manager
-                                                    .get_photo_tags(&canvas_photo.photo.path)
-                                                    .into()
-                                            }),
-                                        },
-                                        crop: canvas_photo.crop.into(),
-                                    }),
-                                    scale_mode: match scale_mode {
-                                        AppScaleMode::Fit => ScaleMode::Fit,
-                                        AppScaleMode::Fill => ScaleMode::Fill,
-                                        AppScaleMode::Stretch => ScaleMode::Stretch,
-                                    },
-                                },
-                                AppLayerContent::TemplateText { region, text } => {
-                                    LayerContent::TemplateText {
-                                        region: TemplateRegion {
-                                            relative_position: region.relative_position.into(),
-                                            relative_size: region.relative_size.into(),
-                                            kind: match region.kind {
-                                                AppTemplateRegionKind::Image => {
-                                                    TemplateRegionKind::Image
-                                                }
-                                                AppTemplateRegionKind::Text {
-                                                    sample_text,
-                                                    font_size,
-                                                } => TemplateRegionKind::Text {
-                                                    sample_text,
-                                                    font_size,
-                                                },
-                                            },
-                                        },
-                                        text: CanvasText {
-                                            text: text.text,
-                                            font_size: text.font_size,
-                                            font_id: text.font_id.into(),
-                                            color: text.color.into(),
-                                            horizontal_alignment: match text.horizontal_alignment {
-                                                AppTextHorizontalAlignment::Left => {
-                                                    TextHorizontalAlignment::Left
-                                                }
-                                                AppTextHorizontalAlignment::Center => {
-                                                    TextHorizontalAlignment::Center
-                                                }
-                                                AppTextHorizontalAlignment::Right => {
-                                                    TextHorizontalAlignment::Right
-                                                }
-                                            },
-                                            vertical_alignment: match text.vertical_alignment {
-                                                AppTextVerticalAlignment::Top => {
-                                                    TextVerticalAlignment::Top
-                                                }
-                                                AppTextVerticalAlignment::Center => {
-                                                    TextVerticalAlignment::Center
-                                                }
-                                                AppTextVerticalAlignment::Bottom => {
-                                                    TextVerticalAlignment::Bottom
-                                                }
-                                            },
-                                        },
-                                    }
-                                }
-                                AppLayerContent::Shape(canvas_shape) => {
-                                    LayerContent::Shape(CanvasShape {
-                                        kind: match canvas_shape.kind {
-                                            AppCanvasShapeKind::Rectangle { corner_radius } => {
-                                                CanvasShapeKind::Rectangle { corner_radius }
-                                            }
-                                            AppCanvasShapeKind::Ellipse => CanvasShapeKind::Ellipse,
-                                            AppCanvasShapeKind::Line { slope } => {
-                                                CanvasShapeKind::Line {
-                                                    slope: slope.into(),
-                                                }
-                                            }
-                                        },
-                                        fill_color: canvas_shape.fill_color.into(),
-                                        stroke: canvas_shape
-                                            .stroke
-                                            .map(|(stroke, kind)| (stroke.into(), kind.into())),
-                                    })
-                                }
-                            },
-                            name: layer.name.clone(),
-                            visible: layer.visible,
-                            locked: layer.locked,
-                            selected: layer.selected,
-                            id: layer.id,
-                            rect: layer.transform_state.rect.into(),
-                            rotation: layer.transform_state.rotation,
-                        }
-                    })
-                    .collect();
-
-                let template = canvas_state.template.clone();
-                CanvasPage {
-                    layers,
-                    page: Page {
-                        width: canvas_state.page.size().x,
-                        height: canvas_state.page.size().y,
-                        ppi: canvas_state.page.ppi(),
-                        unit: match canvas_state.page.unit() {
-                            AppUnit::Pixels => Unit::Pixels,
-                            AppUnit::Inches => Unit::Inches,
-                            AppUnit::Centimeters => Unit::Centimeters,
-                        },
-                    },
-                    template: template.map(|template| Template {
-                        name: template.name,
-                        page: Page {
-                            width: template.page.width(),
-                            height: template.page.height(),
-                            ppi: template.page.ppi(),
-                            unit: match template.page.unit() {
-                                AppUnit::Pixels => Unit::Pixels,
-                                AppUnit::Inches => Unit::Inches,
-                                AppUnit::Centimeters => Unit::Centimeters,
-                            },
-                        },
-                        regions: template
-                            .regions
-                            .iter()
-                            .map(|region| TemplateRegion {
-                                relative_position: region.relative_position.into(),
-                                relative_size: region.relative_size.into(),
-                                kind: match &region.kind {
-                                    AppTemplateRegionKind::Image => TemplateRegionKind::Image,
-                                    AppTemplateRegionKind::Text {
-                                        sample_text,
-                                        font_size,
-                                    } => TemplateRegionKind::Text {
-                                        sample_text: sample_text.clone(),
-                                        font_size: *font_size,
-                                    },
-                                },
-                            })
-                            .collect(),
-                    }),
-                    quick_layout_order: canvas_state.quick_layout_order.clone(),
-                }
-            })
-            .collect();
+        let books = root_scene
+            .books_snapshot()
+            .into_iter()
+            .map(ProjectBook::from)
+            .collect::<Vec<_>>();
 
         let group_by = dep!(PhotoManager, |photo_manager| photo_manager.photo_grouping());
 
@@ -340,22 +112,23 @@ impl Project {
         })
         .collect::<Vec<_>>();
 
-        let project = Project {
+        Project {
             photos,
-            pages,
+            books,
             group_by: group_by.into(),
             project_settings: project_settings.into(),
-            albums: albums.into(),
-        };
-
-        project
+            albums,
+        }
     }
 
+    #[allow(dead_code)]
     pub fn save(path: &PathBuf, root_scene: &OrganizeEditScene) -> Result<(), ProjectError> {
         let project = Project::new(root_scene);
+        Self::save_project(path, &project)
+    }
 
-        // Use savefile with compression to serialize the project
-        match savefile::save_file_compressed(path, PROJECT_VERSION, &project) {
+    pub fn save_project(path: &PathBuf, project: &Project) -> Result<(), ProjectError> {
+        match savefile::save_file_compressed(path, PROJECT_VERSION, project) {
             Ok(_) => Ok(()),
             Err(e) => {
                 println!("Error saving project: {:?}", e);
@@ -364,29 +137,33 @@ impl Project {
         }
     }
 
+    pub fn load_project(path: &PathBuf) -> Result<Project, ProjectError> {
+        savefile::load_file::<Project, _>(path, PROJECT_VERSION)
+            .map_err(ProjectError::SavefileError)
+    }
+
+    #[allow(dead_code)]
     pub fn load(path: &PathBuf) -> Result<OrganizeEditScene, ProjectError> {
-        // Use savefile to deserialize the project
-        // Note: This will load any version up to PROJECT_VERSION
-        match savefile::load_file::<Project, _>(path, PROJECT_VERSION) {
+        match Self::load_project(path) {
             Ok(project) => {
                 println!("Loaded project: {:?}", project);
                 Ok(project.into())
             }
             Err(e) => {
                 println!("Error loading project: {:?}", e);
-                Err(ProjectError::SavefileError(e))
+                Err(e)
             }
         }
     }
 }
 
-impl Into<OrganizeEditScene> for Project {
-    fn into(self) -> OrganizeEditScene {
+impl From<Project> for OrganizeEditScene {
+    fn from(project: Project) -> Self {
         dep_mut!(ProjectSettingsManager, |settings| {
-            settings.project_settings = self.project_settings.into();
+            settings.project_settings = project.project_settings.into();
         });
 
-        let photos_with_metadata: Vec<(PathBuf, AppPhotoRating, HashSet<String>)> = self
+        let photos_with_metadata: Vec<(PathBuf, AppPhotoRating, HashSet<String>)> = project
             .photos
             .iter()
             .map(|photo| (photo.path.clone(), photo.rating, photo.tags.clone()))
@@ -394,7 +171,8 @@ impl Into<OrganizeEditScene> for Project {
 
         dep!(PhotoManager, |photo_manager| {
             photo_manager.load_photos(
-                self.photos
+                project
+                    .photos
                     .into_iter()
                     .map(|photo| (photo.path, None))
                     .collect(),
@@ -408,263 +186,83 @@ impl Into<OrganizeEditScene> for Project {
             }
         });
 
-        let albums: Vec<AppAlbum> = self.albums.into_iter().map(|album| album.into()).collect();
+        let albums: Vec<AppAlbum> = project.albums.into_iter().map(AppAlbum::from).collect();
         dep_mut!(PhotoManager, |photo_manager| {
             for album in albums {
                 photo_manager.insert_album(album);
             }
         });
 
-        let pages: IndexMap<PageId, CanvasState> = self
-            .pages
+        let books = project
+            .books
             .into_iter()
-            .map(|page| {
-                let layers: IndexMap<LayerId, AppLayer> = page
-                    .layers
-                    .into_iter()
-                    .map(|layer| {
-                        let transformable_state = TransformableState {
-                            rect: layer.rect.into(),
-                            active_handle: None,
-                            is_moving: false,
-                            handle_mode: Resize(ResizeMode::Free),
-                            rotation: layer.rotation,
-                            last_frame_rotation: layer.rotation,
-                            change_in_rotation: None,
-                            id: egui::Id::random(),
-                        };
+            .map(AppBook::from)
+            .collect::<Vec<_>>();
 
-                        let layer = AppLayer {
-                            content: match layer.content {
-                                LayerContent::Photo(photo) => {
-                                    // TODO: Don't unwrap
-                                    AppLayerContent::Photo(AppCanvasPhoto {
-                                        photo: AppPhoto::new(photo.photo.path).unwrap(),
-                                        crop: photo.crop.into(),
-                                    })
-                                }
-                                LayerContent::Text(text) => AppLayerContent::Text(AppCanvasText {
-                                    text: text.text,
-                                    font_size: text.font_size,
-                                    font_id: text.font_id.into(),
-                                    color: text.color.into(),
-                                    edit_state: CanvasTextEditState::new(text.font_size),
-                                    horizontal_alignment: match text.horizontal_alignment {
-                                        TextHorizontalAlignment::Left => {
-                                            AppTextHorizontalAlignment::Left
-                                        }
-                                        TextHorizontalAlignment::Center => {
-                                            AppTextHorizontalAlignment::Center
-                                        }
-                                        TextHorizontalAlignment::Right => {
-                                            AppTextHorizontalAlignment::Right
-                                        }
-                                    },
-                                    vertical_alignment: match text.vertical_alignment {
-                                        TextVerticalAlignment::Top => AppTextVerticalAlignment::Top,
-                                        TextVerticalAlignment::Center => {
-                                            AppTextVerticalAlignment::Center
-                                        }
-                                        TextVerticalAlignment::Bottom => {
-                                            AppTextVerticalAlignment::Bottom
-                                        }
-                                    },
-                                }),
-                                LayerContent::TemplatePhoto {
-                                    region,
-                                    photo,
-                                    scale_mode,
-                                } => AppLayerContent::TemplatePhoto {
-                                    region: AppTemplateRegion {
-                                        relative_position: region.relative_position.into(),
-                                        relative_size: region.relative_size.into(),
-                                        kind: match region.kind {
-                                            TemplateRegionKind::Image => {
-                                                AppTemplateRegionKind::Image
-                                            }
-                                            TemplateRegionKind::Text {
-                                                sample_text,
-                                                font_size,
-                                            } => AppTemplateRegionKind::Text {
-                                                sample_text,
-                                                font_size,
-                                            },
-                                        },
-                                    },
-                                    photo: photo.map(|photo| AppCanvasPhoto {
-                                        photo: AppPhoto::new(photo.photo.path).unwrap(), // TODO: Don't unwrap
-                                        crop: photo.crop.into(),
-                                    }),
-                                    scale_mode: match scale_mode {
-                                        ScaleMode::Fit => AppScaleMode::Fit,
-                                        ScaleMode::Fill => AppScaleMode::Fill,
-                                        ScaleMode::Stretch => AppScaleMode::Stretch,
-                                    },
-                                },
-                                LayerContent::TemplateText { region, text } => {
-                                    AppLayerContent::TemplateText {
-                                        region: AppTemplateRegion {
-                                            relative_position: region.relative_position.into(),
-                                            relative_size: region.relative_size.into(),
-                                            kind: match region.kind {
-                                                TemplateRegionKind::Image => {
-                                                    AppTemplateRegionKind::Image
-                                                }
-                                                TemplateRegionKind::Text {
-                                                    sample_text,
-                                                    font_size,
-                                                } => AppTemplateRegionKind::Text {
-                                                    sample_text,
-                                                    font_size,
-                                                },
-                                            },
-                                        },
-                                        text: AppCanvasText {
-                                            text: text.text,
-                                            font_size: text.font_size,
-                                            font_id: text.font_id.into(),
-                                            color: text.color.into(),
-                                            edit_state: CanvasTextEditState::new(text.font_size),
-                                            horizontal_alignment: match text.horizontal_alignment {
-                                                TextHorizontalAlignment::Left => {
-                                                    AppTextHorizontalAlignment::Left
-                                                }
-                                                TextHorizontalAlignment::Center => {
-                                                    AppTextHorizontalAlignment::Center
-                                                }
-                                                TextHorizontalAlignment::Right => {
-                                                    AppTextHorizontalAlignment::Right
-                                                }
-                                            },
-                                            vertical_alignment: match text.vertical_alignment {
-                                                TextVerticalAlignment::Top => {
-                                                    AppTextVerticalAlignment::Top
-                                                }
-                                                TextVerticalAlignment::Center => {
-                                                    AppTextVerticalAlignment::Center
-                                                }
-                                                TextVerticalAlignment::Bottom => {
-                                                    AppTextVerticalAlignment::Bottom
-                                                }
-                                            },
-                                        },
-                                    }
-                                }
-                                LayerContent::Shape(canvas_shape) => {
-                                    AppLayerContent::Shape(AppCanvasShape {
-                                        kind: match canvas_shape.kind {
-                                            CanvasShapeKind::Rectangle { corner_radius } => {
-                                                AppCanvasShapeKind::Rectangle { corner_radius }
-                                            }
-                                            CanvasShapeKind::Ellipse => AppCanvasShapeKind::Ellipse,
-                                            CanvasShapeKind::Line { slope } => {
-                                                AppCanvasShapeKind::Line {
-                                                    slope: slope.into(),
-                                                }
-                                            }
-                                        },
-                                        fill_color: canvas_shape.fill_color.into(),
-                                        stroke: canvas_shape.stroke.as_ref().map(
-                                            |(stroke, kind)| {
-                                                (stroke.clone().into(), kind.clone().into())
-                                            },
-                                        ),
-                                        edit_state: CanvasShapeEditState::new(
-                                            canvas_shape
-                                                .stroke
-                                                .as_ref()
-                                                .map(|(stroke, _)| stroke.width)
-                                                .unwrap_or(1.0),
-                                        ),
-                                    })
-                                }
-                            },
-                            name: layer.name,
-                            visible: layer.visible,
-                            locked: layer.locked,
-                            selected: layer.selected,
-                            id: layer.id,
-                            transform_edit_state: LayerTransformEditState::from(
-                                &transformable_state,
-                            ),
-                            transform_state: transformable_state,
-                        };
-
-                        set_min_layer_id(layer.id);
-
-                        (layer.id, layer)
-                    })
-                    .collect();
-
-                let canvas_state = CanvasState::with_layers(
-                    layers,
-                    EditablePage::new(AppPage::new(
-                        page.page.width,
-                        page.page.height,
-                        page.page.ppi,
-                        match page.page.unit {
-                            Unit::Pixels => AppUnit::Pixels,
-                            Unit::Inches => AppUnit::Inches,
-                            Unit::Centimeters => AppUnit::Centimeters,
-                        },
-                    )),
-                    page.template.map(|template| AppTemplate {
-                        name: template.name,
-                        page: AppPage::new(
-                            template.page.width,
-                            template.page.height,
-                            template.page.ppi,
-                            match template.page.unit {
-                                Unit::Pixels => AppUnit::Pixels,
-                                Unit::Inches => AppUnit::Inches,
-                                Unit::Centimeters => AppUnit::Centimeters,
-                            },
-                        ),
-                        regions: template
-                            .regions
-                            .iter()
-                            .map(|region| AppTemplateRegion {
-                                relative_position: region.relative_position.clone().into(),
-                                relative_size: region.relative_size.clone().into(),
-                                kind: match &region.kind {
-                                    TemplateRegionKind::Image => AppTemplateRegionKind::Image,
-                                    TemplateRegionKind::Text {
-                                        sample_text,
-                                        font_size,
-                                    } => AppTemplateRegionKind::Text {
-                                        sample_text: sample_text.clone(),
-                                        font_size: *font_size,
-                                    },
-                                },
-                            })
-                            .collect(),
-                    }),
-                    page.quick_layout_order,
-                );
-
-                (next_page_id(), canvas_state)
-            })
-            .collect();
-
-        let edit_scene = match pages.first().map(|(id, _)| *id) {
-            Some(first_page_id) => Some(CanvasScene::with_state(CanvasSceneState::with_pages(
-                pages,
-                first_page_id,
-            ))),
-            _ => None,
-        };
-
-        let organize_scene = GalleryScene::new();
-
-        let organize_edit_scene = OrganizeEditScene::new(organize_scene, edit_scene);
+        let scene = OrganizeEditScene::with_books(GalleryScene::new(), books);
 
         //photo_manager.group_photos_by(project.group_by.into());
 
-        organize_edit_scene
+        scene
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct ProjectBook {
+    pub id: String,
+    pub name: String,
+    pub pages: Vec<CanvasPage>,
+}
+
+impl From<AppBook> for ProjectBook {
+    fn from(book: AppBook) -> Self {
+        Self {
+            id: book.id,
+            name: book.name,
+            pages: book
+                .state
+                .pages_state
+                .pages
+                .into_values()
+                .map(CanvasPage::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<ProjectBook> for AppBook {
+    fn from(book: ProjectBook) -> Self {
+        let id = if book.id.trim().is_empty() {
+            uuid::Uuid::new_v4().to_string()
+        } else {
+            book.id
+        };
+
+        let name = if book.name.trim().is_empty() {
+            "Book".to_string()
+        } else {
+            book.name
+        };
+
+        AppBook::with_state(id, name, book.pages.into())
+    }
+}
+
+impl From<Vec<CanvasPage>> for CanvasSceneState {
+    fn from(pages: Vec<CanvasPage>) -> Self {
+        let pages: IndexMap<PageId, CanvasState> = pages
+            .into_iter()
+            .map(|page| (next_page_id(), page.into()))
+            .collect();
+
+        match pages.first().map(|(id, _)| *id) {
+            Some(first_page_id) => CanvasSceneState::with_pages(pages, first_page_id),
+            None => CanvasSceneState::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct CanvasPage {
     pub layers: Vec<Layer>,
     pub page: Page,
@@ -672,14 +270,76 @@ pub struct CanvasPage {
     pub quick_layout_order: Vec<LayerId>,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<CanvasState> for CanvasPage {
+    fn from(canvas_state: CanvasState) -> Self {
+        let layers = canvas_state.layers.into_values().map(Layer::from).collect();
+
+        Self {
+            layers,
+            page: canvas_state.page.value.clone().into(),
+            template: canvas_state.template.map(Template::from),
+            quick_layout_order: canvas_state.quick_layout_order,
+        }
+    }
+}
+
+impl From<CanvasPage> for CanvasState {
+    fn from(page: CanvasPage) -> Self {
+        let layers: IndexMap<LayerId, AppLayer> = page
+            .layers
+            .into_iter()
+            .map(|layer| {
+                let layer = AppLayer::from(layer);
+                set_min_layer_id(layer.id);
+                (layer.id, layer)
+            })
+            .collect();
+
+        CanvasState::with_layers(
+            layers,
+            EditablePage::new(page.page.into()),
+            page.template.map(AppTemplate::from),
+            page.quick_layout_order,
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Template {
     pub name: String,
     pub page: Page,
     pub regions: Vec<TemplateRegion>,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppTemplate> for Template {
+    fn from(template: AppTemplate) -> Self {
+        Self {
+            name: template.name,
+            page: template.page.into(),
+            regions: template
+                .regions
+                .into_iter()
+                .map(TemplateRegion::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<Template> for AppTemplate {
+    fn from(template: Template) -> Self {
+        Self {
+            name: template.name,
+            page: template.page.into(),
+            regions: template
+                .regions
+                .into_iter()
+                .map(AppTemplateRegion::from)
+                .collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Page {
     pub width: f32,
     pub height: f32,
@@ -694,15 +354,14 @@ pub enum Unit {
     Centimeters,
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
-    #[savefile_versions = "2.."]
     pub tags: HashSet<String>,
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Layer {
     pub content: LayerContent,
     pub name: String,
@@ -714,18 +373,101 @@ pub struct Layer {
     pub rotation: f32,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppLayer> for Layer {
+    fn from(mut layer: AppLayer) -> Self {
+        layer.transform_edit_state.update(&layer.transform_state);
+
+        Self {
+            content: layer.content.into(),
+            name: layer.name,
+            visible: layer.visible,
+            locked: layer.locked,
+            selected: layer.selected,
+            id: layer.id,
+            rect: layer.transform_state.rect.into(),
+            rotation: layer.transform_state.rotation,
+        }
+    }
+}
+
+impl From<Layer> for AppLayer {
+    fn from(layer: Layer) -> Self {
+        let transformable_state = TransformableState {
+            rect: layer.rect.into(),
+            active_handle: None,
+            is_moving: false,
+            handle_mode: Resize(ResizeMode::Free),
+            rotation: layer.rotation,
+            last_frame_rotation: layer.rotation,
+            change_in_rotation: None,
+            id: egui::Id::random(),
+        };
+
+        Self {
+            content: layer.content.into(),
+            name: layer.name,
+            visible: layer.visible,
+            locked: layer.locked,
+            selected: layer.selected,
+            id: layer.id,
+            transform_edit_state: LayerTransformEditState::from(&transformable_state),
+            transform_state: transformable_state,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum ScaleMode {
     Fit,
     Fill,
     Stretch,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppScaleMode> for ScaleMode {
+    fn from(scale_mode: AppScaleMode) -> Self {
+        match scale_mode {
+            AppScaleMode::Fit => Self::Fit,
+            AppScaleMode::Fill => Self::Fill,
+            AppScaleMode::Stretch => Self::Stretch,
+        }
+    }
+}
+
+impl From<ScaleMode> for AppScaleMode {
+    fn from(scale_mode: ScaleMode) -> Self {
+        match scale_mode {
+            ScaleMode::Fit => Self::Fit,
+            ScaleMode::Fill => Self::Fill,
+            ScaleMode::Stretch => Self::Stretch,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct TemplateRegion {
     pub relative_position: Pos2,
     pub relative_size: Vec2,
     pub kind: TemplateRegionKind,
+}
+
+impl From<AppTemplateRegion> for TemplateRegion {
+    fn from(region: AppTemplateRegion) -> Self {
+        Self {
+            relative_position: region.relative_position.into(),
+            relative_size: region.relative_size.into(),
+            kind: region.kind.into(),
+        }
+    }
+}
+
+impl From<TemplateRegion> for AppTemplateRegion {
+    fn from(region: TemplateRegion) -> Self {
+        Self {
+            relative_position: region.relative_position.into(),
+            relative_size: region.relative_size.into(),
+            kind: region.kind.into(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Savefile)]
@@ -734,13 +476,71 @@ pub enum TemplateRegionKind {
     Text { sample_text: String, font_size: f32 },
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppTemplateRegionKind> for TemplateRegionKind {
+    fn from(kind: AppTemplateRegionKind) -> Self {
+        match kind {
+            AppTemplateRegionKind::Image => Self::Image,
+            AppTemplateRegionKind::Text {
+                sample_text,
+                font_size,
+            } => Self::Text {
+                sample_text,
+                font_size,
+            },
+        }
+    }
+}
+
+impl From<TemplateRegionKind> for AppTemplateRegionKind {
+    fn from(kind: TemplateRegionKind) -> Self {
+        match kind {
+            TemplateRegionKind::Image => Self::Image,
+            TemplateRegionKind::Text {
+                sample_text,
+                font_size,
+            } => Self::Text {
+                sample_text,
+                font_size,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct CanvasPhoto {
     pub photo: Photo,
     pub crop: Rect,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppCanvasPhoto> for CanvasPhoto {
+    fn from(canvas_photo: AppCanvasPhoto) -> Self {
+        Self {
+            photo: Photo {
+                path: canvas_photo.photo.path.clone(),
+                rating: dep!(PhotoManager, |photo_manager| {
+                    photo_manager.get_photo_rating(&canvas_photo.photo.path)
+                }),
+                tags: dep!(PhotoManager, |photo_manager| {
+                    photo_manager
+                        .get_photo_tags(&canvas_photo.photo.path)
+                        .into()
+                }),
+            },
+            crop: canvas_photo.crop.into(),
+        }
+    }
+}
+
+impl From<CanvasPhoto> for AppCanvasPhoto {
+    fn from(canvas_photo: CanvasPhoto) -> Self {
+        Self {
+            photo: AppPhoto::new(canvas_photo.photo.path).unwrap(),
+            crop: canvas_photo.crop.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct CanvasText {
     pub text: String,
     pub font_size: f32,
@@ -750,45 +550,128 @@ pub struct CanvasText {
     pub vertical_alignment: TextVerticalAlignment,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppCanvasText> for CanvasText {
+    fn from(text: AppCanvasText) -> Self {
+        Self {
+            text: text.text,
+            font_size: text.font_size,
+            font_id: text.font_id.into(),
+            color: text.color.into(),
+            horizontal_alignment: text.horizontal_alignment.into(),
+            vertical_alignment: text.vertical_alignment.into(),
+        }
+    }
+}
+
+impl From<CanvasText> for AppCanvasText {
+    fn from(text: CanvasText) -> Self {
+        Self {
+            text: text.text,
+            font_size: text.font_size,
+            font_id: text.font_id.into(),
+            color: text.color.into(),
+            edit_state: CanvasTextEditState::new(text.font_size),
+            horizontal_alignment: text.horizontal_alignment.into(),
+            vertical_alignment: text.vertical_alignment.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct CanvasShape {
     pub kind: CanvasShapeKind,
     pub fill_color: Color32,
     pub stroke: Option<(Stroke, StrokeKind)>,
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppCanvasShape> for CanvasShape {
+    fn from(shape: AppCanvasShape) -> Self {
+        Self {
+            kind: shape.kind.into(),
+            fill_color: shape.fill_color.into(),
+            stroke: shape
+                .stroke
+                .map(|(stroke, kind)| (stroke.into(), kind.into())),
+        }
+    }
+}
+
+impl From<CanvasShape> for AppCanvasShape {
+    fn from(shape: CanvasShape) -> Self {
+        Self {
+            kind: shape.kind.into(),
+            fill_color: shape.fill_color.into(),
+            stroke: shape
+                .stroke
+                .as_ref()
+                .map(|(stroke, kind)| (stroke.clone().into(), kind.clone().into())),
+            edit_state: CanvasShapeEditState::new(
+                shape
+                    .stroke
+                    .as_ref()
+                    .map(|(stroke, _)| stroke.width)
+                    .unwrap_or(1.0),
+            ),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum CanvasShapeKind {
     Rectangle { corner_radius: f32 },
     Ellipse,
     Line { slope: LineSlope },
 }
 
-#[derive(Debug, Clone, Savefile)]
+impl From<AppCanvasShapeKind> for CanvasShapeKind {
+    fn from(kind: AppCanvasShapeKind) -> Self {
+        match kind {
+            AppCanvasShapeKind::Rectangle { corner_radius } => Self::Rectangle { corner_radius },
+            AppCanvasShapeKind::Ellipse => Self::Ellipse,
+            AppCanvasShapeKind::Line { slope } => Self::Line {
+                slope: slope.into(),
+            },
+        }
+    }
+}
+
+impl From<CanvasShapeKind> for AppCanvasShapeKind {
+    fn from(kind: CanvasShapeKind) -> Self {
+        match kind {
+            CanvasShapeKind::Rectangle { corner_radius } => Self::Rectangle { corner_radius },
+            CanvasShapeKind::Ellipse => Self::Ellipse,
+            CanvasShapeKind::Line { slope } => Self::Line {
+                slope: slope.into(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum LineSlope {
     Positive,
     Negative,
 }
 
-impl Into<AppLineSlope> for LineSlope {
-    fn into(self) -> AppLineSlope {
-        match self {
-            LineSlope::Positive => AppLineSlope::Positive,
-            LineSlope::Negative => AppLineSlope::Negative,
+impl From<LineSlope> for AppLineSlope {
+    fn from(slope: LineSlope) -> Self {
+        match slope {
+            LineSlope::Positive => Self::Positive,
+            LineSlope::Negative => Self::Negative,
         }
     }
 }
 
-impl Into<LineSlope> for AppLineSlope {
-    fn into(self) -> LineSlope {
-        match self {
-            AppLineSlope::Positive => LineSlope::Positive,
-            AppLineSlope::Negative => LineSlope::Negative,
+impl From<AppLineSlope> for LineSlope {
+    fn from(slope: AppLineSlope) -> Self {
+        match slope {
+            AppLineSlope::Positive => Self::Positive,
+            AppLineSlope::Negative => Self::Negative,
         }
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum LayerContent {
     Photo(CanvasPhoto),
     Text(CanvasText),
@@ -801,79 +684,164 @@ pub enum LayerContent {
         region: TemplateRegion,
         text: CanvasText,
     },
-    #[savefile_versions = "3.."]
     Shape(CanvasShape),
 }
 
-#[derive(Debug, Clone, Copy, Savefile)]
+impl From<AppLayerContent> for LayerContent {
+    fn from(content: AppLayerContent) -> Self {
+        match content {
+            AppLayerContent::Photo(photo) => Self::Photo(photo.into()),
+            AppLayerContent::Text(text) => Self::Text(text.into()),
+            AppLayerContent::TemplatePhoto {
+                region,
+                photo,
+                scale_mode,
+            } => Self::TemplatePhoto {
+                region: region.into(),
+                photo: photo.map(CanvasPhoto::from),
+                scale_mode: scale_mode.into(),
+            },
+            AppLayerContent::TemplateText { region, text } => Self::TemplateText {
+                region: region.into(),
+                text: text.into(),
+            },
+            AppLayerContent::Shape(shape) => Self::Shape(shape.into()),
+        }
+    }
+}
+
+impl From<LayerContent> for AppLayerContent {
+    fn from(content: LayerContent) -> Self {
+        match content {
+            LayerContent::Photo(photo) => Self::Photo(photo.into()),
+            LayerContent::Text(text) => Self::Text(text.into()),
+            LayerContent::TemplatePhoto {
+                region,
+                photo,
+                scale_mode,
+            } => Self::TemplatePhoto {
+                region: region.into(),
+                photo: photo.map(AppCanvasPhoto::from),
+                scale_mode: scale_mode.into(),
+            },
+            LayerContent::TemplateText { region, text } => Self::TemplateText {
+                region: region.into(),
+                text: text.into(),
+            },
+            LayerContent::Shape(shape) => Self::Shape(shape.into()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Copy, Savefile)]
 pub enum TextHorizontalAlignment {
     Left,
     Center,
     Right,
 }
 
-#[derive(Debug, Clone, Copy, Savefile)]
+impl From<AppTextHorizontalAlignment> for TextHorizontalAlignment {
+    fn from(alignment: AppTextHorizontalAlignment) -> Self {
+        match alignment {
+            AppTextHorizontalAlignment::Left => Self::Left,
+            AppTextHorizontalAlignment::Center => Self::Center,
+            AppTextHorizontalAlignment::Right => Self::Right,
+        }
+    }
+}
+
+impl From<TextHorizontalAlignment> for AppTextHorizontalAlignment {
+    fn from(alignment: TextHorizontalAlignment) -> Self {
+        match alignment {
+            TextHorizontalAlignment::Left => Self::Left,
+            TextHorizontalAlignment::Center => Self::Center,
+            TextHorizontalAlignment::Right => Self::Right,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Copy, Savefile)]
 pub enum TextVerticalAlignment {
     Top,
     Center,
     Bottom,
 }
 
+impl From<AppTextVerticalAlignment> for TextVerticalAlignment {
+    fn from(alignment: AppTextVerticalAlignment) -> Self {
+        match alignment {
+            AppTextVerticalAlignment::Top => Self::Top,
+            AppTextVerticalAlignment::Center => Self::Center,
+            AppTextVerticalAlignment::Bottom => Self::Bottom,
+        }
+    }
+}
+
+impl From<TextVerticalAlignment> for AppTextVerticalAlignment {
+    fn from(alignment: TextVerticalAlignment) -> Self {
+        match alignment {
+            TextVerticalAlignment::Top => Self::Top,
+            TextVerticalAlignment::Center => Self::Center,
+            TextVerticalAlignment::Bottom => Self::Bottom,
+        }
+    }
+}
+
 pub type PhotoRating = Option<u8>;
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct ProjectSettings {
     default_page: Option<Page>,
 }
 
-impl Into<AppProjectSettings> for ProjectSettings {
-    fn into(self) -> AppProjectSettings {
+impl From<ProjectSettings> for AppProjectSettings {
+    fn from(settings: ProjectSettings) -> Self {
         AppProjectSettings {
-            default_page: self.default_page.map(Page::into),
+            default_page: settings.default_page.map(AppPage::from),
         }
     }
 }
 
-impl Into<ProjectSettings> for AppProjectSettings {
-    fn into(self) -> ProjectSettings {
+impl From<AppProjectSettings> for ProjectSettings {
+    fn from(settings: AppProjectSettings) -> Self {
         ProjectSettings {
-            default_page: self.default_page.map(AppPage::into),
+            default_page: settings.default_page.map(Page::from),
         }
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum ProjectPhotoGrouping {
     Rating,
     Date,
 }
 
-impl Into<AppPhotoGrouping> for ProjectPhotoGrouping {
-    fn into(self) -> AppPhotoGrouping {
-        match self {
-            ProjectPhotoGrouping::Rating => AppPhotoGrouping::Rating,
-            ProjectPhotoGrouping::Date => AppPhotoGrouping::Date,
+impl From<ProjectPhotoGrouping> for AppPhotoGrouping {
+    fn from(grouping: ProjectPhotoGrouping) -> Self {
+        match grouping {
+            ProjectPhotoGrouping::Rating => Self::Rating,
+            ProjectPhotoGrouping::Date => Self::Date,
         }
     }
 }
 
-impl Into<ProjectPhotoGrouping> for AppPhotoGrouping {
-    fn into(self) -> ProjectPhotoGrouping {
-        match self {
-            AppPhotoGrouping::Rating => ProjectPhotoGrouping::Rating,
-            AppPhotoGrouping::Date => ProjectPhotoGrouping::Date,
-            AppPhotoGrouping::Tag => ProjectPhotoGrouping::Date,
+impl From<AppPhotoGrouping> for ProjectPhotoGrouping {
+    fn from(grouping: AppPhotoGrouping) -> Self {
+        match grouping {
+            AppPhotoGrouping::Rating => Self::Rating,
+            AppPhotoGrouping::Date => Self::Date,
+            AppPhotoGrouping::Tag => Self::Date,
         }
     }
 }
 
-impl Into<Page> for AppPage {
-    fn into(self) -> Page {
-        Page {
-            width: self.width(),
-            height: self.height(),
-            ppi: self.ppi(),
-            unit: match self.unit() {
+impl From<AppPage> for Page {
+    fn from(page: AppPage) -> Self {
+        Self {
+            width: page.width(),
+            height: page.height(),
+            ppi: page.ppi(),
+            unit: match page.unit() {
                 AppUnit::Pixels => Unit::Pixels,
                 AppUnit::Inches => Unit::Inches,
                 AppUnit::Centimeters => Unit::Centimeters,
@@ -882,13 +850,13 @@ impl Into<Page> for AppPage {
     }
 }
 
-impl Into<AppPage> for Page {
-    fn into(self) -> AppPage {
+impl From<Page> for AppPage {
+    fn from(page: Page) -> Self {
         AppPage::new(
-            self.width,
-            self.height,
-            self.ppi,
-            match self.unit {
+            page.width,
+            page.height,
+            page.ppi,
+            match page.unit {
                 Unit::Pixels => AppUnit::Pixels,
                 Unit::Inches => AppUnit::Inches,
                 Unit::Centimeters => AppUnit::Centimeters,
@@ -897,31 +865,25 @@ impl Into<AppPage> for Page {
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
 }
 
-impl Into<Vec2> for egui::Vec2 {
-    fn into(self) -> Vec2 {
-        Vec2 {
-            x: self.x,
-            y: self.y,
-        }
+impl From<egui::Vec2> for Vec2 {
+    fn from(vec: egui::Vec2) -> Self {
+        Self { x: vec.x, y: vec.y }
     }
 }
 
-impl Into<egui::Vec2> for Vec2 {
-    fn into(self) -> egui::Vec2 {
-        egui::Vec2 {
-            x: self.x,
-            y: self.y,
-        }
+impl From<Vec2> for egui::Vec2 {
+    fn from(vec: Vec2) -> Self {
+        egui::Vec2 { x: vec.x, y: vec.y }
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Rect {
     pub min_x: f32,
     pub min_y: f32,
@@ -929,27 +891,27 @@ pub struct Rect {
     pub max_y: f32,
 }
 
-impl Into<Rect> for egui::Rect {
-    fn into(self) -> Rect {
-        Rect {
-            min_x: self.min.x,
-            min_y: self.min.y,
-            max_x: self.max.x,
-            max_y: self.max.y,
+impl From<egui::Rect> for Rect {
+    fn from(rect: egui::Rect) -> Self {
+        Self {
+            min_x: rect.min.x,
+            min_y: rect.min.y,
+            max_x: rect.max.x,
+            max_y: rect.max.y,
         }
     }
 }
 
-impl Into<egui::Rect> for Rect {
-    fn into(self) -> egui::Rect {
+impl From<Rect> for egui::Rect {
+    fn from(rect: Rect) -> Self {
         egui::Rect::from_min_max(
-            egui::Pos2::new(self.min_x, self.min_y),
-            egui::Pos2::new(self.max_x, self.max_y),
+            egui::Pos2::new(rect.min_x, rect.min_y),
+            egui::Pos2::new(rect.max_x, rect.max_y),
         )
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Color32 {
     pub r: u8,
     pub g: u8,
@@ -957,45 +919,42 @@ pub struct Color32 {
     pub a: u8,
 }
 
-impl Into<Color32> for egui::Color32 {
-    fn into(self) -> Color32 {
-        Color32 {
-            r: self.r(),
-            g: self.g(),
-            b: self.b(),
-            a: self.a(),
+impl From<egui::Color32> for Color32 {
+    fn from(color: egui::Color32) -> Self {
+        Self {
+            r: color.r(),
+            g: color.g(),
+            b: color.b(),
+            a: color.a(),
         }
     }
 }
 
-impl Into<egui::Color32> for Color32 {
-    fn into(self) -> egui::Color32 {
-        egui::Color32::from_rgba_premultiplied(self.r, self.g, self.b, self.a)
+impl From<Color32> for egui::Color32 {
+    fn from(color: Color32) -> Self {
+        egui::Color32::from_rgba_premultiplied(color.r, color.g, color.b, color.a)
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Pos2 {
     pub x: f32,
     pub y: f32,
 }
 
-impl Into<Pos2> for egui::Pos2 {
-    fn into(self) -> Pos2 {
-        Pos2 {
-            x: self.x,
-            y: self.y,
-        }
+impl From<egui::Pos2> for Pos2 {
+    fn from(pos: egui::Pos2) -> Self {
+        Self { x: pos.x, y: pos.y }
     }
 }
 
-impl Into<egui::Pos2> for Pos2 {
-    fn into(self) -> egui::Pos2 {
-        egui::Pos2::new(self.x, self.y)
+impl From<Pos2> for egui::Pos2 {
+    fn from(pos: Pos2) -> Self {
+        egui::Pos2::new(pos.x, pos.y)
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct FontId {
     pub size: f32,
     pub family: String,
@@ -1009,7 +968,7 @@ impl From<egui::FontId> for FontId {
             egui::FontFamily::Name(name) => name.to_string(),
         };
 
-        FontId {
+        Self {
             size: font.size,
             family,
         }
@@ -1028,87 +987,86 @@ impl From<FontId> for egui::FontId {
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Stroke {
     pub color: Color32,
     pub width: f32,
 }
 
-impl Into<Stroke> for egui::Stroke {
-    fn into(self) -> Stroke {
-        Stroke {
-            color: self.color.into(),
-            width: self.width,
+impl From<egui::Stroke> for Stroke {
+    fn from(stroke: egui::Stroke) -> Self {
+        Self {
+            color: stroke.color.into(),
+            width: stroke.width,
         }
     }
 }
 
-impl Into<egui::Stroke> for Stroke {
-    fn into(self) -> egui::Stroke {
+impl From<Stroke> for egui::Stroke {
+    fn from(stroke: Stroke) -> Self {
         egui::Stroke {
-            color: self.color.into(),
-            width: self.width,
+            color: stroke.color.into(),
+            width: stroke.width,
         }
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub enum StrokeKind {
     Inside,
     Middle,
     Outside,
 }
 
-impl Into<StrokeKind> for egui::StrokeKind {
-    fn into(self) -> StrokeKind {
-        match self {
-            egui::StrokeKind::Inside => StrokeKind::Inside,
-            egui::StrokeKind::Middle => StrokeKind::Middle,
-            egui::StrokeKind::Outside => StrokeKind::Outside,
+impl From<egui::StrokeKind> for StrokeKind {
+    fn from(kind: egui::StrokeKind) -> Self {
+        match kind {
+            egui::StrokeKind::Inside => Self::Inside,
+            egui::StrokeKind::Middle => Self::Middle,
+            egui::StrokeKind::Outside => Self::Outside,
         }
     }
 }
 
-impl Into<egui::StrokeKind> for StrokeKind {
-    fn into(self) -> egui::StrokeKind {
-        match self {
-            StrokeKind::Inside => egui::StrokeKind::Inside,
-            StrokeKind::Middle => egui::StrokeKind::Middle,
-            StrokeKind::Outside => egui::StrokeKind::Outside,
+impl From<StrokeKind> for egui::StrokeKind {
+    fn from(kind: StrokeKind) -> Self {
+        match kind {
+            StrokeKind::Inside => Self::Inside,
+            StrokeKind::Middle => Self::Middle,
+            StrokeKind::Outside => Self::Outside,
         }
     }
 }
 
-#[derive(Debug, Clone, Savefile)]
+#[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct Album {
     name: String,
     photos: HashSet<PathBuf>,
-    #[savefile_versions = "4.."]
     id: String,
 }
 
-impl Into<Album> for AppAlbum {
-    fn into(self) -> Album {
-        Album {
-            name: self.name,
-            photos: self.photos,
-            id: self.id,
+impl From<AppAlbum> for Album {
+    fn from(album: AppAlbum) -> Self {
+        Self {
+            name: album.name,
+            photos: album.photos,
+            id: album.id,
         }
     }
 }
 
-impl Into<AppAlbum> for Album {
-    fn into(self) -> AppAlbum {
-        let id = if self.id.trim().is_empty() {
+impl From<Album> for AppAlbum {
+    fn from(album: Album) -> Self {
+        let id = if album.id.trim().is_empty() {
             uuid::Uuid::new_v4().to_string()
         } else {
-            self.id
+            album.id
         };
 
-        AppAlbum {
+        Self {
             id,
-            name: self.name,
-            photos: self.photos,
+            name: album.name,
+            photos: album.photos,
         }
     }
 }
@@ -1116,6 +1074,21 @@ impl Into<AppAlbum> for Album {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn canvas_scene_state(width: f32, height: f32) -> CanvasSceneState {
+        let page_id = next_page_id();
+        let mut pages = IndexMap::new();
+        pages.insert(
+            page_id,
+            CanvasState::with_layers(
+                IndexMap::new(),
+                EditablePage::new(AppPage::new(width, height, 300, AppUnit::Inches)),
+                None,
+                Vec::new(),
+            ),
+        );
+        CanvasSceneState::with_pages(pages, page_id)
+    }
 
     #[test]
     fn test_album_project_conversion_preserves_id() {
@@ -1135,5 +1108,34 @@ mod tests {
         assert_eq!(restored_album.id, "album-1");
         assert_eq!(restored_album.name, "Favorites");
         assert!(restored_album.photos.contains(&photo_path));
+    }
+
+    #[test]
+    fn project_new_preserves_multiple_books_independently() {
+        let scene = OrganizeEditScene::with_books(
+            GalleryScene::new(),
+            vec![
+                AppBook::with_state(
+                    "book-1".to_string(),
+                    "First".to_string(),
+                    canvas_scene_state(6.0, 8.0),
+                ),
+                AppBook::with_state(
+                    "book-2".to_string(),
+                    "Second".to_string(),
+                    canvas_scene_state(10.0, 12.0),
+                ),
+            ],
+        );
+
+        let project = Project::new(&scene);
+
+        assert_eq!(project.books.len(), 2);
+        assert_eq!(project.books[0].id, "book-1");
+        assert_eq!(project.books[0].name, "First");
+        assert_eq!(project.books[0].pages[0].page.width, 6.0);
+        assert_eq!(project.books[1].id, "book-2");
+        assert_eq!(project.books[1].name, "Second");
+        assert_eq!(project.books[1].pages[0].page.width, 10.0);
     }
 }

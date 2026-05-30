@@ -14,7 +14,7 @@ pub mod section;
 
 const RESIZE_HANDLE_HEIGHT: f32 = 8.0;
 const RESIZE_LINE_HEIGHT: f32 = 1.0;
-const MIN_EXPANDED_SECTION_HEIGHT: f32 = 100.0;
+pub const MIN_EXPANDED_SECTION_HEIGHT: f32 = 100.0;
 const AVAILABLE_HEIGHT_CHANGE_EPSILON: f32 = 0.5;
 
 pub struct SectionedSidebarBuilder<'a> {
@@ -34,6 +34,7 @@ struct SectionHeaderAction<'a> {
 struct SectionMemoryData {
     height: f32,
     expanded: bool,
+    default_expanded_height: Option<f32>,
     desired_height_adjustment: f32,
     dragging: bool,
 }
@@ -92,13 +93,15 @@ impl<'a> SectionedSidebarBuilder<'a> {
         let mut header_action = header_action;
         let mut content = content;
 
+        let default_expanded_height = state.default_expanded_height();
         let section_data =
             self.sections
                 .get(self.section_index)
                 .cloned()
                 .unwrap_or(SectionMemoryData {
-                    height: 0.0,
+                    height: default_expanded_height.unwrap_or(0.0),
                     expanded: false,
+                    default_expanded_height,
                     desired_height_adjustment: 0.0,
                     dragging: false,
                 });
@@ -107,6 +110,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
             self.sections.push(SectionMemoryData {
                 height: section_data.height,
                 expanded: state.expanded,
+                default_expanded_height,
                 desired_height_adjustment: 0.0,
                 dragging: false,
             });
@@ -114,6 +118,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
             self.sections[self.section_index] = SectionMemoryData {
                 height: section_data.height,
                 expanded: state.expanded,
+                default_expanded_height,
                 desired_height_adjustment: section_data.desired_height_adjustment,
                 dragging: section_data.dragging,
             };
@@ -438,14 +443,6 @@ impl<'a> SectionedSidebarBuilder<'a> {
         available_height: f32,
         section_header_height: f32,
     ) {
-        let Some(previous_available_height) = previous_available_height else {
-            return;
-        };
-
-        if (available_height - previous_available_height).abs() < AVAILABLE_HEIGHT_CHANGE_EPSILON {
-            return;
-        }
-
         let expanded_sections = sections
             .iter()
             .enumerate()
@@ -461,6 +458,19 @@ impl<'a> SectionedSidebarBuilder<'a> {
 
         let available_body_height =
             Self::available_body_height(sections, available_height, section_header_height);
+
+        let Some(previous_available_height) = previous_available_height else {
+            Self::compute_initial_expanded_heights(
+                sections,
+                &expanded_sections,
+                available_body_height,
+            );
+            return;
+        };
+
+        if (available_height - previous_available_height).abs() < AVAILABLE_HEIGHT_CHANGE_EPSILON {
+            return;
+        }
 
         if available_body_height <= 0.0 {
             for section_index in expanded_sections {
@@ -512,6 +522,67 @@ impl<'a> SectionedSidebarBuilder<'a> {
             for &section_index in &expanded_sections {
                 sections[section_index].height = height_per_section;
             }
+        }
+    }
+
+    fn compute_initial_expanded_heights(
+        sections: &mut [SectionMemoryData],
+        expanded_sections: &[usize],
+        available_body_height: f32,
+    ) {
+        if available_body_height <= 0.0 {
+            for &section_index in expanded_sections {
+                sections[section_index].height = 0.0;
+            }
+            return;
+        }
+
+        let default_total_height = expanded_sections
+            .iter()
+            .filter_map(|&section_index| sections[section_index].default_expanded_height)
+            .sum::<f32>();
+
+        if default_total_height <= 0.0 {
+            let height_per_section = available_body_height / expanded_sections.len() as f32;
+            for &section_index in expanded_sections {
+                sections[section_index].height = height_per_section;
+            }
+            return;
+        }
+
+        let flexible_sections = expanded_sections
+            .iter()
+            .copied()
+            .filter(|&section_index| sections[section_index].default_expanded_height.is_none())
+            .collect::<Vec<_>>();
+        let desired_total_height =
+            default_total_height + MIN_EXPANDED_SECTION_HEIGHT * flexible_sections.len() as f32;
+
+        if desired_total_height > available_body_height {
+            let scale = available_body_height / desired_total_height;
+            for &section_index in expanded_sections {
+                let desired_height = sections[section_index]
+                    .default_expanded_height
+                    .unwrap_or(MIN_EXPANDED_SECTION_HEIGHT);
+                sections[section_index].height = desired_height * scale;
+            }
+            return;
+        }
+
+        for &section_index in expanded_sections {
+            if let Some(default_height) = sections[section_index].default_expanded_height {
+                sections[section_index].height = default_height;
+            }
+        }
+
+        if flexible_sections.is_empty() {
+            return;
+        }
+
+        let flexible_height =
+            (available_body_height - default_total_height) / flexible_sections.len() as f32;
+        for section_index in flexible_sections {
+            sections[section_index].height = flexible_height;
         }
     }
 

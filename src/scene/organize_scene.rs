@@ -1,17 +1,14 @@
-use std::path::PathBuf;
-
 use egui::{Ui, widget_text::WidgetText};
 use egui_tiles::{Behavior, Linear, LinearDir, TileId, Tiles, Tree, UiResponse};
 
 use crate::{
-    dep, dep_mut,
+    dep,
     photo::SaveOnDropPhoto,
     photo_manager::PhotoManager,
     selection_manager::SelectionManager,
     utils::EguiUiExt,
     widget::{
         image_gallery::{ImageGallery, ImageGalleryState},
-        left_sidebar::{LeftSidebar, LeftSidebarState},
         photo_info::{PhotoInfo, PhotoInfoState},
     },
 };
@@ -24,7 +21,6 @@ use super::{
 pub struct GallerySceneState {
     pub image_gallery_state: ImageGalleryState,
     pub photo_info_state: PhotoInfoState,
-    pub left_sidebar_state: LeftSidebarState,
 }
 
 impl Default for GallerySceneState {
@@ -32,7 +28,6 @@ impl Default for GallerySceneState {
         Self {
             image_gallery_state: ImageGalleryState::default(),
             photo_info_state: PhotoInfoState::new(),
-            left_sidebar_state: LeftSidebarState::default(),
         }
     }
 }
@@ -41,7 +36,6 @@ impl Default for GallerySceneState {
 pub enum GalleryScenePane {
     Gallery,
     PhotoInfo,
-    Sidebar,
 }
 
 #[derive(Debug, Clone)]
@@ -59,16 +53,10 @@ impl GalleryScene {
         let right_tabs = vec![tiles.insert_pane(GalleryScenePane::PhotoInfo)];
         let right_tabs_id = tiles.insert_tab_tile(right_tabs);
 
-        let left_tabs = vec![tiles.insert_pane(GalleryScenePane::Sidebar)];
-        let left_tabs_id = tiles.insert_tab_tile(left_tabs);
-
-        let mut linear_layout = Linear::new(
-            LinearDir::Horizontal,
-            vec![left_tabs_id, gallery_pane_id, right_tabs_id],
-        );
+        let mut linear_layout =
+            Linear::new(LinearDir::Horizontal, vec![gallery_pane_id, right_tabs_id]);
 
         linear_layout.shares.set_share(right_tabs_id, 0.2);
-        linear_layout.shares.set_share(left_tabs_id, 0.2);
 
         Self {
             state: GallerySceneState::default(),
@@ -107,56 +95,12 @@ struct GalleryTreeBehavior<'a> {
 }
 
 impl GalleryTreeBehavior<'_> {
-    fn open_photo(&mut self, path: &PathBuf) {
-        dep!(PhotoManager, |photo_manager| {
-            if let Some(photo) = photo_manager.photo_database.get_photo(path) {
-                self.navigator
-                    .push(SceneTransition::Viewer(ViewerScene::new(photo.clone())));
-            }
-        });
-    }
-
-    fn scroll_to_photo_path(&mut self) -> Option<PathBuf> {
+    fn scroll_to_photo_path(&mut self) -> Option<std::path::PathBuf> {
         let selection_change = dep!(SelectionManager, |selection_manager| {
             selection_manager.last_frame_selection()
         })?;
 
-        for path in &selection_change.added_paths {
-            self.expand_file_tree_parent_directories(path);
-        }
-
         selection_change.added_paths.first().cloned()
-    }
-
-    fn clear_photo_selection(&mut self) {
-        dep_mut!(SelectionManager, |selection_manager| selection_manager
-            .clear());
-    }
-
-    fn expand_file_tree_parent_directories(&mut self, path: &PathBuf) {
-        self.scene_state
-            .left_sidebar_state
-            .file_tree_state
-            .expand_parent_directories(path);
-    }
-
-    fn apply_album_filter(&mut self, album_id: String) {
-        dep_mut!(PhotoManager, |photo_manager| {
-            let mut filter = photo_manager.get_current_filter().clone();
-            filter.album = Some(album_id);
-            photo_manager.set_current_filter(filter);
-        });
-
-        self.clear_photo_selection();
-    }
-
-    fn remove_photo(&mut self, path: &PathBuf) {
-        dep_mut!(PhotoManager, |photo_manager| {
-            photo_manager.photo_database.remove_photo(path);
-        });
-        dep_mut!(SelectionManager, |selection_manager| {
-            selection_manager.remove_path(path)
-        });
     }
 
     fn ui(&mut self, pane: &GalleryScenePane, ui: &mut Ui) -> UiResponse {
@@ -223,37 +167,6 @@ impl GalleryTreeBehavior<'_> {
 
                 UiResponse::None
             }
-            GalleryScenePane::Sidebar => {
-                let scroll_to_photo_path = self.scroll_to_photo_path();
-
-                let sidebar_response = LeftSidebar::new(&mut self.scene_state.left_sidebar_state)
-                    .show(ui, scroll_to_photo_path.as_ref());
-
-                if let Some(album_list_response) = sidebar_response.album_list_response {
-                    if let Some(album_id) = album_list_response.selected {
-                        self.apply_album_filter(album_id);
-                    }
-
-                    if let Some(double_clicked_path) = album_list_response.double_clicked_photo {
-                        self.open_photo(&double_clicked_path);
-                    }
-                }
-
-                if let Some(file_tree_response) = sidebar_response.file_tree_response {
-                    // Handle double-clicks in the file tree
-                    if let Some(double_clicked_path) = file_tree_response.double_clicked {
-                        // When an image file is double-clicked, open it in the viewer
-                        self.open_photo(&double_clicked_path);
-                    }
-
-                    // Handle file removal from the file tree
-                    if let Some(removed_path) = file_tree_response.removed {
-                        self.remove_photo(&removed_path);
-                    }
-                }
-
-                UiResponse::None
-            }
         }
     }
 }
@@ -272,7 +185,6 @@ impl Behavior<GalleryScenePane> for GalleryTreeBehavior<'_> {
         match pane {
             GalleryScenePane::Gallery => "Gallery".into(),
             GalleryScenePane::PhotoInfo => "Photo Info".into(),
-            GalleryScenePane::Sidebar => "File Tree".into(),
         }
     }
 }

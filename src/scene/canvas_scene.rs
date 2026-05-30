@@ -120,7 +120,12 @@ pub struct CanvasScene {
 }
 
 impl CanvasScene {
+    #[allow(dead_code)]
     pub fn new() -> Self {
+        Self::with_state_and_tree_id(CanvasSceneState::new(), "canvas_scene_tree")
+    }
+
+    pub fn with_state_and_tree_id(state: CanvasSceneState, tree_id: impl Into<Id>) -> Self {
         let mut tiles = egui_tiles::Tiles::default();
 
         let left_tabs = vec![
@@ -146,19 +151,14 @@ impl CanvasScene {
         linear_layout.shares.set_share(right_tabs_id, 0.2);
 
         Self {
-            state: CanvasSceneState::new(),
-            tree: egui_tiles::Tree::new(
-                "canvas_scene_tree",
-                tiles.insert_container(linear_layout),
-                tiles,
-            ),
+            state,
+            tree: egui_tiles::Tree::new(tree_id, tiles.insert_container(linear_layout), tiles),
         }
     }
 
+    #[allow(dead_code)]
     pub fn with_state(state: CanvasSceneState) -> Self {
-        let mut res = Self::new();
-        res.state = state;
-        res
+        Self::with_state_and_tree_id(state, "canvas_scene_tree")
     }
 }
 

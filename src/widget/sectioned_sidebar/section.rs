@@ -14,11 +14,25 @@ pub fn section_header_height(ui: &egui::Ui) -> f32 {
 pub struct CollapsableSectionState {
     pub expanded: bool,
     pub title: String,
+    default_expanded_height: Option<f32>,
 }
 
 impl CollapsableSectionState {
     pub fn new(expanded: bool, title: String) -> Self {
-        Self { expanded, title }
+        Self {
+            expanded,
+            title,
+            default_expanded_height: None,
+        }
+    }
+
+    pub fn with_default_expanded_height(mut self, height: f32) -> Self {
+        self.default_expanded_height = Some(height.max(0.0));
+        self
+    }
+
+    pub(super) fn default_expanded_height(&self) -> Option<f32> {
+        self.default_expanded_height
     }
 }
 

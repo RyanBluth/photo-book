@@ -46,10 +46,10 @@ impl Modal for SaveWarningModal {
     fn body_ui(&mut self, ui: &mut egui::Ui) {
         let message = match &self.source {
             SaveWarningSource::NewProject => {
-                "You have unsaved changes. Would you like to save before creating a new project?"
+                "You have unsaved changes. Would you like to save before creating a new collection?"
             }
             SaveWarningSource::LoadProject(_) => {
-                "You have unsaved changes. Would you like to save before loading a different project?"
+                "You have unsaved changes. Would you like to save before loading a different collection?"
             }
         };
         ui.label(message);

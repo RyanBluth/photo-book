@@ -1,16 +1,20 @@
 use crate::{dep_mut, photo_manager::PhotoManager};
 
-use super::{Modal, ModalActionResponse};
+use super::{
+    Modal, ModalActionResponse,
+    name_prompt::{NamePromptModal, NamePromptResponse},
+};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct NewAlbumModal {
-    album_name: String,
-    submit_requested: bool,
+    prompt: NamePromptModal,
 }
 
 impl NewAlbumModal {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            prompt: NamePromptModal::new("New Album", "Album name", "Create"),
+        }
     }
 }
 
@@ -18,38 +22,24 @@ impl Modal for NewAlbumModal {
     type Response = ModalActionResponse;
 
     fn title(&self) -> String {
-        "New Album".to_string()
+        self.prompt.title()
     }
 
     fn body_ui(&mut self, ui: &mut egui::Ui) {
-        ui.label("Album name");
-        let response = ui.text_edit_singleline(&mut self.album_name);
-        if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-            self.submit_requested = true;
-        }
+        self.prompt.body_ui(ui);
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
-        if ui.button("Cancel").clicked() {
-            return Some(ModalActionResponse::Cancel);
+        match self.prompt.actions_ui(ui) {
+            Some(NamePromptResponse::Confirm { name }) => {
+                dep_mut!(PhotoManager, |photo_manager| photo_manager
+                    .create_album(&name));
+
+                Some(ModalActionResponse::Confirm)
+            }
+            Some(NamePromptResponse::Cancel) => Some(ModalActionResponse::Cancel),
+            None => None,
         }
-
-        let can_create = !self.album_name.trim().is_empty();
-        let create_clicked = ui
-            .add_enabled(can_create, egui::Button::new("Create"))
-            .clicked();
-
-        if (create_clicked || self.submit_requested) && can_create {
-            let album_name = self.album_name.trim().to_string();
-            dep_mut!(PhotoManager, |photo_manager| photo_manager
-                .create_album(&album_name));
-
-            return Some(ModalActionResponse::Confirm);
-        }
-
-        self.submit_requested = false;
-
-        None
     }
 
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {

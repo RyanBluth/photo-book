@@ -239,8 +239,14 @@ impl PhotoBookApp {
 
     fn try_load_last_project(project_path: &Option<PathBuf>) -> Option<OrganizeEditScene> {
         let path = project_path.as_ref()?;
-        match Project::load(path) {
-            Ok(scene) => Some(scene),
+        match Project::load_project(path) {
+            Ok(project) => {
+                let scene = project.clone().into();
+                dep_mut!(session::Session, |session| {
+                    session.mark_project_loaded(path.clone(), project);
+                });
+                Some(scene)
+            }
             Err(e) => {
                 info!("Failed to load project: {:?}", e);
                 None
