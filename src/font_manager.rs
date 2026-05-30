@@ -1,7 +1,8 @@
-use std::{collections::HashSet, ffi::OsStr, path::PathBuf, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use egui::{FontDefinitions, FontFamily, FontId, epaint::TextOptions, text::Fonts};
 use font_kit::source::SystemSource;
+use font_kit::{handle::Handle, properties::Style};
 use indexmap::IndexMap;
 
 #[derive(Debug, PartialEq)]
@@ -34,63 +35,36 @@ impl FontManager {
             let fonts = source.all_fonts().unwrap();
 
             for handle in fonts {
-                match &handle {
-                    font_kit::handle::Handle::Path {
-                        path,
-                        font_index: _,
-                    } => {
-                        if path.extension() != Some(OsStr::new("ttf"))
-                            && path.extension() != Some(OsStr::new("otf"))
-                        {
-                            continue;
-                        }
-                        match handle.load() {
-                            Ok(loaded_font) => {
-                                let family = loaded_font.family_name().to_string();
-                                let weight = loaded_font.properties().weight.0 as u16;
-                                let full_name = loaded_font.full_name().to_string();
-                                let font_info = FontInfo {
-                                    family: family.clone(),
-                                    weight,
-                                    weighted_name: format!("{}-{}", family, weight),
-                                    full_name,
-                                    file_path: path.clone(),
-                                };
-                                self.fonts.entry(family).or_default().push(font_info);
-                            }
-                            Err(err) => {
-                                log::error!("Failed to load font: {:?}", err);
-                            }
-                        }
+                match Self::font_info_from_handle(&handle) {
+                    Some(font_info) => {
+                        self.fonts
+                            .entry(font_info.family.clone())
+                            .or_default()
+                            .push(font_info);
                     }
-                    font_kit::handle::Handle::Memory {
-                        bytes: _,
-                        font_index: _,
-                    } => {}
+                    None => log::error!("Failed to load font: {:?}", handle),
                 }
             }
 
             let mut font_definitions = egui::FontDefinitions::default();
 
-            for (_family, fonts) in &self.fonts {
-                for font in fonts {
-                    match std::fs::read(&font.file_path) {
-                        Ok(font_data) => {
-                            font_definitions.font_data.insert(
-                                font.family.clone(),
-                                Arc::new(egui::FontData::from_owned(font_data)),
-                            );
+            for (family, fonts) in &mut self.fonts {
+                fonts.sort_by_key(|font| font.sort_key());
 
-                            font_definitions.families.insert(
-                                FontFamily::Name(Arc::from(font.family.clone())),
-                                vec![font.family.clone()],
-                            );
-                        }
-                        Err(err) => {
-                            log::error!("Failed to read font file: {:?}", err);
-                        }
-                    }
+                let font_names = fonts
+                    .iter()
+                    .map(|font| font.font_data_name.clone())
+                    .collect::<Vec<_>>();
+
+                for font in fonts {
+                    font_definitions
+                        .font_data
+                        .insert(font.font_data_name.clone(), font.font_data.clone());
                 }
+
+                font_definitions
+                    .families
+                    .insert(FontFamily::Name(Arc::from(family.clone())), font_names);
             }
 
             let mut fonts = Fonts::new(TextOptions::default(), font_definitions.clone());
@@ -107,18 +81,34 @@ impl FontManager {
             let mut valid_font_definitions = FontDefinitions::default();
 
             font_definitions
-                .font_data
+                .families
                 .iter()
-                .filter(|(family, _)| valid_fonts.contains(&family.to_string()))
-                .for_each(|(family, font_data)| {
-                    valid_font_definitions
-                        .font_data
-                        .insert(family.clone(), font_data.clone());
+                .for_each(|(family, font_names)| {
+                    if !valid_fonts.contains(&family.to_string()) {
+                        return;
+                    }
 
-                    valid_font_definitions.families.insert(
-                        FontFamily::Name(Arc::from(family.clone())),
-                        vec![family.clone()],
-                    );
+                    let valid_font_names = font_names
+                        .iter()
+                        .filter(|font_name| font_definitions.font_data.contains_key(*font_name))
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    if valid_font_names.is_empty() {
+                        return;
+                    }
+
+                    valid_font_names.iter().for_each(|font_name| {
+                        if let Some(font_data) = font_definitions.font_data.get(font_name) {
+                            valid_font_definitions
+                                .font_data
+                                .insert(font_name.clone(), font_data.clone());
+                        }
+                    });
+
+                    valid_font_definitions
+                        .families
+                        .insert(family.clone(), valid_font_names);
                 });
 
             ctx.set_fonts(valid_font_definitions.clone());
@@ -127,15 +117,97 @@ impl FontManager {
             self.loading_state = LoadingState::Loaded;
         }
     }
+
+    fn font_info_from_handle(handle: &Handle) -> Option<FontInfo> {
+        let loaded_font = handle
+            .load()
+            .map_err(|err| {
+                log::error!("Failed to load font: {:?}", err);
+                err
+            })
+            .ok()?;
+
+        let font_index = match handle {
+            Handle::Path { font_index, .. } | Handle::Memory { font_index, .. } => *font_index,
+        };
+
+        let font_bytes = match handle {
+            Handle::Path { path, .. } => std::fs::read(path)
+                .map_err(|err| {
+                    log::error!("Failed to read font file {:?}: {:?}", path, err);
+                    err
+                })
+                .ok()?,
+            Handle::Memory { bytes, .. } => (**bytes).clone(),
+        };
+
+        let family = loaded_font.family_name().to_string();
+        let properties = loaded_font.properties();
+        let weight = properties.weight.0 as u16;
+        let style = properties.style;
+        let full_name = loaded_font.full_name().to_string();
+        let font_data_name = loaded_font
+            .postscript_name()
+            .unwrap_or_else(|| format!("{}-{}-{}-{}", family, full_name, weight, font_index));
+        let mut font_data = egui::FontData::from_owned(font_bytes);
+        font_data.index = font_index;
+
+        Some(FontInfo {
+            family: family.clone(),
+            weight,
+            style,
+            weighted_name: format!("{}-{}", family, weight),
+            full_name,
+            font_data_name,
+            font_data: Arc::new(font_data),
+        })
+    }
 }
 
 pub struct FontInfo {
     pub family: String,
-    #[allow(dead_code)]
     pub weight: u16,
+    pub style: Style,
     #[allow(dead_code)]
     pub weighted_name: String,
     #[allow(dead_code)]
     pub full_name: String,
-    pub file_path: PathBuf,
+    pub font_data_name: String,
+    pub font_data: Arc<egui::FontData>,
+}
+
+impl FontInfo {
+    fn sort_key(&self) -> (u8, u16) {
+        let style_priority = match self.style {
+            Style::Normal => 0,
+            Style::Italic => 1,
+            Style::Oblique => 2,
+        };
+
+        let weight_distance = self.weight.abs_diff(400);
+
+        (style_priority, weight_distance)
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loads_macos_system_fonts() {
+        let ctx = egui::Context::default();
+        let mut font_manager = FontManager::new();
+
+        font_manager.load_fonts(&ctx);
+
+        assert!(!font_manager.fonts.is_empty());
+        let font_definitions = font_manager.font_definitions.as_ref().unwrap();
+        assert!(
+            font_definitions
+                .families
+                .keys()
+                .any(|family| matches!(family, FontFamily::Name(_)))
+        );
+    }
 }
