@@ -42,10 +42,12 @@ use super::{
 };
 
 mod book;
+mod photo_viewer;
 mod workspace;
 
 use book::OpenBookEditor;
 pub use book::{Book, BookId};
+use photo_viewer::OpenPhotoViewer;
 use workspace::{WorkspaceAction, WorkspacePane};
 
 #[derive(Debug, Clone)]
@@ -53,6 +55,7 @@ pub struct OrganizeEditScene {
     pub organize: Arc<RwLock<GalleryScene>>,
     pub books: Vec<Book>,
     open_books: Vec<OpenBookEditor>,
+    open_photo_viewers: Vec<OpenPhotoViewer>,
     workspace_tabs: Tree<WorkspacePane>,
     selected_book_id: Option<BookId>,
     left_sidebar_state: LeftSidebarState,
@@ -83,6 +86,7 @@ impl OrganizeEditScene {
             organize: organize_scene.clone(),
             books,
             open_books: Vec::new(),
+            open_photo_viewers: Vec::new(),
             workspace_tabs: Self::initial_workspace_tabs(),
             selected_book_id: None,
             left_sidebar_state: LeftSidebarState::default(),
@@ -203,6 +207,35 @@ impl OrganizeEditScene {
             tile_id,
         });
         self.selected_book_id = Some(book_id.to_string());
+    }
+
+    pub(in crate::scene::organize_edit_scene) fn open_photo_viewer(&mut self, scene: ViewerScene) {
+        let photo_path = scene.photo_path().clone();
+
+        if self.selected_book_id.is_some() {
+            self.persist_active_book_state();
+        }
+
+        if let Some(viewer_id) = self
+            .open_photo_viewers
+            .iter()
+            .find(|open_viewer| open_viewer.scene.read().unwrap().photo_path() == &photo_path)
+            .map(|open_viewer| open_viewer.viewer_id.clone())
+        {
+            self.activate_photo_viewer_tab(&viewer_id);
+            self.selected_book_id = None;
+            return;
+        }
+
+        let viewer_id = uuid::Uuid::new_v4().to_string();
+        let viewer_scene = Arc::new(RwLock::new(scene));
+        let tile_id = self.insert_photo_viewer_tab(viewer_id.clone());
+        self.open_photo_viewers.push(OpenPhotoViewer {
+            viewer_id,
+            scene: viewer_scene,
+            tile_id,
+        });
+        self.selected_book_id = None;
     }
 
     pub(in crate::scene::organize_edit_scene) fn persist_active_book_state(&mut self) {
@@ -714,6 +747,10 @@ impl OrganizeEditScene {
                     self.selected_book_id = Some(book_id);
                     SceneResponse::None
                 }
+                SceneTransition::Viewer(scene) => {
+                    self.open_photo_viewer(scene);
+                    SceneResponse::None
+                }
                 _ => SceneResponse::Push(transition),
             },
             _ => scene_response,
@@ -761,12 +798,15 @@ impl Scene for OrganizeEditScene {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use indexmap::IndexMap;
 
     use super::*;
     use crate::{
         id::next_page_id,
         model::{edit_state::EditablePage, page::Page, unit::Unit},
+        photo::{MetadataCollection, Photo, PhotoMetadata},
         project::Project,
         widget::canvas::CanvasState,
     };
@@ -784,6 +824,27 @@ mod tests {
             ),
         );
         CanvasSceneState::with_pages(pages, page_id)
+    }
+
+    fn test_photo(path: &str) -> Photo {
+        Photo {
+            path: PathBuf::from(path),
+            metadata: PhotoMetadata {
+                fields: MetadataCollection::new(),
+            },
+            thumbnail_hash: String::new(),
+        }
+    }
+
+    fn active_workspace_pane(scene: &OrganizeEditScene) -> Option<WorkspacePane> {
+        scene
+            .workspace_tabs
+            .active_tiles()
+            .into_iter()
+            .find_map(|tile_id| match scene.workspace_tabs.tiles.get(tile_id) {
+                Some(egui_tiles::Tile::Pane(pane)) => Some(pane.clone()),
+                _ => None,
+            })
     }
 
     #[test]
@@ -806,5 +867,40 @@ mod tests {
         assert_eq!(project.books[0].id, "book-1");
         assert_eq!(project.books[0].pages[0].page.width, 10.0);
         assert_eq!(project.books[0].pages[0].page.height, 12.0);
+    }
+
+    #[test]
+    fn viewer_transition_opens_workspace_tab() {
+        let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), Vec::new());
+
+        let response = scene.handle_child_scene_response(SceneResponse::Push(
+            SceneTransition::Viewer(ViewerScene::new(test_photo("/test/photo-1.jpg"))),
+        ));
+
+        assert!(matches!(response, SceneResponse::None));
+        assert_eq!(scene.open_photo_viewers.len(), 1);
+        assert!(matches!(
+            active_workspace_pane(&scene),
+            Some(WorkspacePane::PhotoViewer(_))
+        ));
+    }
+
+    #[test]
+    fn opening_existing_photo_viewer_activates_existing_tab() {
+        let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), Vec::new());
+        let photo = test_photo("/test/photo-1.jpg");
+
+        scene.open_photo_viewer(ViewerScene::new(photo.clone()));
+        let viewer_id = scene.open_photo_viewers[0].viewer_id.clone();
+        scene.activate_gallery_tab();
+
+        scene.open_photo_viewer(ViewerScene::new(photo));
+
+        assert_eq!(scene.open_photo_viewers.len(), 1);
+        assert_eq!(scene.open_photo_viewers[0].viewer_id, viewer_id);
+        assert_eq!(
+            active_workspace_pane(&scene),
+            Some(WorkspacePane::PhotoViewer(viewer_id))
+        );
     }
 }

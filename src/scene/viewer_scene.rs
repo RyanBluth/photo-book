@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use egui_tiles::UiResponse;
 
 use crate::{
@@ -13,6 +15,7 @@ use crate::{
 
 use super::{NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse};
 
+#[derive(Debug, Clone)]
 pub struct ViewerSceneState {
     photo: Photo,
     viewer_state: ImageViewerState,
@@ -33,11 +36,13 @@ impl ViewerSceneState {
     }
 }
 
+#[derive(Debug, Clone)]
 pub enum ViewerScenePane {
     Viewer,
     PhotoInfo,
 }
 
+#[derive(Debug, Clone)]
 pub struct ViewerScene {
     state: ViewerSceneState,
     tree: egui_tiles::Tree<ViewerScenePane>,
@@ -59,11 +64,19 @@ impl ViewerScene {
         Self {
             state: ViewerSceneState::new(photo),
             tree: egui_tiles::Tree::new(
-                "viewer_scene_tree",
+                egui::Id::new("viewer_scene_tree").with(uuid::Uuid::new_v4()),
                 tiles.insert_container(linear_layout),
                 tiles,
             ),
         }
+    }
+
+    pub fn photo_path(&self) -> &PathBuf {
+        &self.state.photo.path
+    }
+
+    pub fn photo_file_name(&self) -> &str {
+        self.state.photo.file_name()
     }
 }
 

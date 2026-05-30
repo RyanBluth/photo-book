@@ -6,12 +6,13 @@ use egui_tiles::{
 
 use crate::scene::Scene;
 
-use super::{BookId, OrganizeEditScene, SceneResponse};
+use super::{BookId, OrganizeEditScene, SceneResponse, photo_viewer::PhotoViewerId};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum WorkspacePane {
     Gallery,
     Book(BookId),
+    PhotoViewer(PhotoViewerId),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,14 +30,19 @@ impl OrganizeEditScene {
     }
 
     pub(super) fn insert_book_tab(&mut self, book_id: BookId) -> TileId {
+        self.insert_workspace_tab(WorkspacePane::Book(book_id))
+    }
+
+    pub(super) fn insert_photo_viewer_tab(&mut self, viewer_id: PhotoViewerId) -> TileId {
+        self.insert_workspace_tab(WorkspacePane::PhotoViewer(viewer_id))
+    }
+
+    fn insert_workspace_tab(&mut self, pane: WorkspacePane) -> TileId {
         if self.workspace_tabs.root.is_none() {
             self.workspace_tabs = Self::initial_workspace_tabs();
         }
 
-        let tile_id = self
-            .workspace_tabs
-            .tiles
-            .insert_pane(WorkspacePane::Book(book_id));
+        let tile_id = self.workspace_tabs.tiles.insert_pane(pane);
 
         let Some(root) = self.workspace_tabs.root else {
             return tile_id;
@@ -91,15 +97,32 @@ impl OrganizeEditScene {
         })
     }
 
-    pub(super) fn close_book_tab(
+    pub(super) fn activate_photo_viewer_tab(&mut self, viewer_id: &str) -> bool {
+        self.workspace_tabs.make_active(|_, tile| {
+            matches!(tile, Tile::Pane(WorkspacePane::PhotoViewer(active_viewer_id)) if active_viewer_id.as_str() == viewer_id)
+        })
+    }
+
+    pub(super) fn close_workspace_tab(
         &mut self,
         workspace_tabs: &mut Tree<WorkspacePane>,
         tile_id: TileId,
-        book_id: &str,
+        pane: WorkspacePane,
     ) {
-        self.persist_book_state(book_id);
-        self.open_books
-            .retain(|open_book| open_book.tile_id != tile_id);
+        match pane {
+            WorkspacePane::Gallery => {}
+            WorkspacePane::Book(book_id) => {
+                self.persist_book_state(&book_id);
+                self.open_books
+                    .retain(|open_book| open_book.tile_id != tile_id);
+            }
+            WorkspacePane::PhotoViewer(viewer_id) => {
+                self.open_photo_viewers.retain(|open_viewer| {
+                    open_viewer.tile_id != tile_id && open_viewer.viewer_id != viewer_id
+                });
+            }
+        }
+
         workspace_tabs.remove_recursively(tile_id);
     }
 
@@ -137,6 +160,21 @@ impl OrganizeEditScene {
                     self.select_book(&book_id);
                 }
             }
+            Some(WorkspacePane::PhotoViewer(viewer_id)) => {
+                if self
+                    .open_photo_viewers
+                    .iter()
+                    .any(|open_viewer| open_viewer.viewer_id == viewer_id)
+                {
+                    if self.selected_book_id.is_some() {
+                        self.persist_active_book_state();
+                    }
+                    self.selected_book_id = None;
+                } else {
+                    self.activate_gallery_tab();
+                    self.selected_book_id = None;
+                }
+            }
             None => {
                 self.activate_gallery_tab();
                 self.selected_book_id = None;
@@ -161,8 +199,8 @@ impl OrganizeEditScene {
             workspace_tabs.ui(&mut behavior, ui);
         }
 
-        if let Some((tile_id, book_id)) = tab_close_request {
-            self.close_book_tab(&mut workspace_tabs, tile_id, &book_id);
+        if let Some((tile_id, pane)) = tab_close_request {
+            self.close_workspace_tab(&mut workspace_tabs, tile_id, pane);
         }
 
         self.workspace_tabs = workspace_tabs;
@@ -180,7 +218,7 @@ struct WorkspaceTabsBehavior<'a> {
     scene: &'a mut OrganizeEditScene,
     scene_response: &'a mut Option<SceneResponse>,
     workspace_action: &'a mut Option<WorkspaceAction>,
-    tab_close_request: &'a mut Option<(TileId, BookId)>,
+    tab_close_request: &'a mut Option<(TileId, WorkspacePane)>,
 }
 
 impl WorkspaceTabsBehavior<'_> {
@@ -192,13 +230,29 @@ impl WorkspaceTabsBehavior<'_> {
             .map(|book| book.name.clone())
             .unwrap_or_else(|| "Book".to_string())
     }
+
+    fn photo_viewer_name(&self, viewer_id: &str) -> String {
+        self.scene
+            .open_photo_viewers
+            .iter()
+            .find(|open_viewer| open_viewer.viewer_id.as_str() == viewer_id)
+            .map(|open_viewer| {
+                open_viewer
+                    .scene
+                    .read()
+                    .unwrap()
+                    .photo_file_name()
+                    .to_string()
+            })
+            .unwrap_or_else(|| "Photo".to_string())
+    }
 }
 
 impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
     fn pane_ui(
         &mut self,
         ui: &mut Ui,
-        _tile_id: TileId,
+        tile_id: TileId,
         pane: &mut WorkspacePane,
     ) -> TileUiResponse {
         match pane {
@@ -220,6 +274,22 @@ impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
 
                 *self.scene_response = Some(response);
             }
+            WorkspacePane::PhotoViewer(viewer_id) => {
+                let response = self
+                    .scene
+                    .open_photo_viewers
+                    .iter_mut()
+                    .find(|open_viewer| open_viewer.viewer_id.as_str() == viewer_id.as_str())
+                    .map(|open_viewer| open_viewer.scene.write().unwrap().ui(ui))
+                    .unwrap_or(SceneResponse::None);
+
+                if matches!(response, SceneResponse::Pop(_)) {
+                    *self.tab_close_request = Some((tile_id, pane.clone()));
+                    *self.scene_response = Some(SceneResponse::None);
+                } else {
+                    *self.scene_response = Some(response);
+                }
+            }
         }
 
         TileUiResponse::None
@@ -229,19 +299,25 @@ impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
         match pane {
             WorkspacePane::Gallery => "Gallery".into(),
             WorkspacePane::Book(book_id) => self.book_name(book_id).into(),
+            WorkspacePane::PhotoViewer(viewer_id) => self.photo_viewer_name(viewer_id).into(),
         }
     }
 
     fn is_tab_closable(&self, tiles: &Tiles<WorkspacePane>, tile_id: TileId) -> bool {
-        matches!(tiles.get_pane(&tile_id), Some(WorkspacePane::Book(_)))
+        matches!(
+            tiles.get_pane(&tile_id),
+            Some(WorkspacePane::Book(_) | WorkspacePane::PhotoViewer(_))
+        )
     }
 
     fn on_tab_close(&mut self, tiles: &mut Tiles<WorkspacePane>, tile_id: TileId) -> bool {
-        let Some(WorkspacePane::Book(book_id)) = tiles.get_pane(&tile_id).cloned() else {
+        let Some(pane @ (WorkspacePane::Book(_) | WorkspacePane::PhotoViewer(_))) =
+            tiles.get_pane(&tile_id).cloned()
+        else {
             return false;
         };
 
-        *self.tab_close_request = Some((tile_id, book_id));
+        *self.tab_close_request = Some((tile_id, pane));
 
         false
     }
@@ -254,6 +330,11 @@ impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
                 .open_books
                 .iter()
                 .any(|open_book| open_book.book_id.as_str() == book_id.as_str()),
+            WorkspacePane::PhotoViewer(viewer_id) => self
+                .scene
+                .open_photo_viewers
+                .iter()
+                .any(|open_viewer| open_viewer.viewer_id.as_str() == viewer_id.as_str()),
         }
     }
 
