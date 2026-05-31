@@ -194,9 +194,9 @@ impl From<&mut CanvasState> for Vec<LayoutItem> {
                 let layer = state.layers.get(layer_id).unwrap();
                 if let LayerContent::Photo(photo) = &layer.content {
                     let cropped_width =
-                        photo.photo.metadata.rotated_width() as f32 * photo.crop.width();
+                        photo.photo.preview_rotated_width() as f32 * photo.crop.width();
                     let cropped_height =
-                        photo.photo.metadata.rotated_height() as f32 * photo.crop.height();
+                        photo.photo.preview_rotated_height() as f32 * photo.crop.height();
                     Some(LayoutItem {
                         aspect_ratio: cropped_width / cropped_height,
                         id: *layer_id,

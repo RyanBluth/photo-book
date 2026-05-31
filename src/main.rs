@@ -52,6 +52,7 @@ mod modal;
 mod model;
 mod photo;
 mod photo_database;
+mod photo_io;
 mod photo_manager;
 mod project;
 mod project_settings;

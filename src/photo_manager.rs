@@ -28,6 +28,7 @@ use crate::{
     },
     photo::{Photo, PhotoRating},
     photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
+    photo_io,
 };
 
 use anyhow::{Ok, anyhow};
@@ -85,6 +86,8 @@ pub struct PhotoManager {
     current_filter: PhotoQuery,
     caches: Vec<(Context, ContextCache)>,
     thumbnail_existence_cache: HashSet<String>,
+    rendered_existence_cache: HashSet<String>,
+    pending_rendered_images: HashSet<String>,
     current_query_result: Option<PhotoQueryResult>,
     pub photo_database: PhotoDatabase,
 }
@@ -96,6 +99,8 @@ impl PhotoManager {
             current_filter: PhotoQuery::default(),
             caches: Vec::new(),
             thumbnail_existence_cache: HashSet::new(),
+            rendered_existence_cache: HashSet::new(),
+            pending_rendered_images: HashSet::new(),
             current_query_result: None,
             photo_database: PhotoDatabase::new(),
         }
@@ -114,6 +119,8 @@ impl PhotoManager {
         self.current_filter = PhotoQuery::default();
         self.caches.clear();
         self.thumbnail_existence_cache.clear();
+        self.rendered_existence_cache.clear();
+        self.pending_rendered_images.clear();
         self.current_query_result = None;
         self.photo_database.clear();
     }
@@ -133,12 +140,12 @@ impl PhotoManager {
         }
     }
 
-    pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
+    pub fn load_directory(path: PathBuf, ctx: Context) -> anyhow::Result<()> {
         tokio::spawn(async move {
-            let glob_patterns = vec![
-                format!("{}/**/*.jpg", path.to_string_lossy()),
-                format!("{}/**/*.jpeg", path.to_string_lossy()),
-            ];
+            let glob_patterns: Vec<String> = photo_io::SUPPORTED_PHOTO_EXTENSIONS
+                .iter()
+                .map(|extension| format!("{}/**/*.{}", path.to_string_lossy(), extension))
+                .collect();
 
             let glob_iter = glob_patterns.iter().flat_map(|pattern: &String| {
                 glob::glob_with(
@@ -155,8 +162,7 @@ impl PhotoManager {
             let pending_photos: Vec<PathBuf> = glob_iter
                 .filter_map(|entry| {
                     let path = entry.as_ref().ok()?;
-                    let lowercase_extension = path.extension()?.to_ascii_lowercase();
-                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg")
+                    if photo_io::is_supported_photo_path(path)
                         && !dep!(PhotoManager, |pm| pm.photo_exists(path))
                     {
                         Some(path.clone())
@@ -166,30 +172,26 @@ impl PhotoManager {
                 })
                 .collect();
 
-            for photo_path in pending_photos {
-                match Photo::new_async(photo_path.clone()).await {
-                    Result::Ok(photo) => {
-                        dep_mut!(PhotoManager, |photo_manager| {
-                            photo_manager.photo_database.add_photo(photo);
-                        });
-                    }
-                    Err(err) => {
-                        error!("Failed to load photo: {:?} - {:?}", photo_path, err);
-                    }
-                }
-            }
+            let (standard_pending_photos, raw_pending_photos): (Vec<PathBuf>, Vec<PathBuf>) =
+                pending_photos
+                    .into_iter()
+                    .partition(|path| !photo_io::is_raw_photo_path(path));
 
-            dep_mut!(PhotoManager, |photo_manager| {
-                photo_manager
-                    .photo_database
-                    .sort_photos(PhotoSortCriteria::Date);
-            });
+            let mut discovered_photo_paths = standard_pending_photos.clone();
+            discovered_photo_paths.extend(raw_pending_photos.iter().cloned());
+            Self::add_discovered_photo_paths(&discovered_photo_paths);
+            ctx.request_repaint();
 
-            let photo_paths: Vec<PathBuf> = dep!(PhotoManager, |photo_manager| photo_manager
-                .photo_database
-                .get_all_photo_paths());
+            let _ =
+                Self::gen_thumbnail_batch(standard_pending_photos.clone(), Dirs::Thumbnails.path())
+                    .await;
+            Self::resolve_photo_metadata(standard_pending_photos).await;
+            ctx.request_repaint();
 
-            let _ = Self::gen_thumbnails(photo_paths);
+            let _ = Self::gen_thumbnail_batch(raw_pending_photos.clone(), Dirs::Thumbnails.path())
+                .await;
+            Self::resolve_photo_metadata(raw_pending_photos).await;
+            ctx.request_repaint();
 
             Ok(())
         });
@@ -199,44 +201,21 @@ impl PhotoManager {
 
     pub fn load_photos(&self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
         tokio::spawn(async move {
-            let mut photos_since_regroup: usize = 0;
-            let filtered_photos: Vec<(PathBuf, Option<PhotoRating>)> = photos
+            let filtered_photo_paths: Vec<PathBuf> = photos
                 .into_iter()
-                .filter(|(path, _)| !dep!(PhotoManager, |pm| pm.photo_exists(path)))
+                .map(|(path, _)| path)
+                .filter(|path| path.exists())
+                .filter(|path| photo_io::is_supported_photo_path(path))
+                .filter(|path| !dep!(PhotoManager, |pm| pm.photo_exists(path)))
                 .collect();
 
-            let num_photos = filtered_photos.len();
+            Self::add_discovered_photo_paths(&filtered_photo_paths);
 
-            for (path, _) in filtered_photos {
-                let photo = Photo::new_async(path.clone()).await;
-
-                match photo {
-                    Result::Err(err) => {
-                        error!("Failed to load photo: {:?} - {:?}", path, err);
-                        continue;
-                    }
-                    Result::Ok(photo) => {
-                        dep_mut!(PhotoManager, |photo_manager| {
-                            photo_manager.photo_database.add_photo(photo);
-
-                            photos_since_regroup += 1;
-
-                            if photos_since_regroup > 500 || num_photos == photos_since_regroup {
-                                photos_since_regroup = 0;
-                                photo_manager.sort_and_regroup();
-                            }
-                        });
-                    }
-                };
-            }
-
-            let (photo_paths, _) = dep_mut!(PhotoManager, |photo_manager| {
-                let photo_paths: Vec<PathBuf> = photo_manager.photo_database.get_all_photo_paths();
-                let thumbnail_dir = Dirs::Thumbnails.path();
-
-                (photo_paths, thumbnail_dir)
-            });
-            let _ = Self::gen_thumbnails(photo_paths);
+            let photo_paths: Vec<PathBuf> = dep!(PhotoManager, |photo_manager| photo_manager
+                .photo_database
+                .get_all_photo_paths());
+            let _ = Self::gen_thumbnails(photo_paths).await;
+            Self::resolve_photo_metadata(filtered_photo_paths).await;
         });
     }
 
@@ -339,7 +318,9 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
+        let Some(uri) = self.texture_uri_for_photo(photo, ctx)? else {
+            return Ok(None);
+        };
         let cache = self.get_cache_mut(ctx);
         let result = Self::load_full_res_texture(&uri, ctx, cache);
 
@@ -353,7 +334,7 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
+        let uri = self.texture_uri_for_photo_blocking(photo)?;
         let cache = self.get_cache_mut(ctx);
         let result = Self::load_full_res_texture_blocking(&uri, ctx, cache);
 
@@ -367,15 +348,20 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
+        let uri = self.texture_uri_for_photo(photo, ctx)?;
         let thumbnail_uri = photo.thumbnail_uri();
         let cache = self.get_cache_mut(ctx);
-        let result = match Self::load_full_res_texture(&uri, ctx, cache) {
-            Result::Ok(Some(tex)) => Ok(Some(tex)),
-            _ => Ok(cache.texture_cache.get(&thumbnail_uri).copied()),
+        let result = match uri.as_deref() {
+            Some(uri) => match Self::load_full_res_texture(uri, ctx, cache) {
+                Result::Ok(Some(tex)) => Ok(Some(tex)),
+                _ => Ok(cache.texture_cache.get(&thumbnail_uri).copied()),
+            },
+            None => Ok(cache.texture_cache.get(&thumbnail_uri).copied()),
         };
 
-        Self::evict_full_res_textures(ctx, cache, &uri);
+        if let Some(uri) = uri.as_deref() {
+            Self::evict_full_res_textures(ctx, cache, uri);
+        }
 
         result
     }
@@ -385,7 +371,9 @@ impl PhotoManager {
         match self.photo_database.get_photo_by_index(at) {
             Some(photo) => {
                 let photo = photo.clone();
-                let uri = photo.uri();
+                let Some(uri) = self.texture_uri_for_photo(&photo, ctx)? else {
+                    return Ok(None);
+                };
                 let cache = self.get_cache_mut(ctx);
                 let result = Self::load_full_res_texture(&uri, ctx, cache);
 
@@ -398,7 +386,9 @@ impl PhotoManager {
     }
 
     pub fn preload_texture(&mut self, photo: &Photo, ctx: &Context) -> anyhow::Result<()> {
-        let uri = photo.uri();
+        let Some(uri) = self.texture_uri_for_photo(photo, ctx)? else {
+            return Ok(());
+        };
 
         let cache = self.get_cache_mut(ctx);
         let result = Self::load_full_res_texture(&uri, ctx, cache).map(|_| ());
@@ -413,14 +403,22 @@ impl PhotoManager {
         current_photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<()> {
-        let current_uri = current_photo.uri();
-        let preload_uris = self.surrounding_preload_uris(current_photo);
+        let current_uri = self.texture_uri_for_photo(current_photo, ctx)?;
+        let preload_photos = self.surrounding_preload_photos(current_photo);
+        let mut preload_uris = Vec::new();
+        for photo in preload_photos {
+            if let Some(uri) = self.texture_uri_for_photo(&photo, ctx)? {
+                preload_uris.push(uri);
+            }
+        }
 
         let cache = self.get_cache_mut(ctx);
 
-        let mut first_error = Self::load_full_res_texture(&current_uri, ctx, cache)
-            .map(|_| ())
-            .err();
+        let mut first_error = current_uri.as_deref().and_then(|uri| {
+            Self::load_full_res_texture(uri, ctx, cache)
+                .map(|_| ())
+                .err()
+        });
 
         let mut ready_polls = 0;
         let mut made_progress = false;
@@ -470,7 +468,7 @@ impl PhotoManager {
             ctx.request_repaint();
         }
 
-        Self::evict_full_res_textures(ctx, cache, &current_uri);
+        Self::evict_full_res_textures(ctx, cache, current_uri.as_deref().unwrap_or(""));
 
         if let Some(error) = first_error {
             Err(error)
@@ -479,26 +477,26 @@ impl PhotoManager {
         }
     }
 
-    fn surrounding_preload_uris(&self, current_photo: &Photo) -> Vec<String> {
+    fn surrounding_preload_photos(&self, current_photo: &Photo) -> Vec<Photo> {
         let Some(query_result) = &self.current_query_result else {
             return Vec::new();
         };
 
-        let mut preload_uris = Vec::new();
+        let mut preload_photos = Vec::new();
         let mut next_photo = current_photo.clone();
         let mut previous_photo = current_photo.clone();
         for _ in 0..FULL_RES_PRELOAD_COUNT {
             if let Some(photo) = query_result.photo_after(&next_photo) {
-                preload_uris.push(photo.uri());
+                preload_photos.push(photo.clone());
                 next_photo = photo;
             }
             if let Some(photo) = query_result.photo_before(&previous_photo) {
-                preload_uris.push(photo.uri());
+                preload_photos.push(photo.clone());
                 previous_photo = photo;
             }
         }
 
-        preload_uris
+        preload_photos
     }
 
     pub fn next_photo(
@@ -526,6 +524,66 @@ impl PhotoManager {
     #[allow(dead_code)]
     fn index_for_photo(&mut self, photo: &Photo) -> Option<usize> {
         self.photo_database.get_photo_index(&photo.path)
+    }
+
+    fn texture_uri_for_photo(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<String>> {
+        if !photo_io::is_raw_photo_path(&photo.path) {
+            return Ok(Some(photo.uri()));
+        }
+
+        let rendered_path = photo_io::rendered_photo_path(&photo.path);
+        if self
+            .rendered_existence_cache
+            .contains(&photo.thumbnail_hash)
+            || rendered_path.exists()
+        {
+            self.rendered_existence_cache
+                .insert(photo.thumbnail_hash.clone());
+            return Ok(Some(photo_io::file_uri(&rendered_path)));
+        }
+
+        if self
+            .pending_rendered_images
+            .insert(photo.thumbnail_hash.clone())
+        {
+            let source_path = photo.path.clone();
+            let cache_key = photo.thumbnail_hash.clone();
+            let ctx = ctx.clone();
+            tokio::spawn(async move {
+                let result = photo_io::ensure_rendered_photo(source_path.clone()).await;
+                dep_mut!(PhotoManager, |photo_manager| {
+                    photo_manager.pending_rendered_images.remove(&cache_key);
+                    if result.is_ok() {
+                        photo_manager
+                            .rendered_existence_cache
+                            .insert(cache_key.clone());
+                    }
+                });
+
+                if let Err(error) = result {
+                    error!("Failed to render RAW photo {:?}: {:?}", source_path, error);
+                }
+
+                ctx.request_repaint();
+            });
+        }
+
+        Ok(None)
+    }
+
+    fn texture_uri_for_photo_blocking(&mut self, photo: &Photo) -> anyhow::Result<String> {
+        if !photo_io::is_raw_photo_path(&photo.path) {
+            return Ok(photo.uri());
+        }
+
+        let rendered_path = photo_io::ensure_rendered_photo_blocking(&photo.path)?;
+        self.rendered_existence_cache
+            .insert(photo.thumbnail_hash.clone());
+        Ok(photo_io::file_uri(&rendered_path))
     }
 
     fn load_full_res_texture(
@@ -666,14 +724,68 @@ impl PhotoManager {
         }
     }
 
-    fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
+    fn add_discovered_photo_paths(photo_paths: &[PathBuf]) {
+        dep_mut!(PhotoManager, |photo_manager| {
+            for photo_path in photo_paths {
+                if photo_manager.photo_exists(photo_path) {
+                    continue;
+                }
+
+                photo_manager
+                    .photo_database
+                    .add_photo(Photo::discovered(photo_path.clone()));
+            }
+
+            photo_manager.sort_and_regroup();
+        });
+    }
+
+    async fn resolve_photo_metadata(photo_paths: Vec<PathBuf>) {
+        for photo_path in photo_paths {
+            match Photo::new_async(photo_path.clone()).await {
+                Result::Ok(photo) => dep_mut!(PhotoManager, |photo_manager| {
+                    if photo_manager.photo_exists(&photo.path) {
+                        photo_manager.photo_database.update_photo(photo);
+                    }
+                }),
+                Err(err) => {
+                    error!(
+                        "Failed to load photo metadata: {:?} - {:?}",
+                        photo_path, err
+                    );
+                }
+            }
+        }
+
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.sort_and_regroup();
+        });
+    }
+
+    async fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
+        let (standard_photo_paths, raw_photo_paths): (Vec<PathBuf>, Vec<PathBuf>) = photo_paths
+            .into_iter()
+            .partition(|path| !photo_io::is_raw_photo_path(path));
         let thumbnail_dir = Dirs::Thumbnails.path();
 
+        Self::gen_thumbnail_batch(standard_photo_paths, thumbnail_dir.clone()).await?;
+        Self::gen_thumbnail_batch(raw_photo_paths, thumbnail_dir).await
+    }
+
+    async fn gen_thumbnail_batch(
+        photo_paths: Vec<PathBuf>,
+        thumbnail_dir: PathBuf,
+    ) -> anyhow::Result<()> {
         let partitions = utils::partition_iterator(photo_paths.into_iter(), 16);
+        let mut tasks = Vec::new();
 
         for partition in partitions {
+            if partition.is_empty() {
+                continue;
+            }
+
             let thumbnail_dir: PathBuf = thumbnail_dir.clone();
-            tokio::task::spawn(async move {
+            tasks.push(tokio::task::spawn(async move {
                 for photo in partition {
                     let res: Result<(), anyhow::Error> =
                         Self::gen_thumbnail(&photo, &thumbnail_dir).await;
@@ -683,25 +795,29 @@ impl PhotoManager {
                         // panic!("{:?}", res);
                     }
                 }
-            });
+            }));
         }
+
+        for task in tasks {
+            if let Err(err) = task.await {
+                error!("Thumbnail generation task failed: {:?}", err);
+            }
+        }
+
         Ok(())
     }
 
     async fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
-        let extension = photo_path.extension();
+        let extension = photo_io::thumbnail_extension(photo_path);
 
-        if let (Some(_), Some(extension)) = (file_name, extension) {
-            if extension.to_ascii_lowercase() == "jpg"
-                || extension.to_ascii_lowercase() == "png"
-                || extension.to_ascii_lowercase() == "jpeg"
-            {
+        if file_name.is_some() {
+            if photo_io::is_supported_photo_path(photo_path) {
                 // TODO: incorporate the last modified date of the photo into the hash
                 let hash = hash64(&photo_path.to_string_lossy()).to_string();
 
                 let mut thumbnail_path = thumbnail_dir.join(&hash);
-                thumbnail_path.set_extension(extension);
+                thumbnail_path.set_extension(&extension);
 
                 if thumbnail_path.exists() {
                     // info!("Thumbnail already exists for: {:?}", &photo_path);
@@ -714,13 +830,19 @@ impl PhotoManager {
                     info!("Generating thumbnail: {:?}", &thumbnail_path);
                 }
 
-                let file_bytes = tokio::fs::read(photo_path).await?;
-                let img = spawn_blocking(move || {
-                    image::ImageReader::new(std::io::Cursor::new(file_bytes))
-                        .with_guessed_format()?
-                        .decode()
-                })
-                .await??;
+                let img = if photo_io::is_raw_photo_path(photo_path) {
+                    let photo_path = photo_path.clone();
+                    spawn_blocking(move || photo_io::decode_raw_thumbnail_image(&photo_path))
+                        .await??
+                } else {
+                    let file_bytes = tokio::fs::read(photo_path).await?;
+                    spawn_blocking(move || {
+                        image::ImageReader::new(std::io::Cursor::new(file_bytes))
+                            .with_guessed_format()?
+                            .decode()
+                    })
+                    .await??
+                };
 
                 let color_type = img.color();
 
@@ -811,11 +933,7 @@ impl PhotoManager {
                 // Write destination image as PNG-file
                 let mut result_buf = BufWriter::new(Vec::new());
 
-                match extension
-                    .to_ascii_lowercase()
-                    .to_str()
-                    .ok_or(anyhow!("Failed to convert extension to str"))?
-                {
+                match extension.as_str() {
                     "jpg" | "jpeg" => match dst_image.pixel_type() {
                         fr::PixelType::U8x4 => {
                             let buffer = dst_image.buffer();
@@ -839,14 +957,24 @@ impl PhotoManager {
                             )?;
                         }
                     },
-                    "png" => {
-                        PngEncoder::new(&mut result_buf).write_image(
-                            dst_image.buffer(),
-                            dst_width,
-                            dst_height,
-                            ExtendedColorType::Rgba8,
-                        )?;
-                    }
+                    "png" => match dst_image.pixel_type() {
+                        fr::PixelType::U8x4 => {
+                            PngEncoder::new(&mut result_buf).write_image(
+                                dst_image.buffer(),
+                                dst_width,
+                                dst_height,
+                                ExtendedColorType::Rgba8,
+                            )?;
+                        }
+                        _ => {
+                            PngEncoder::new(&mut result_buf).write_image(
+                                dst_image.buffer(),
+                                dst_width,
+                                dst_height,
+                                ExtendedColorType::Rgb8,
+                            )?;
+                        }
+                    },
                     _ => {
                         return Err(anyhow::anyhow!("Invalid file extension"));
                     }

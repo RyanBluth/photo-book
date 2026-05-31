@@ -8,9 +8,11 @@ use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
 };
-use tokio::fs::File as TokioFile;
+use tokio::{fs::File as TokioFile, task::spawn_blocking};
 
-use crate::{dep, dep_mut, dirs::Dirs, photo_manager::PhotoManager, utils::ExifDateTimeExt};
+use crate::{
+    dep, dep_mut, dirs::Dirs, photo_io, photo_manager::PhotoManager, utils::ExifDateTimeExt,
+};
 
 use eframe::{
     emath::Rot2,
@@ -21,6 +23,9 @@ use chrono::{DateTime, Utc};
 use exif::{In, Reader, Tag, Value};
 use fxhash::hash64;
 use serde::{Deserialize, Serialize};
+
+const DEFAULT_PREVIEW_PHOTO_WIDTH: usize = 3;
+const DEFAULT_PREVIEW_PHOTO_HEIGHT: usize = 2;
 
 macro_rules! metadata_fields {
     ($(($name:ident, $type:ty)),*) => {
@@ -219,22 +224,39 @@ pub struct PhotoMetadata {
 }
 
 impl PhotoMetadata {
+    pub fn pending(path: &PathBuf) -> Self {
+        let mut fields = MetadataCollection::new();
+        fields.insert(PhotoMetadataField::Path(path.clone()));
+
+        Self { fields }
+    }
+
     fn process_metadata(
         path: &PathBuf,
         exif: Result<exif::Exif, exif::Error>,
         size: imagesize::ImageSize,
+        raw_metadata: Option<photo_io::RawPhotoMetadata>,
     ) -> MetadataCollection {
         let mut fields = MetadataCollection::new();
         fields.insert(PhotoMetadataField::Path(path.clone()));
 
-        let width = size.width;
-        let height = size.height;
+        let width = raw_metadata
+            .as_ref()
+            .filter(|metadata| metadata.width > 0)
+            .map_or(size.width, |metadata| metadata.width as usize);
+        let height = raw_metadata
+            .as_ref()
+            .filter(|metadata| metadata.height > 0)
+            .map_or(size.height, |metadata| metadata.height as usize);
+        let has_dimensions = width > 0 && height > 0;
 
-        fields.insert(PhotoMetadataField::Width(width));
-        fields.insert(PhotoMetadataField::Height(height));
+        if has_dimensions {
+            fields.insert(PhotoMetadataField::Width(width));
+            fields.insert(PhotoMetadataField::Height(height));
+        }
 
         if let Ok(exif) = exif {
-            if let Some(field) = exif.get_field(Tag::Orientation, In::PRIMARY) {
+            let orientation_rotation = exif.get_field(Tag::Orientation, In::PRIMARY).map(|field| {
                 let mut rotation = PhotoRotation::Normal;
                 if let Some(value) = field.value.get_uint(0) {
                     match value {
@@ -275,8 +297,15 @@ impl PhotoMetadata {
                         }
                     }
                 }
-                fields.insert(PhotoMetadataField::Rotation(rotation));
+                rotation
+            });
 
+            let rotation = orientation_rotation.unwrap_or(PhotoRotation::Normal);
+            if orientation_rotation.is_some() || has_dimensions {
+                fields.insert(PhotoMetadataField::Rotation(rotation));
+            }
+
+            if has_dimensions {
                 let rect = Rect::from_min_size(
                     Pos2::new(0.0, 0.0),
                     Vec2::new(width as f32, height as f32),
@@ -285,10 +314,6 @@ impl PhotoMetadata {
 
                 fields.insert(PhotoMetadataField::RotatedWidth(rotated_size.x as usize));
                 fields.insert(PhotoMetadataField::RotatedHeight(rotated_size.y as usize));
-            } else {
-                fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
-                fields.insert(PhotoMetadataField::RotatedWidth(width));
-                fields.insert(PhotoMetadataField::RotatedHeight(height));
             }
 
             if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
@@ -361,11 +386,13 @@ impl PhotoMetadata {
                     }
                 }
             }
-        } else {
+        } else if has_dimensions {
             fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
             fields.insert(PhotoMetadataField::RotatedWidth(width));
             fields.insert(PhotoMetadataField::RotatedHeight(height));
         }
+
+        Self::add_raw_metadata_fallbacks(&mut fields, raw_metadata);
 
         fields
     }
@@ -373,26 +400,115 @@ impl PhotoMetadata {
     pub fn from_path(path: &PathBuf) -> Result<Self, PhotoError> {
         let file = File::open(path)?;
         let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
+        let raw_metadata = if photo_io::is_raw_photo_path(path) {
+            photo_io::raw_metadata_from_path(path).ok()
+        } else {
+            None
+        };
         let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
             width: 0,
             height: 0,
         });
 
         Ok(Self {
-            fields: Self::process_metadata(path, exif, size),
+            fields: Self::process_metadata(path, exif, size, raw_metadata),
         })
     }
 
     pub async fn from_path_async(path: &PathBuf) -> Result<Self, PhotoError> {
         let file = TokioFile::open(path).await?;
         let exif = Reader::new().read_from_container(&mut BufReader::new(file.into_std().await));
+        let raw_metadata = if photo_io::is_raw_photo_path(path) {
+            let path = path.clone();
+            spawn_blocking(move || photo_io::raw_metadata_from_path(&path))
+                .await
+                .ok()
+                .and_then(|metadata| metadata.ok())
+        } else {
+            None
+        };
         let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
             width: 0,
             height: 0,
         });
 
         Ok(Self {
-            fields: Self::process_metadata(path, exif, size),
+            fields: Self::process_metadata(path, exif, size, raw_metadata),
+        })
+    }
+
+    fn add_raw_metadata_fallbacks(
+        fields: &mut MetadataCollection,
+        raw_metadata: Option<photo_io::RawPhotoMetadata>,
+    ) {
+        let Some(raw_metadata) = raw_metadata else {
+            return;
+        };
+
+        if fields.get(PhotoMetadataFieldLabel::Camera).is_none()
+            && let Some(camera) = raw_metadata.camera
+        {
+            fields.insert(PhotoMetadataField::Camera(camera));
+        }
+
+        if fields.get(PhotoMetadataFieldLabel::DateTime).is_none()
+            && let Some(date_time) = raw_metadata.date_time
+        {
+            fields.insert(PhotoMetadataField::DateTime(date_time));
+        }
+
+        if fields.get(PhotoMetadataFieldLabel::ISO).is_none()
+            && let Some(iso) = raw_metadata.iso
+        {
+            fields.insert(PhotoMetadataField::ISO(iso));
+        }
+
+        if fields.get(PhotoMetadataFieldLabel::ShutterSpeed).is_none()
+            && let Some(shutter_speed) = raw_metadata
+                .shutter_speed
+                .and_then(Self::seconds_to_rational)
+        {
+            fields.insert(PhotoMetadataField::ShutterSpeed(shutter_speed));
+        }
+
+        if fields.get(PhotoMetadataFieldLabel::Aperture).is_none()
+            && let Some(aperture) = raw_metadata.aperture.and_then(Self::decimal_to_rational)
+        {
+            fields.insert(PhotoMetadataField::Aperture(aperture));
+        }
+
+        if fields.get(PhotoMetadataFieldLabel::FocalLength).is_none()
+            && let Some(focal_length) = raw_metadata
+                .focal_length
+                .and_then(Self::decimal_to_rational)
+        {
+            fields.insert(PhotoMetadataField::FocalLength(focal_length));
+        }
+    }
+
+    fn seconds_to_rational(seconds: f32) -> Option<Rational> {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            return None;
+        }
+
+        if seconds < 1.0 {
+            Some(Rational {
+                num: 1,
+                denom: (1.0 / seconds).round().max(1.0) as i32,
+            })
+        } else {
+            Self::decimal_to_rational(seconds)
+        }
+    }
+
+    fn decimal_to_rational(value: f32) -> Option<Rational> {
+        if !value.is_finite() || value <= 0.0 {
+            return None;
+        }
+
+        Some(Rational {
+            num: (value * 10.0).round() as i32,
+            denom: 10,
         })
     }
 
@@ -481,9 +597,19 @@ pub struct Photo {
 }
 
 impl Photo {
+    pub fn discovered(path: PathBuf) -> Self {
+        let metadata = PhotoMetadata::pending(&path);
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
+        Self {
+            path,
+            metadata,
+            thumbnail_hash,
+        }
+    }
+
     pub fn new(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path(&path)?;
-        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
         Ok(Self {
             path,
             metadata,
@@ -493,12 +619,16 @@ impl Photo {
 
     pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path_async(&path).await?;
-        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
         Ok(Self {
             path,
             metadata,
             thumbnail_hash,
         })
+    }
+
+    fn thumbnail_hash_for_path(path: &PathBuf) -> String {
+        hash64(&path.to_string_lossy()).to_string()
     }
 
     pub fn file_name(&self) -> &str {
@@ -524,12 +654,12 @@ impl Photo {
         let path = Dirs::Thumbnails
             .path()
             .join(&self.thumbnail_hash)
-            .with_extension(self.path.extension().unwrap_or_default());
+            .with_extension(photo_io::thumbnail_extension(&self.path));
         Ok(path)
     }
 
     pub fn max_dimension(&self) -> MaxPhotoDimension {
-        if self.metadata.rotated_width() >= self.metadata.rotated_height() {
+        if self.preview_rotated_width() >= self.preview_rotated_height() {
             MaxPhotoDimension::Width
         } else {
             MaxPhotoDimension::Height
@@ -537,7 +667,27 @@ impl Photo {
     }
 
     pub fn aspect_ratio(&self) -> f32 {
-        self.metadata.rotated_width() as f32 / self.metadata.rotated_height() as f32
+        self.preview_rotated_width() as f32 / self.preview_rotated_height() as f32
+    }
+
+    pub fn preview_width(&self) -> usize {
+        self.metadata.width().max(DEFAULT_PREVIEW_PHOTO_WIDTH)
+    }
+
+    pub fn preview_height(&self) -> usize {
+        self.metadata.height().max(DEFAULT_PREVIEW_PHOTO_HEIGHT)
+    }
+
+    pub fn preview_rotated_width(&self) -> usize {
+        self.metadata
+            .rotated_width()
+            .max(DEFAULT_PREVIEW_PHOTO_WIDTH)
+    }
+
+    pub fn preview_rotated_height(&self) -> usize {
+        self.metadata
+            .rotated_height()
+            .max(DEFAULT_PREVIEW_PHOTO_HEIGHT)
     }
 
     pub fn size_with_max_size(&self, max_size: f32) -> (f32, f32) {

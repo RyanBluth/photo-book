@@ -235,13 +235,7 @@ fn paint_thumbnail(
 }
 
 fn fitted_unrotated_image_size(photo: &Photo, available_size: Vec2) -> Vec2 {
-    let original_size = Vec2::new(
-        photo.metadata.width() as f32,
-        photo.metadata.height() as f32,
-    );
-    if original_size.x <= 0.0 || original_size.y <= 0.0 {
-        return available_size;
-    }
+    let original_size = Vec2::new(photo.preview_width() as f32, photo.preview_height() as f32);
 
     let rotated_size = rotated_bounding_size(photo, original_size);
     let scale = (available_size.x / rotated_size.x).min(available_size.y / rotated_size.y);

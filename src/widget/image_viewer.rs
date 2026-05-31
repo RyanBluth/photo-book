@@ -4,16 +4,7 @@ use eframe::{
     epaint::{Mesh, Pos2, Rect, Shape, Vec2},
 };
 
-use crate::{
-    dep_mut,
-    photo::{
-        MaxPhotoDimension::{Height, Width},
-        Photo,
-    },
-    photo_manager::PhotoManager,
-    theme::color,
-    utils::RectExt,
-};
+use crate::{dep_mut, photo::Photo, photo_manager::PhotoManager, theme::color, utils::RectExt};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageViewerState {
@@ -94,59 +85,15 @@ impl<'a> Widget for ImageViewer<'a> {
 
         let mut image_rect = rect;
 
-        // Adjust the rect aspect ratio
-        match self.photo.max_dimension() {
-            Width => {
-                let aspect_ratio = self.photo.metadata.rotated_height() as f32
-                    / self.photo.metadata.rotated_width() as f32;
-                if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32
-                            / self.photo.metadata.rotated_height() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(adjusted_width, desired_height),
-                    );
-                } else {
-                    let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32
-                            / self.photo.metadata.rotated_width() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(desired_width, adjusted_height),
-                    );
-                }
-            }
-            Height => {
-                let aspect_ratio = self.photo.metadata.rotated_width() as f32
-                    / self.photo.metadata.rotated_height() as f32;
-                if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32
-                            / self.photo.metadata.rotated_height() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(adjusted_width, desired_height),
-                    );
-                } else {
-                    let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32
-                            / self.photo.metadata.rotated_width() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(desired_width, adjusted_height),
-                    );
-                }
-            }
+        // Adjust the rect aspect ratio.
+        let aspect_ratio = self.photo.aspect_ratio();
+        let available_aspect_ratio = image_rect.width() / image_rect.height();
+        let image_size = if available_aspect_ratio > aspect_ratio {
+            Vec2::new(image_rect.height() * aspect_ratio, image_rect.height())
+        } else {
+            Vec2::new(image_rect.width(), image_rect.width() / aspect_ratio)
         };
+        image_rect = Rect::from_center_size(rect.center(), image_size);
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
@@ -241,7 +188,7 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         // If the image is rotated then swap the dimensions because we want egui to rotate the image when drawing
-        if self.photo.metadata.width() != self.photo.metadata.rotated_width() {
+        if self.photo.preview_width() != self.photo.preview_rotated_width() {
             image_rect = Rect::from_center_size(
                 image_rect.center(),
                 Vec2::new(image_rect.height(), image_rect.width()),

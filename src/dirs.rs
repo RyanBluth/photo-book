@@ -8,6 +8,7 @@ const SUBDIR: &str = "photo_album";
 #[derive(Debug, EnumIter)]
 pub enum Dirs {
     Thumbnails,
+    RenderedPhotos,
     Config,
 }
 
@@ -15,6 +16,7 @@ impl Dirs {
     pub fn path(&self) -> PathBuf {
         match *self {
             Dirs::Thumbnails => dirs::cache_dir().unwrap().join(SUBDIR),
+            Dirs::RenderedPhotos => dirs::cache_dir().unwrap().join(SUBDIR).join("rendered"),
             Dirs::Config => dirs::config_dir().unwrap().join(SUBDIR),
         }
     }

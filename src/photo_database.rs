@@ -380,6 +380,7 @@ impl PhotoDatabase {
     pub fn update_photo(&mut self, photo: Photo) {
         if let Some(index) = self.path_map.get_right(&photo.path) {
             self.photos[*index] = photo;
+            self.is_sorted = false;
             self.invalidate_query_cache();
         }
     }

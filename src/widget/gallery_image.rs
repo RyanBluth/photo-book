@@ -35,16 +35,12 @@ impl Widget for GalleryImage {
                 let size = ui.available_size();
 
                 let image_size = match self.photo.max_dimension() {
-                    crate::photo::MaxPhotoDimension::Width => Vec2::new(
-                        size.x,
-                        self.photo.metadata.height() as f32 / self.photo.metadata.width() as f32
-                            * size.x,
-                    ),
-                    crate::photo::MaxPhotoDimension::Height => Vec2::new(
-                        self.photo.metadata.width() as f32 / self.photo.metadata.height() as f32
-                            * size.y,
-                        size.y,
-                    ),
+                    crate::photo::MaxPhotoDimension::Width => {
+                        Vec2::new(size.x, size.x / self.photo.aspect_ratio())
+                    }
+                    crate::photo::MaxPhotoDimension::Height => {
+                        Vec2::new(self.photo.aspect_ratio() * size.y, size.y)
+                    }
                 };
 
                 let (rect, response) = ui.allocate_exact_size(size, Sense::click());

@@ -50,8 +50,8 @@ impl<'a> Crop<'a> {
         let painter: &egui::Painter = ui.painter();
         let mut mesh: Mesh = Mesh::with_texture(texture.id);
 
-        let mesh_rect = if self.crop_state.photo.metadata.width()
-            != self.crop_state.photo.metadata.rotated_width()
+        let mesh_rect = if self.crop_state.photo.preview_width()
+            != self.crop_state.photo.preview_rotated_width()
         {
             Rect::from_center_size(
                 self.crop_state.photo_rect.center(),

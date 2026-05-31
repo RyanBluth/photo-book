@@ -555,14 +555,15 @@ impl OrganizeEditScene {
 
                 if ui.button("Import").clicked() {
                     let import_dir = native_dialog::DialogBuilder::file()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
+                        .add_filter("Images", crate::photo_io::SUPPORTED_PHOTO_EXTENSIONS)
                         .open_single_dir()
                         .show();
 
                     match import_dir {
                         Ok(Some(import_dir)) => {
                             info!("Imported {:?}", import_dir);
-                            let _ = PhotoManager::load_directory(import_dir.clone());
+                            let _ =
+                                PhotoManager::load_directory(import_dir.clone(), ui.ctx().clone());
                         }
                         Err(e) => {
                             error!("Error opening import file dialog: {:?}", e);

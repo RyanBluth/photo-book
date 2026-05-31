@@ -233,8 +233,8 @@ impl Scene for CanvasScene {
                     let photo_rect: Rect = Rect::from_center_size(
                         layer.transform_state.rect.center(),
                         Vec2::new(
-                            photo.photo.metadata.rotated_width() as f32 * rotated_crop.size().x,
-                            photo.photo.metadata.rotated_height() as f32 * rotated_crop.size().y,
+                            photo.photo.preview_rotated_width() as f32 * rotated_crop.size().x,
+                            photo.photo.preview_rotated_height() as f32 * rotated_crop.size().y,
                         ),
                     );
 

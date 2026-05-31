@@ -976,8 +976,8 @@ impl<'a> Canvas<'a> {
                             .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
                         {
                             let photo_size = Vec2::new(
-                                photo.photo.metadata.width() as f32,
-                                photo.photo.metadata.height() as f32,
+                                photo.photo.preview_width() as f32,
+                                photo.photo.preview_height() as f32,
                             );
 
                             // Rotate to match the image rotation so we can calculate the scaled rect correctly

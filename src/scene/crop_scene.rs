@@ -40,7 +40,7 @@ impl CropScene {
             rect.shrink2(Vec2::new(rect.width() * 0.1, rect.height() * 0.1));
 
         let mut photo_rect = padded_available_rect
-            .with_aspect_ratio(photo.metadata.width() as f32 / photo.metadata.height() as f32);
+            .with_aspect_ratio(photo.preview_width() as f32 / photo.preview_height() as f32);
 
         photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
 
