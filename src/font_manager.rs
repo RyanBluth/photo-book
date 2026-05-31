@@ -42,7 +42,7 @@ impl FontManager {
                             .or_default()
                             .push(font_info);
                     }
-                    None => log::error!("Failed to load font: {:?}", handle),
+                    None => log::debug!("Skipped font: {:?}", handle),
                 }
             }
 
@@ -127,9 +127,12 @@ impl FontManager {
             })
             .ok()?;
 
-        let font_index = match handle {
+        let raw_font_index = match handle {
             Handle::Path { font_index, .. } | Handle::Memory { font_index, .. } => *font_index,
         };
+        // Fontconfig stores named-instance bits above the face index; egui only accepts the
+        // sfnt collection face index.
+        let font_index = raw_font_index & 0xffff;
 
         let font_bytes = match handle {
             Handle::Path { path, .. } => std::fs::read(path)
@@ -140,6 +143,10 @@ impl FontManager {
                 .ok()?,
             Handle::Memory { bytes, .. } => (**bytes).clone(),
         };
+        if !Self::is_supported_egui_font_data(&font_bytes) {
+            log::debug!("Skipping unsupported system font: {:?}", handle);
+            return None;
+        }
 
         let family = loaded_font.family_name().to_string();
         let properties = loaded_font.properties();
@@ -148,7 +155,7 @@ impl FontManager {
         let full_name = loaded_font.full_name().to_string();
         let font_data_name = loaded_font
             .postscript_name()
-            .unwrap_or_else(|| format!("{}-{}-{}-{}", family, full_name, weight, font_index));
+            .unwrap_or_else(|| format!("{}-{}-{}-{}", family, full_name, weight, raw_font_index));
         let mut font_data = egui::FontData::from_owned(font_bytes);
         font_data.index = font_index;
 
@@ -161,6 +168,13 @@ impl FontManager {
             font_data_name,
             font_data: Arc::new(font_data),
         })
+    }
+
+    fn is_supported_egui_font_data(bytes: &[u8]) -> bool {
+        matches!(
+            bytes.get(..4),
+            Some(b"\x00\x01\x00\x00" | b"OTTO" | b"true" | b"ttcf")
+        )
     }
 }
 
@@ -190,10 +204,36 @@ impl FontInfo {
     }
 }
 
-#[cfg(all(test, target_os = "macos"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    fn identifies_egui_supported_font_containers() {
+        assert!(FontManager::is_supported_egui_font_data(
+            b"\x00\x01\x00\x00..."
+        ));
+        assert!(FontManager::is_supported_egui_font_data(b"OTTO..."));
+        assert!(FontManager::is_supported_egui_font_data(b"true..."));
+        assert!(FontManager::is_supported_egui_font_data(b"ttcf..."));
+        assert!(!FontManager::is_supported_egui_font_data(
+            b"\x80\x01k\x03%!PS-Adobe"
+        ));
+        assert!(!FontManager::is_supported_egui_font_data(b""));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn loads_linux_system_fonts_without_panicking_on_type1_fonts() {
+        let ctx = egui::Context::default();
+        let mut font_manager = FontManager::new();
+
+        font_manager.load_fonts(&ctx);
+
+        assert_eq!(font_manager.loading_state, LoadingState::Loaded);
+    }
+
+    #[cfg(target_os = "macos")]
     #[test]
     fn loads_macos_system_fonts() {
         let ctx = egui::Context::default();
