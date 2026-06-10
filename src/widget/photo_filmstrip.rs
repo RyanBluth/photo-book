@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{ops::Range, path::PathBuf};
 
 use egui::{
     Align, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind,
@@ -17,6 +17,7 @@ const RESIZE_LINE_HEIGHT: f32 = 2.0;
 const CELL_ASPECT_RATIO: f32 = 184.0 / 148.0;
 const CELL_SPACING: f32 = 12.0;
 const CELL_PADDING: f32 = 12.0;
+const VIRTUALIZED_OVERSCAN_CELLS: usize = 2;
 
 #[derive(Debug, Clone)]
 pub struct PhotoFilmstripState {
@@ -93,38 +94,56 @@ impl<'a> PhotoFilmstrip<'a> {
                 .id_salt("viewer_photo_filmstrip")
                 .max_height(content_rect.height())
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.add_space(edge_spacing);
+                .show_viewport(ui, |ui, viewport| {
+                    let total_width = edge_spacing * 2.0 + row_width;
+                    ui.set_min_size(Vec2::new(total_width, cell_height));
 
-                        for photo in photos {
-                            let is_current = photo.path == self.current_photo.path;
-                            let response =
-                                thumbnail_cell(ui, &photo, is_current, cell_width, cell_height);
+                    if let Some(current_index) = photos
+                        .iter()
+                        .position(|photo| photo.path == self.current_photo.path)
+                    {
+                        let current_rect =
+                            cell_rect(ui, current_index, edge_spacing, cell_width, cell_height);
+                        if self.state.centered_photo_path.as_ref() != Some(&self.current_photo.path)
+                        {
+                            ui.ctx().global_style_mut(|style| {
+                                style.scroll_animation = ScrollAnimation::none();
+                            });
+                            ui.scroll_to_rect(current_rect, Some(Align::Center));
+                            self.state.centered_photo_path = Some(self.current_photo.path.clone());
+                        }
+                    }
 
-                            if is_current
-                                && self.state.centered_photo_path.as_ref() != Some(&photo.path)
-                            {
-                                ui.ctx().global_style_mut(|style| {
-                                    style.scroll_animation = ScrollAnimation::none();
-                                });
-                                response.scroll_to_me(Some(Align::Center));
-                                self.state.centered_photo_path = Some(photo.path.clone());
-                            }
+                    for index in
+                        visible_photo_range(viewport, photos.len(), edge_spacing, cell_width)
+                    {
+                        let photo = &photos[index];
+                        let rect = cell_rect(ui, index, edge_spacing, cell_width, cell_height);
+                        let response = ui
+                            .push_id(("viewer_photo_filmstrip_cell", &photo.path), |ui| {
+                                ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                                    thumbnail_cell(
+                                        ui,
+                                        photo,
+                                        photo.path == self.current_photo.path,
+                                        cell_width,
+                                        cell_height,
+                                    )
+                                })
+                                .inner
+                            })
+                            .inner;
 
-                            if response.hovered() {
-                                dep_mut!(PhotoManager, |photo_manager| {
-                                    let _ = photo_manager.preload_texture(&photo, ui.ctx());
-                                });
-                            }
-
-                            if response.clicked() {
-                                selected_photo = Some(photo);
-                            }
+                        if response.hovered() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                let _ = photo_manager.preload_texture(photo, ui.ctx());
+                            });
                         }
 
-                        ui.add_space(edge_spacing);
-                    });
+                        if response.clicked() {
+                            selected_photo = Some(photo.clone());
+                        }
+                    }
                 });
         });
 
@@ -166,6 +185,39 @@ fn thumbnail_row_width(photo_count: usize, cell_width: f32) -> f32 {
     photo_count as f32 * cell_width + photo_count.saturating_sub(1) as f32 * CELL_SPACING
 }
 
+fn visible_photo_range(
+    viewport: Rect,
+    photo_count: usize,
+    edge_spacing: f32,
+    cell_width: f32,
+) -> Range<usize> {
+    if photo_count == 0 {
+        return 0..0;
+    }
+
+    let cell_stride = cell_width + CELL_SPACING;
+    let first_visible = ((viewport.min.x - edge_spacing) / cell_stride).floor() as isize - 1;
+    let last_visible = ((viewport.max.x - edge_spacing) / cell_stride).ceil() as isize + 1;
+
+    let start = first_visible
+        .saturating_sub(VIRTUALIZED_OVERSCAN_CELLS as isize)
+        .clamp(0, photo_count as isize) as usize;
+    let end = last_visible
+        .saturating_add(VIRTUALIZED_OVERSCAN_CELLS as isize)
+        .clamp(0, photo_count as isize) as usize;
+
+    start..end.max(start)
+}
+
+fn cell_rect(ui: &Ui, index: usize, edge_spacing: f32, cell_width: f32, cell_height: f32) -> Rect {
+    let cell_stride = cell_width + CELL_SPACING;
+    let x = ui.max_rect().left() + edge_spacing + index as f32 * cell_stride;
+    Rect::from_min_size(
+        Pos2::new(x, ui.max_rect().top()),
+        Vec2::new(cell_width, cell_height),
+    )
+}
+
 fn thumbnail_cell(
     ui: &mut Ui,
     photo: &Photo,
@@ -198,7 +250,6 @@ fn thumbnail_cell(
     let thumbnail = dep_mut!(PhotoManager, |photo_manager| {
         photo_manager.thumbnail_texture_for(photo, ui.ctx())
     });
-
     paint_thumbnail(ui, photo, image_bounds, thumbnail);
 
     response.on_hover_text(photo.path.display().to_string())

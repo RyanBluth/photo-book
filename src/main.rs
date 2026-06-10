@@ -288,6 +288,9 @@ impl eframe::App for PhotoBookApp {
             ctx.input_mut(|input| {
                 input.max_texture_side = Self::get_max_texture_size();
             });
+            ctx.options_mut(|options| {
+                options.reduce_texture_memory = true;
+            });
 
             self.loaded_initial_scene = true;
             self.scene_manager = Self::initialize_scene_manager();
