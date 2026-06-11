@@ -12,7 +12,7 @@ use crate::{
     },
     photo_manager::PhotoManager,
     project::{Project, ProjectError},
-    scene::{organize_edit_scene::OrganizeEditScene, organize_scene::GalleryScene},
+    scene::{gallery_scene::GalleryScene, organize_edit_scene::OrganizeEditScene},
     selection_manager::SelectionManager,
 };
 

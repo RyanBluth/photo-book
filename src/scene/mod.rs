@@ -8,14 +8,14 @@ use crate::{
 };
 
 use self::{
-    canvas_scene::CanvasScene, organize_edit_scene::OrganizeEditScene,
-    organize_scene::GalleryScene, viewer_scene::ViewerScene,
+    canvas_scene::CanvasScene, gallery_scene::GalleryScene, organize_edit_scene::OrganizeEditScene,
+    viewer_scene::ViewerScene,
 };
 
 pub mod canvas_scene;
 pub mod crop_scene;
+pub mod gallery_scene;
 pub mod organize_edit_scene;
-pub mod organize_scene;
 pub mod viewer_scene;
 
 pub enum SceneResponse {

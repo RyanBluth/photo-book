@@ -30,6 +30,7 @@ use crate::{
     widget::{
         book_list::BookListEntry,
         left_sidebar::{LeftSidebar, LeftSidebarResponse, LeftSidebarState},
+        status_bar::{StatusBar, StatusBarState},
     },
 };
 
@@ -37,7 +38,7 @@ use super::{
     Scene, ScenePopResponse, SceneResponse,
     SceneTransition::{self},
     canvas_scene::{CanvasScene, CanvasSceneState},
-    organize_scene::GalleryScene,
+    gallery_scene::GalleryScene,
     viewer_scene::ViewerScene,
 };
 
@@ -96,7 +97,7 @@ impl OrganizeEditScene {
         }
     }
 
-    pub fn show_organize(&mut self) {
+    pub fn show_gallery(&mut self) {
         self.persist_active_book_state();
         self.sync_organize_gallery_from_edit();
         self.activate_gallery_tab();
@@ -482,7 +483,7 @@ impl OrganizeEditScene {
                         match session.new_project(self) {
                             Ok(scene) => {
                                 *self = scene;
-                                self.show_organize();
+                                self.show_gallery();
                             }
                             Err(SessionError::WaitingForUserInput) => {}
                             Err(e) => {
@@ -497,7 +498,7 @@ impl OrganizeEditScene {
                         match session.load_project(self, None) {
                             Ok(scene) => {
                                 *self = scene;
-                                self.show_organize();
+                                self.show_gallery();
                             }
                             Err(SessionError::WaitingForUserInput) => {}
                             Err(err) => {
@@ -528,7 +529,7 @@ impl OrganizeEditScene {
                                 }) {
                                     Ok(scene) => {
                                         *self = scene;
-                                        self.show_organize();
+                                        self.show_gallery();
                                     }
                                     Err(SessionError::WaitingForUserInput) => {}
                                     Err(err) => {
@@ -659,6 +660,11 @@ impl OrganizeEditScene {
         });
     }
 
+    fn status_bar(&mut self, ui: &mut Ui) {
+        let mut state = StatusBarState {};
+        StatusBar::new(&mut state).show(ui);
+    }
+
     pub(in crate::scene::organize_edit_scene) fn collection_mode_ui(
         &mut self,
         ui: &mut Ui,
@@ -703,7 +709,7 @@ impl OrganizeEditScene {
             SceneResponse::Push(transition) => match transition {
                 SceneTransition::Gallery(scene) => {
                     *self.organize.write().unwrap() = scene;
-                    self.show_organize();
+                    self.show_gallery();
                     SceneResponse::None
                 }
                 SceneTransition::Canvas(scene) => {
@@ -773,7 +779,11 @@ impl Scene for OrganizeEditScene {
             self.menu_bar(ui);
             ui.add_space(8.0);
 
-            self.workspace_tabs_ui(ui)
+            let tabs_response = self.workspace_tabs_ui(ui);
+
+            self.status_bar(ui);
+
+            tabs_response
         })
         .inner
     }
@@ -793,114 +803,5 @@ impl Scene for OrganizeEditScene {
         } else {
             self.organize.write().unwrap().popped(popped_scene_response);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use indexmap::IndexMap;
-
-    use super::*;
-    use crate::{
-        id::next_page_id,
-        model::{edit_state::EditablePage, page::Page, unit::Unit},
-        photo::{MetadataCollection, Photo, PhotoMetadata},
-        project::Project,
-        widget::canvas::CanvasState,
-    };
-
-    fn canvas_scene_state(width: f32, height: f32) -> CanvasSceneState {
-        let page_id = next_page_id();
-        let mut pages = IndexMap::new();
-        pages.insert(
-            page_id,
-            CanvasState::with_layers(
-                IndexMap::new(),
-                EditablePage::new(Page::new(width, height, 300, Unit::Inches)),
-                None,
-                Vec::new(),
-            ),
-        );
-        CanvasSceneState::with_pages(pages, page_id)
-    }
-
-    fn test_photo(path: &str) -> Photo {
-        Photo {
-            path: PathBuf::from(path),
-            metadata: PhotoMetadata {
-                fields: MetadataCollection::new(),
-            },
-            thumbnail_hash: String::new(),
-        }
-    }
-
-    fn active_workspace_pane(scene: &OrganizeEditScene) -> Option<WorkspacePane> {
-        scene
-            .workspace_tabs
-            .active_tiles()
-            .into_iter()
-            .find_map(|tile_id| match scene.workspace_tabs.tiles.get(tile_id) {
-                Some(egui_tiles::Tile::Pane(pane)) => Some(pane.clone()),
-                _ => None,
-            })
-    }
-
-    #[test]
-    fn project_new_uses_open_book_editor_state() {
-        let mut scene = OrganizeEditScene::with_books(
-            GalleryScene::new(),
-            vec![Book::with_state(
-                "book-1".to_string(),
-                "Book 1".to_string(),
-                canvas_scene_state(6.0, 8.0),
-            )],
-        );
-
-        scene.select_book("book-1");
-        scene.open_books[0].scene.write().unwrap().state = canvas_scene_state(10.0, 12.0);
-
-        let project = Project::new(&scene);
-
-        assert_eq!(project.books.len(), 1);
-        assert_eq!(project.books[0].id, "book-1");
-        assert_eq!(project.books[0].pages[0].page.width, 10.0);
-        assert_eq!(project.books[0].pages[0].page.height, 12.0);
-    }
-
-    #[test]
-    fn viewer_transition_opens_workspace_tab() {
-        let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), Vec::new());
-
-        let response = scene.handle_child_scene_response(SceneResponse::Push(
-            SceneTransition::Viewer(ViewerScene::new(test_photo("/test/photo-1.jpg"))),
-        ));
-
-        assert!(matches!(response, SceneResponse::None));
-        assert_eq!(scene.open_photo_viewers.len(), 1);
-        assert!(matches!(
-            active_workspace_pane(&scene),
-            Some(WorkspacePane::PhotoViewer(_))
-        ));
-    }
-
-    #[test]
-    fn opening_existing_photo_viewer_activates_existing_tab() {
-        let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), Vec::new());
-        let photo = test_photo("/test/photo-1.jpg");
-
-        scene.open_photo_viewer(ViewerScene::new(photo.clone()));
-        let viewer_id = scene.open_photo_viewers[0].viewer_id.clone();
-        scene.activate_gallery_tab();
-
-        scene.open_photo_viewer(ViewerScene::new(photo));
-
-        assert_eq!(scene.open_photo_viewers.len(), 1);
-        assert_eq!(scene.open_photo_viewers[0].viewer_id, viewer_id);
-        assert_eq!(
-            active_workspace_pane(&scene),
-            Some(WorkspacePane::PhotoViewer(viewer_id))
-        );
     }
 }

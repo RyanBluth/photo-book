@@ -18,8 +18,8 @@ use crate::{
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
         canvas_scene::CanvasSceneState,
+        gallery_scene::GalleryScene,
         organize_edit_scene::{Book as AppBook, OrganizeEditScene},
-        organize_scene::GalleryScene,
     },
     template::{
         Template as AppTemplate, TemplateRegion as AppTemplateRegion,

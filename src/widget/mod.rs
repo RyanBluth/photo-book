@@ -21,6 +21,7 @@ pub mod placeholder;
 pub mod sectioned_sidebar;
 pub mod segment_control;
 pub mod spacer;
+pub mod status_bar;
 pub mod tag_chips;
 pub mod templates;
 pub mod toolbar;

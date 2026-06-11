@@ -11,6 +11,7 @@ pub mod color {
     pub const SUCCESS: Color32 = Color32::GREEN;
     pub const ERROR: Color32 = Color32::RED;
 
+    pub const SURFACE_EXTRA_DARK: Color32 = Color32::from_gray(15);
     pub const SURFACE_DARK: Color32 = Color32::from_gray(30);
     pub const SURFACE: Color32 = Color32::from_gray(40);
     pub const SURFACE_MUTED: Color32 = Color32::from_gray(50);
