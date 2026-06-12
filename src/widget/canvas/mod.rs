@@ -31,6 +31,7 @@ use crate::{
     cursor_manager::CursorManager,
     debug::DebugSettings,
     dep, dep_mut,
+    font_manager::FontManager,
     id::LayerId,
     layout::apply_layout_node,
     photo_manager::PhotoManager,
@@ -1401,9 +1402,11 @@ impl<'a> Canvas<'a> {
 
             frame.show(ui, |ui| {
                 // Configure the text edit using the current text's properties
+                let text_edit_font_id =
+                    FontManager::available_font_id(ui.ctx(), font_id, font_size);
                 let text_edit = egui::TextEdit::multiline(text)
                     .id("text-edit".into())
-                    .font(FontId::new(font_size, font_id.family.clone()))
+                    .font(text_edit_font_id)
                     .text_color(color)
                     .min_size(rect.size())
                     .desired_width(rect.width())
@@ -1456,17 +1459,8 @@ impl<'a> Canvas<'a> {
 
         // Create the text layout with wrapping
         let wrap_width = rect.width();
-        let galley = ui.fonts_mut(|f| {
-            f.layout(
-                text.clone(),
-                FontId {
-                    size: font_size,
-                    family: font_id.family.clone(),
-                },
-                color,
-                wrap_width,
-            )
-        });
+        let layout_font_id = FontManager::available_font_id(ui.ctx(), font_id, font_size);
+        let galley = ui.fonts_mut(|f| f.layout(text.clone(), layout_font_id, color, wrap_width));
 
         // For rotation, we need to think about the galley (actual text) size vs the rect size
         // The galley is positioned within the rect according to alignment
