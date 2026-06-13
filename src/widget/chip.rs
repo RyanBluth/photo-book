@@ -247,6 +247,8 @@ pub fn chip_selectable_closable(ui: &mut Ui, text: &str, selected: bool) -> Chip
 mod tests {
     use super::*;
     use egui_kittest::Harness;
+    #[cfg(all(feature = "wgpu", feature = "snapshot"))]
+    use egui_kittest::SnapshotResults;
 
     #[test]
     fn test_basic_chip() {
@@ -341,12 +343,15 @@ mod tests {
     #[cfg(all(feature = "wgpu", feature = "snapshot"))]
     #[test]
     fn test_chip_visual_snapshots() {
+        let mut results = SnapshotResults::new();
+
         // Basic chip
         let mut harness = Harness::new_ui(|ui| {
             chip(ui, "Basic");
         });
         harness.fit_contents();
         harness.snapshot("chip_basic");
+        results.extend_harness(&mut harness);
 
         // Selected chip
         let mut harness = Harness::new_ui(|ui| {
@@ -354,6 +359,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_selected");
+        results.extend_harness(&mut harness);
 
         // Unselected chip
         let mut harness = Harness::new_ui(|ui| {
@@ -361,6 +367,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_unselected");
+        results.extend_harness(&mut harness);
 
         // Closable chip
         let mut harness = Harness::new_ui(|ui| {
@@ -368,6 +375,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_closable");
+        results.extend_harness(&mut harness);
 
         // Selected and closable chip
         let mut harness = Harness::new_ui(|ui| {
@@ -375,6 +383,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_selected_closable");
+        results.extend_harness(&mut harness);
 
         // Multiple chips with different states
         let mut harness = Harness::new_ui(|ui| {
@@ -387,6 +396,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_multiple_states");
+        results.extend_harness(&mut harness);
 
         // Test various text lengths
         let mut harness = Harness::new_ui(|ui| {
@@ -399,5 +409,8 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_text_variations");
+        results.extend_harness(&mut harness);
+
+        results.unwrap();
     }
 }

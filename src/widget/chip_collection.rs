@@ -118,7 +118,7 @@ pub fn chip_collection<T: PartialEq + ToString>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui_kittest::Harness;
+    use egui_kittest::{Harness, SnapshotResults};
 
     #[test]
     fn test_chip_collection_basic() {
@@ -212,6 +212,8 @@ mod tests {
 
     #[test]
     fn test_chip_collection_visual_snapshots() {
+        let mut results = SnapshotResults::new();
+
         // Basic chip collection
         let items = vec!["Photo", "Travel", "Nature"];
         let mut harness = Harness::new_ui(|ui| {
@@ -219,6 +221,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_basic");
+        results.extend_harness(&mut harness);
 
         // Chip collection with selection
         let items = vec!["All", "Recent", "Favorites", "Shared"];
@@ -228,6 +231,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_selected");
+        results.extend_harness(&mut harness);
 
         // Chip collection with close buttons
         let items = vec!["Tag1", "Tag2", "Tag3", "Tag4"];
@@ -236,6 +240,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_closable");
+        results.extend_harness(&mut harness);
 
         // Chip collection with both selection and close buttons
         let items = vec!["Photography", "Travel", "Nature", "Portrait"];
@@ -245,6 +250,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_selected_closable");
+        results.extend_harness(&mut harness);
 
         // Large collection that wraps
         let items = vec![
@@ -269,6 +275,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_wrapping");
+        results.extend_harness(&mut harness);
 
         // Empty collection
         let items: Vec<&str> = vec![];
@@ -277,6 +284,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_empty");
+        results.extend_harness(&mut harness);
 
         // Single item
         let items = vec!["Single"];
@@ -285,5 +293,8 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("chip_collection_single");
+        results.extend_harness(&mut harness);
+
+        results.unwrap();
     }
 }

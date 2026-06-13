@@ -312,7 +312,7 @@ impl eframe::App for PhotoBookApp {
         // This is a top-level panel, so show() with ctx is still the correct approach.
         // Silencing this warning until the egui API is updated or clarified.
         #[allow(deprecated)]
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::no_frame().show(ctx, |ui| {
             self.scene_manager.ui(ui);
 
             dep_mut!(ModalManager, |modal_manager| {

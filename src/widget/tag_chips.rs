@@ -132,8 +132,9 @@ impl<'a> TagChips<'a> {
                             ui.label("Selected tags:");
                             ui.add_space(4.0);
 
-                            let selected_vec: Vec<String> =
+                            let mut selected_vec: Vec<String> =
                                 self.selected_tags.iter().cloned().collect();
+                            selected_vec.sort();
                             let selected_chip_response = chip_collection(
                                 ui,
                                 &selected_vec,
@@ -195,7 +196,7 @@ impl<'a> TagChips<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui_kittest::Harness;
+    use egui_kittest::{Harness, SnapshotResults};
 
     #[test]
     fn test_tag_chips_with_input() {
@@ -261,6 +262,8 @@ mod tests {
 
     #[test]
     fn test_tag_chips_visual_snapshots() {
+        let mut results = SnapshotResults::new();
+
         // With input and existing tags
         let mut selected_tags = HashSet::new();
         selected_tags.insert("Photography".to_string());
@@ -277,6 +280,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("tag_chips_with_input");
+        results.extend_harness(&mut harness);
 
         // Without input (filter mode)
         let mut selected_tags = HashSet::new();
@@ -297,6 +301,7 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("tag_chips_without_input");
+        results.extend_harness(&mut harness);
 
         // Empty state
         let mut selected_tags = HashSet::new();
@@ -309,5 +314,8 @@ mod tests {
         });
         harness.fit_contents();
         harness.snapshot("tag_chips_empty");
+        results.extend_harness(&mut harness);
+
+        results.unwrap();
     }
 }

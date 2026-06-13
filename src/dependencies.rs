@@ -155,14 +155,13 @@ enum LockType {
 #[cfg(feature = "debug_dependency_locks")]
 #[derive(Debug, Clone)]
 struct LockInfo {
-    pub lock_type: LockType,
-    pub backtrace: Backtrace,
-    pub singleton_name: &'static str,
-    pub thread_id: std::thread::ThreadId,
+    lock_type: LockType,
+    backtrace: Backtrace,
+    singleton_name: &'static str,
 }
 
 #[cfg(feature = "debug_dependency_locks")]
-pub static ACTIVE_LOCKS: Lazy<Mutex<HashMap<(std::thread::ThreadId, usize), LockInfo>>> =
+static ACTIVE_LOCKS: Lazy<Mutex<HashMap<(std::thread::ThreadId, usize), LockInfo>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(feature = "debug_dependency_locks")]
@@ -172,25 +171,8 @@ pub struct LockGuard<'a, T> {
 
 #[cfg(feature = "debug_dependency_locks")]
 impl<'a, T> LockGuard<'a, T> {
-    pub fn new(singleton: &'a Singleton<T>) -> Self {
-        let lock_id = singleton.lock_id();
-        let thread_id = std::thread::current().id();
-        let backtrace = Backtrace::new();
-        let lock_type = if singleton.is_read_locked() {
-            LockType::Read
-        } else {
-            LockType::Write
-        };
-        let info = LockInfo {
-            lock_type,
-            backtrace,
-            singleton_name: singleton.name(),
-            thread_id,
-        };
-        ACTIVE_LOCKS
-            .lock()
-            .unwrap()
-            .insert((thread_id, lock_id), info);
+    fn new(singleton: &'a Singleton<T>, lock_type: LockType) -> Self {
+        singleton.register_lock(lock_type);
         Self { singleton }
     }
 }
@@ -265,7 +247,6 @@ impl<T> Singleton<T> {
                 lock_type,
                 backtrace: Backtrace::new(),
                 singleton_name: self.name,
-                thread_id,
             },
         );
     }
@@ -280,14 +261,12 @@ impl<T> Singleton<T> {
     }
 
     pub fn with_lock<R>(&self, op: impl FnOnce(&RwLockReadGuard<'_, T>) -> R) -> R {
-        self.register_lock(LockType::Read);
-        let _guard = LockGuard { singleton: self };
+        let _guard = LockGuard::new(self, LockType::Read);
         op(&self.lock.read())
     }
 
     pub fn with_lock_mut<R>(&self, op: impl FnOnce(&mut RwLockWriteGuard<'_, T>) -> R) -> R {
-        self.register_lock(LockType::Write);
-        let _guard = LockGuard { singleton: self };
+        let _guard = LockGuard::new(self, LockType::Write);
         op(&mut self.lock.write())
     }
 }

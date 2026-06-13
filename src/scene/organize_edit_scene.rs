@@ -476,57 +476,29 @@ impl OrganizeEditScene {
     }
 
     fn menu_bar(&mut self, ui: &mut Ui) {
-        egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
-                if ui.button("New Collection").clicked() {
-                    dep_mut!(Session, |session| {
-                        match session.new_project(self) {
-                            Ok(scene) => {
-                                *self = scene;
-                                self.show_gallery();
-                            }
-                            Err(SessionError::WaitingForUserInput) => {}
-                            Err(e) => {
-                                error!("Error creating new collection: {:?}", e);
-                            }
+        egui::Frame::NONE
+            .inner_margin(egui::Margin::symmetric(8, 4))
+            .show(ui, |ui| {
+                egui::MenuBar::new().ui(ui, |ui| {
+                    ui.menu_button("File", |ui| {
+                        if ui.button("New Collection").clicked() {
+                            dep_mut!(Session, |session| {
+                                match session.new_project(self) {
+                                    Ok(scene) => {
+                                        *self = scene;
+                                        self.show_gallery();
+                                    }
+                                    Err(SessionError::WaitingForUserInput) => {}
+                                    Err(e) => {
+                                        error!("Error creating new collection: {:?}", e);
+                                    }
+                                }
+                            })
                         }
-                    })
-                }
 
-                if ui.button("Open Collection").clicked() {
-                    dep_mut!(Session, |session| {
-                        match session.load_project(self, None) {
-                            Ok(scene) => {
-                                *self = scene;
-                                self.show_gallery();
-                            }
-                            Err(SessionError::WaitingForUserInput) => {}
-                            Err(err) => {
-                                error!("Error loading collection: {:?}", err);
-
-                                ModalManager::push(BasicModal::new(
-                                    "Error",
-                                    format!("Error loading collection: {:?}", err),
-                                    "OK",
-                                ));
-                            }
-                        }
-                    })
-                }
-
-                ui.menu_button("Open Recent", |ui| {
-                    let recents = dep_mut!(AutoPersisting<Config>, |config| {
-                        config.read().unwrap().recent_projects().to_vec()
-                    });
-
-                    if recents.is_empty() {
-                        ui.label("No recent collections");
-                    } else {
-                        for recent in &recents {
-                            if ui.button(recent.display().to_string()).clicked() {
-                                match dep_mut!(Session, |session| {
-                                    session.load_project(self, Some(recent.clone()))
-                                }) {
+                        if ui.button("Open Collection").clicked() {
+                            dep_mut!(Session, |session| {
+                                match session.load_project(self, None) {
                                     Ok(scene) => {
                                         *self = scene;
                                         self.show_gallery();
@@ -542,122 +514,156 @@ impl OrganizeEditScene {
                                         ));
                                     }
                                 }
+                            })
+                        }
+
+                        ui.menu_button("Open Recent", |ui| {
+                            let recents = dep_mut!(AutoPersisting<Config>, |config| {
+                                config.read().unwrap().recent_projects().to_vec()
+                            });
+
+                            if recents.is_empty() {
+                                ui.label("No recent collections");
+                            } else {
+                                for recent in &recents {
+                                    if ui.button(recent.display().to_string()).clicked() {
+                                        match dep_mut!(Session, |session| {
+                                            session.load_project(self, Some(recent.clone()))
+                                        }) {
+                                            Ok(scene) => {
+                                                *self = scene;
+                                                self.show_gallery();
+                                            }
+                                            Err(SessionError::WaitingForUserInput) => {}
+                                            Err(err) => {
+                                                error!("Error loading collection: {:?}", err);
+
+                                                ModalManager::push(BasicModal::new(
+                                                    "Error",
+                                                    format!("Error loading collection: {:?}", err),
+                                                    "OK",
+                                                ));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        if ui.button("Save").clicked() {
+                            self.persist_active_book_state();
+                            if let Err(err) =
+                                dep_mut!(Session, |session| session.save_project(&self))
+                            {
+                                error!("Error saving collection: {:?}", err);
                             }
                         }
-                    }
-                });
 
-                if ui.button("Save").clicked() {
-                    self.persist_active_book_state();
-                    if let Err(err) = dep_mut!(Session, |session| session.save_project(&self)) {
-                        error!("Error saving collection: {:?}", err);
-                    }
-                }
+                        if ui.button("Import").clicked() {
+                            let import_dir = native_dialog::DialogBuilder::file()
+                                .add_filter("Images", &["png", "jpg", "jpeg"])
+                                .open_single_dir()
+                                .show();
 
-                if ui.button("Import").clicked() {
-                    let import_dir = native_dialog::DialogBuilder::file()
-                        .add_filter("Images", &["png", "jpg", "jpeg"])
-                        .open_single_dir()
-                        .show();
-
-                    match import_dir {
-                        Ok(Some(import_dir)) => {
-                            info!("Imported {:?}", import_dir);
-                            let _ = PhotoManager::load_directory(import_dir.clone());
-                        }
-                        Err(e) => {
-                            error!("Error opening import file dialog: {:?}", e);
-                        }
-                        Ok(None) => {
-                            info!("No import directory selected");
-                        }
-                    }
-                }
-
-                if ui.button("Export").clicked() {
-                    self.persist_active_book_state();
-
-                    let export_path = native_dialog::DialogBuilder::file()
-                        .set_filename("export.pdf")
-                        .save_single_file()
-                        .show();
-
-                    match export_path {
-                        Ok(Some(export_path)) => {
-                            let directory = export_path.parent().unwrap();
-                            let file_name = export_path.file_name().unwrap();
-
-                            match self.export_book_state() {
-                                Some(book_state) => {
-                                    dep_mut!(Exporter, |exporter| {
-                                        exporter.export(
-                                            ui.ctx().clone(),
-                                            book_state
-                                                .pages_state
-                                                .pages
-                                                .values()
-                                                .cloned()
-                                                .collect::<Vec<_>>(),
-                                            directory.into(),
-                                            file_name.to_str().unwrap(),
-                                        );
-                                    });
+                            match import_dir {
+                                Ok(Some(import_dir)) => {
+                                    info!("Imported {:?}", import_dir);
+                                    let _ = PhotoManager::load_directory(import_dir.clone());
                                 }
-                                None => {
-                                    ModalManager::push(BasicModal::new(
-                                        "Error",
-                                        "Select a book to export",
-                                        "OK",
-                                    ));
+                                Err(e) => {
+                                    error!("Error opening import file dialog: {:?}", e);
                                 }
-                            };
+                                Ok(None) => {
+                                    info!("No import directory selected");
+                                }
+                            }
                         }
-                        Err(e) => {
-                            error!("Error opening export file dialog: {:?}", e);
-                        }
-                        Ok(None) => {
-                            info!("No export directory selected");
-                        }
-                    }
-                }
-            });
 
-            ui.menu_button("Group By", |ui| {
-                dep_mut!(PhotoManager, |photo_manager| {
-                    if ui.button("Date").clicked() {
-                        photo_manager.group_photos_by(PhotoGrouping::Date);
-                    }
-                    if ui.button("Rating").clicked() {
-                        photo_manager.group_photos_by(PhotoGrouping::Rating);
-                    }
+                        if ui.button("Export").clicked() {
+                            self.persist_active_book_state();
+
+                            let export_path = native_dialog::DialogBuilder::file()
+                                .set_filename("export.pdf")
+                                .save_single_file()
+                                .show();
+
+                            match export_path {
+                                Ok(Some(export_path)) => {
+                                    let directory = export_path.parent().unwrap();
+                                    let file_name = export_path.file_name().unwrap();
+
+                                    match self.export_book_state() {
+                                        Some(book_state) => {
+                                            dep_mut!(Exporter, |exporter| {
+                                                exporter.export(
+                                                    ui.ctx().clone(),
+                                                    book_state
+                                                        .pages_state
+                                                        .pages
+                                                        .values()
+                                                        .cloned()
+                                                        .collect::<Vec<_>>(),
+                                                    directory.into(),
+                                                    file_name.to_str().unwrap(),
+                                                );
+                                            });
+                                        }
+                                        None => {
+                                            ModalManager::push(BasicModal::new(
+                                                "Error",
+                                                "Select a book to export",
+                                                "OK",
+                                            ));
+                                        }
+                                    };
+                                }
+                                Err(e) => {
+                                    error!("Error opening export file dialog: {:?}", e);
+                                }
+                                Ok(None) => {
+                                    info!("No export directory selected");
+                                }
+                            }
+                        }
+                    });
+
+                    ui.menu_button("Group By", |ui| {
+                        dep_mut!(PhotoManager, |photo_manager| {
+                            if ui.button("Date").clicked() {
+                                photo_manager.group_photos_by(PhotoGrouping::Date);
+                            }
+                            if ui.button("Rating").clicked() {
+                                photo_manager.group_photos_by(PhotoGrouping::Rating);
+                            }
+                        });
+                    });
+
+                    ui.menu_button("Collection Settings", |ui| {
+                        if ui.button("Page Settings").clicked() {
+                            self.page_settings_modal_id =
+                                Some(ModalManager::push(PageSettingsModal::new()));
+                        }
+                    });
+
+                    ui.menu_button("Debug", |ui| {
+                        dep_mut!(DebugSettings, |debug_settings| {
+                            fn enabled_disabled_suffix(enabled: bool) -> &'static str {
+                                if enabled { "(Enabled)" } else { "(Disabled)" }
+                            }
+
+                            if ui
+                                .button(format!(
+                                    "Quick Layout Numbers:{}",
+                                    enabled_disabled_suffix(debug_settings.show_quick_layout_order)
+                                ))
+                                .clicked()
+                            {
+                                debug_settings.show_quick_layout_order.toggle();
+                            }
+                        });
+                    })
                 });
             });
-
-            ui.menu_button("Collection Settings", |ui| {
-                if ui.button("Page Settings").clicked() {
-                    self.page_settings_modal_id =
-                        Some(ModalManager::push(PageSettingsModal::new()));
-                }
-            });
-
-            ui.menu_button("Debug", |ui| {
-                dep_mut!(DebugSettings, |debug_settings| {
-                    fn enabled_disabled_suffix(enabled: bool) -> &'static str {
-                        if enabled { "(Enabled)" } else { "(Disabled)" }
-                    }
-
-                    if ui
-                        .button(format!(
-                            "Quick Layout Numbers:{}",
-                            enabled_disabled_suffix(debug_settings.show_quick_layout_order)
-                        ))
-                        .clicked()
-                    {
-                        debug_settings.show_quick_layout_order.toggle();
-                    }
-                });
-            })
-        });
     }
 
     fn status_bar(&mut self, ui: &mut Ui) {
@@ -776,6 +782,8 @@ impl Scene for OrganizeEditScene {
         );
 
         ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+
             self.menu_bar(ui);
             ui.add_space(8.0);
 
