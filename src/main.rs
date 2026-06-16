@@ -28,7 +28,7 @@ use scene::{SceneManager, organize_edit_scene::OrganizeEditScene};
 use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
-use string_log::{ArcStringLog, StringLog};
+use string_log::StringLogWriter;
 
 use crate::deferred_work_manager::DeferredWorkManager;
 
@@ -58,6 +58,7 @@ mod project_settings;
 mod scene;
 mod selection_manager;
 mod session;
+mod sizing_manager;
 mod string_log;
 mod template;
 mod theme;
@@ -68,8 +69,6 @@ static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let log: Arc<StringLog> = Arc::new(StringLog::new());
-
     let num_cores: i32 = num_cpus::get() as i32;
 
     let rt = runtime::Builder::new_multi_thread()
@@ -105,7 +104,7 @@ async fn main() -> anyhow::Result<()> {
 
     let _logger = Logger::try_with_str("info, my::critical::module=trace")
         .unwrap()
-        .log_to_writer(Box::new(ArcStringLog::new(Arc::clone(&log))))
+        .log_to_writer(Box::new(StringLogWriter))
         .write_mode(WriteMode::Direct)
         .start()?;
 
@@ -163,14 +162,12 @@ async fn main() -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let app_log = Arc::clone(&log);
-
     eframe::run_native(
         "Show an image with eframe/egui",
         options,
         Box::new(|_cc| {
             //re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
-            Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new(app_log)))
+            Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new()))
         }),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
@@ -186,16 +183,14 @@ enum _PrimaryComponentKind {
 }
 
 struct PhotoBookApp {
-    _log: Arc<StringLog>,
     loaded_fonts: bool,
     scene_manager: SceneManager,
     loaded_initial_scene: bool,
 }
 
 impl PhotoBookApp {
-    fn new(_log: Arc<StringLog>) -> Self {
+    fn new() -> Self {
         Self {
-            _log,
             loaded_fonts: false,
             scene_manager: SceneManager::default(),
             loaded_initial_scene: false,

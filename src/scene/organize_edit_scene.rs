@@ -25,11 +25,13 @@ use crate::{
     project_settings::ProjectSettingsManager,
     selection_manager::SelectionManager,
     session::{Session, SessionError},
+    string_log::StringLog,
     theme::color,
     utils::Toggle,
     widget::{
         book_list::BookListEntry,
         left_sidebar::{LeftSidebar, LeftSidebarResponse, LeftSidebarState},
+        log_viewer::LogViewer,
         status_bar::{StatusBar, StatusBarState},
     },
 };
@@ -63,6 +65,7 @@ pub struct OrganizeEditScene {
     page_settings_modal_id: Option<TypedModalId<PageSettingsModal>>,
     new_book_modal_id: Option<TypedModalId<NamePromptModal>>,
     pending_new_book_name: Option<String>,
+    status_bar_state: StatusBarState,
 }
 
 impl OrganizeEditScene {
@@ -94,6 +97,7 @@ impl OrganizeEditScene {
             page_settings_modal_id: None,
             new_book_modal_id: None,
             pending_new_book_name: None,
+            status_bar_state: StatusBarState::default(),
         }
     }
 
@@ -666,11 +670,6 @@ impl OrganizeEditScene {
             });
     }
 
-    fn status_bar(&mut self, ui: &mut Ui) {
-        let mut state = StatusBarState {};
-        StatusBar::new(&mut state).show(ui);
-    }
-
     pub(in crate::scene::organize_edit_scene) fn collection_mode_ui(
         &mut self,
         ui: &mut Ui,
@@ -775,25 +774,45 @@ impl Scene for OrganizeEditScene {
         self.check_new_book_modal();
         self.check_page_settings_modal();
 
-        ui.painter().rect_filled(
-            Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 34.0)),
-            0.0,
-            color::SURFACE,
-        );
+        egui::Panel::bottom("root_status_bar")
+            .exact_size(StatusBar::height())
+            .show_inside(ui, |ui| {
+                StatusBar::new(&mut self.status_bar_state).show(ui);
+            });
 
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
+        if self.status_bar_state.log_viewer_open {
+            egui::Panel::bottom("root_log_viewer")
+                .resizable(true)
+                .default_size(220.0)
+                .size_range(120.0..=500.0)
+                .show_inside(ui, |ui| {
+                    dep!(StringLog, |log| {
+                        LogViewer::new(&*log)
+                            .id_salt("root_log_viewer_scroll")
+                            .show(ui);
+                    });
+                });
+        }
 
-            self.menu_bar(ui);
-            ui.add_space(8.0);
+        egui::CentralPanel::default()
+            .show_inside(ui, |ui| {
+                ui.painter().rect_filled(
+                    Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 34.0)),
+                    0.0,
+                    color::SURFACE,
+                );
 
-            let tabs_response = self.workspace_tabs_ui(ui);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
 
-            self.status_bar(ui);
+                    self.menu_bar(ui);
+                    ui.add_space(8.0);
 
-            tabs_response
-        })
-        .inner
+                    self.workspace_tabs_ui(ui)
+                })
+                .inner
+            })
+            .inner
     }
 
     fn popped(&mut self, popped_scene_response: ScenePopResponse) {

@@ -4,7 +4,7 @@ use egui_tiles::{
     UiResponse as TileUiResponse,
 };
 
-use crate::{scene::Scene, widget::status_bar::StatusBar};
+use crate::scene::Scene;
 
 use super::{BookId, OrganizeEditScene, SceneResponse, photo_viewer::PhotoViewerId};
 
@@ -188,7 +188,6 @@ impl OrganizeEditScene {
         let mut content_response = None;
         let mut workspace_action = None;
         let mut tab_close_request = None;
-        workspace_tabs.set_height(ui.available_height() - StatusBar::height());
 
         {
             let mut behavior = WorkspaceTabsBehavior {

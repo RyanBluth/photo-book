@@ -13,6 +13,7 @@ pub mod gallery_image;
 pub mod image_gallery;
 pub mod image_viewer;
 pub mod left_sidebar;
+pub mod log_viewer;
 pub mod pages;
 pub mod photo_filmstrip;
 pub mod photo_filter;

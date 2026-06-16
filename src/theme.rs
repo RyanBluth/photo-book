@@ -10,6 +10,7 @@ pub mod color {
     pub const BLUE_SOFT: Color32 = Color32::from_rgb(100, 150, 200);
     pub const SUCCESS: Color32 = Color32::GREEN;
     pub const ERROR: Color32 = Color32::RED;
+    pub const WARNING: Color32 = Color32::YELLOW;
 
     pub const SURFACE_EXTRA_DARK: Color32 = Color32::from_gray(15);
     pub const SURFACE_DARK: Color32 = Color32::from_gray(30);

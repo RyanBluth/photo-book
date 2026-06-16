@@ -7,7 +7,10 @@ use eframe::{
 };
 use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
-use crate::{cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue};
+use crate::{
+    cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue,
+    sizing_manager::SizingManager,
+};
 
 pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -> Vec<Vec<T>> {
     let mut output: Vec<Vec<T>> = (0..partitions).map(|_| Vec::new()).collect();
@@ -379,6 +382,12 @@ impl IdExt for Id {
 pub trait EguiUiExt {
     fn clickable<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
     fn both_centered<R>(&mut self, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R>;
+    fn sized<'a>(
+        &mut self,
+        id: Id,
+        add_contents: impl Fn(&mut Ui) + 'a,
+        layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
+    );
 }
 
 impl EguiUiExt for Ui {
@@ -408,6 +417,17 @@ impl EguiUiExt for Ui {
         };
 
         self.with_layout(centered_layout, add_contents)
+    }
+
+    fn sized<'a>(
+        &mut self,
+        id: Id,
+        add_contents: impl Fn(&mut Ui) + 'a,
+        layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
+    ) {
+        dep_mut!(SizingManager, |sizing_manager| {
+            sizing_manager.sized(self, id, add_contents, layout);
+        });
     }
 }
 

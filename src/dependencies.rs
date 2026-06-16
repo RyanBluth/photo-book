@@ -7,7 +7,7 @@ use crate::{
     deferred_work_manager::DeferredWorkManager, export::Exporter, font_manager::FontManager,
     modal::manager::ModalManager, photo_manager::PhotoManager,
     project_settings::ProjectSettingsManager, selection_manager::SelectionManager,
-    session::Session,
+    session::Session, sizing_manager::SizingManager, string_log::StringLog,
 };
 
 macro_rules! singleton {
@@ -130,11 +130,15 @@ singleton!(SESSION, Session, Session::new());
 
 singleton!(DEBUG_SETTINGS, DebugSettings, DebugSettings::default());
 
+singleton!(STRING_LOG, StringLog, StringLog::new());
+
 singleton!(
     DEFERRED_WORK_MANAGER,
     DeferredWorkManager,
     DeferredWorkManager::new()
 );
+
+singleton!(SIZING_MANAGER, SizingManager, SizingManager::new());
 
 #[allow(unused_imports)]
 use backtrace::Backtrace;

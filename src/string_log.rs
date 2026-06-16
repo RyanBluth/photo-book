@@ -1,40 +1,39 @@
-use std::{
-    cell::Cell,
-    sync::{Arc, Mutex},
-};
+use std::fmt;
 
 use flexi_logger::writers::LogWriter;
 
-pub struct ArcStringLog {
-    log: Arc<StringLog>,
-}
+use crate::dep_mut;
 
-impl ArcStringLog {
-    pub fn new(log: Arc<StringLog>) -> Self {
-        Self { log }
-    }
-}
+pub struct StringLogWriter;
 
 pub struct StringLog {
-    logs: Arc<Mutex<Cell<Vec<String>>>>,
+    logs: Vec<String>,
+}
+
+impl fmt::Debug for StringLog {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("StringLog").finish_non_exhaustive()
+    }
 }
 
 impl StringLog {
     pub fn new() -> Self {
-        Self {
-            logs: Arc::new(Mutex::new(Cell::new(Vec::new()))),
-        }
+        Self { logs: Vec::new() }
     }
 
     pub fn _for_each<F>(&self, func: F)
     where
         F: FnMut(&String),
     {
-        self.logs.lock().unwrap().get_mut().iter().for_each(func);
+        self.logs.iter().for_each(func);
+    }
+
+    pub fn push(&mut self, line: String) {
+        self.logs.push(line);
     }
 }
 
-impl LogWriter for ArcStringLog {
+impl LogWriter for StringLogWriter {
     fn write(
         &self,
         now: &mut flexi_logger::DeferredNow,
@@ -54,7 +53,7 @@ impl LogWriter for ArcStringLog {
                 println!("{}", line);
             }
         }
-        self.log.logs.lock().unwrap().get_mut().push(line);
+        dep_mut!(StringLog, |log| log.push(line));
         Ok(())
     }
 
