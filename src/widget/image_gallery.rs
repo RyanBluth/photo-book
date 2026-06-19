@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    Align, Image, Layout, MenuBar, PopupCloseBehavior, Slider, Ui, containers::menu::MenuConfig,
+    Align, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, Slider, Ui, UiBuilder,
+    containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
@@ -16,10 +17,13 @@ use crate::{
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     selection_manager::{SelectionManager, SelectionModifiers},
+    sizing_manager::SizingManager,
     theme::color,
 };
 
 use super::{gallery_image::GalleryImage, spacer::Spacer};
+
+const BAR_INNER_PADDING: i8 = 8;
 
 #[derive(Debug, Clone)]
 pub struct ImageGalleryState {
@@ -66,8 +70,6 @@ impl<'a> ImageGallery<'a> {
         let grouped_photos = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
 
         if has_photos {
-            let _initial_available_rect = ui.available_rect_before_wrap();
-
             ui.vertical(|ui| {
                 if ui.input(|input| input.key_down(Key::Escape)) {
                     if !selection_snapshot.selected_paths.is_empty() {
@@ -79,17 +81,47 @@ impl<'a> ImageGallery<'a> {
 
                 let spacing = 10.0;
 
-                let bottom_bar_height = 20.0;
-                let top_bar_height = 50.0;
+                let gallery_rect: Rect = ui.available_rect_before_wrap();
+                let top_bar_id = ui.id().with("top_bar");
+                let bottom_bar_id = ui.id().with("bottom_bar");
 
-                let mut table_size = ui.available_size();
-                table_size.y -= bottom_bar_height;
-                table_size.y -= top_bar_height;
-                table_size = table_size.max(Vec2::splat(0.0));
+                let top_bar_height = dep_mut!(SizingManager, |sizing_manager| {
+                    sizing_manager
+                        .size(ui, top_bar_id, |ui| add_filter_menu(ui))
+                        .y
+                });
+                let bottom_bar_height = dep_mut!(SizingManager, |sizing_manager| {
+                    let mut measured_scale = state.scale;
+                    sizing_manager
+                        .size(ui, bottom_bar_id, |ui| {
+                            add_scale_controls(ui, &mut measured_scale)
+                        })
+                        .y
+                });
 
-                add_filter_menu(ui);
+                let top_bar_rect = Rect::from_min_size(
+                    gallery_rect.left_top(),
+                    Vec2::new(gallery_rect.width(), top_bar_height),
+                );
+                let bottom_bar_rect = Rect::from_min_max(
+                    egui::pos2(
+                        gallery_rect.left(),
+                        (gallery_rect.bottom() - bottom_bar_height).max(top_bar_rect.bottom()),
+                    ),
+                    gallery_rect.right_bottom(),
+                );
+                let table_rect = Rect::from_min_max(
+                    egui::pos2(gallery_rect.left() + 16.0, top_bar_rect.bottom() + 16.0),
+                    egui::pos2(gallery_rect.right() - 16.0, bottom_bar_rect.top() - 16.0),
+                );
 
-                ui.allocate_ui(table_size, |ui| {
+                add_child_ui(ui, top_bar_rect, "image_gallery_top_bar", |ui| {
+                    add_filter_menu(ui);
+                });
+
+                let table_size = table_rect.size().max(Vec2::splat(0.0));
+
+                add_child_ui(ui, table_rect, "image_gallery_table_area", |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(spacing);
 
                     let column_width: f32 = 256.0 * state.scale;
@@ -233,25 +265,11 @@ impl<'a> ImageGallery<'a> {
                         });
                     });
                 });
-                ui.painter()
-                    .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
-
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_space(20.0);
-                    ui.add(
-                        Image::from(Asset::larger())
-                            .tint(color::WHITE)
-                            .maintain_aspect_ratio(true)
-                            .fit_to_exact_size(Vec2::splat(20.0)),
-                    );
-                    ui.add(Slider::new(&mut state.scale, 0.5..=1.5).show_value(true));
-                    ui.add(
-                        Image::from(Asset::smaller())
-                            .tint(color::WHITE)
-                            .maintain_aspect_ratio(true)
-                            .fit_to_exact_size(Vec2::splat(20.0)),
-                    );
+                add_child_ui(ui, bottom_bar_rect, "image_gallery_bottom_bar", |ui| {
+                    add_scale_controls(ui, &mut state.scale);
                 });
+
+                ui.advance_cursor_after_rect(gallery_rect);
             });
         }
 
@@ -262,154 +280,202 @@ impl<'a> ImageGallery<'a> {
     }
 }
 
+fn add_child_ui(
+    ui: &mut Ui,
+    rect: Rect,
+    id_salt: &'static str,
+    add_contents: impl FnOnce(&mut Ui),
+) {
+    let mut child_ui = ui.new_child(
+        UiBuilder::new()
+            .id_salt(id_salt)
+            .max_rect(rect)
+            .layout(*ui.layout()),
+    );
+    add_contents(&mut child_ui);
+}
+
 fn add_filter_menu(ui: &mut Ui) {
     let get_current_filter = || dep!(PhotoManager, |pm| pm.get_current_filter().clone());
 
-    MenuBar::new()
-        .config(MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside))
-        .ui(ui, |ui| {
-            ui.painter()
-                .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
+    ui.painter()
+        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
 
-            ui.menu_button("Rating", |ui| {
-                let mut new_filter = get_current_filter();
+    Frame::NONE
+        .inner_margin(Margin::same(BAR_INNER_PADDING))
+        .show(ui, |ui| {
+            MenuBar::new()
+                .config(MenuConfig::new().close_behavior(PopupCloseBehavior::CloseOnClickOutside))
+                .ui(ui, |ui| {
+                    ui.menu_button("Rating", |ui| {
+                        let mut new_filter = get_current_filter();
 
-                for rating in [None, Some(1), Some(2), Some(3)] {
-                    let label = match rating {
-                        None => "Unrated".to_string(),
-                        Some(1) => "1 Star".to_string(),
-                        Some(n) => format!("{} Stars", n),
-                    };
-                    let mut is_enabled = new_filter
-                        .ratings
-                        .as_ref()
-                        .map(|ratings| ratings.contains(&rating))
-                        .unwrap_or(false);
+                        for rating in [None, Some(1), Some(2), Some(3)] {
+                            let label = match rating {
+                                None => "Unrated".to_string(),
+                                Some(1) => "1 Star".to_string(),
+                                Some(n) => format!("{} Stars", n),
+                            };
+                            let mut is_enabled = new_filter
+                                .ratings
+                                .as_ref()
+                                .map(|ratings| ratings.contains(&rating))
+                                .unwrap_or(false);
 
-                    if ui.checkbox(&mut is_enabled, label).changed() {
-                        let ratings = new_filter.ratings.get_or_insert_with(Vec::new);
-                        if is_enabled {
-                            if !ratings.contains(&rating) {
-                                ratings.push(rating);
-                            }
-                        } else {
-                            ratings.retain(|r| r != &rating);
-                        }
-
-                        if ratings.is_empty() {
-                            new_filter.ratings = None;
-                        }
-                    }
-                }
-
-                if get_current_filter() != new_filter {
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
-                }
-            });
-
-            ui.menu_button("Tags", |ui| {
-                let mut new_filter = get_current_filter();
-                let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
-
-                if available_tags.is_empty() {
-                    ui.label("No Tags");
-                } else {
-                    for tag in available_tags {
-                        let mut is_enabled = new_filter
-                            .tags
-                            .as_ref()
-                            .map(|tags| tags.contains(&tag))
-                            .unwrap_or(false);
-
-                        if ui.checkbox(&mut is_enabled, &tag).changed() {
-                            let tags = new_filter.tags.get_or_insert_with(Vec::new);
-                            if is_enabled {
-                                if !tags.contains(&tag) {
-                                    tags.push(tag.clone());
+                            if ui.checkbox(&mut is_enabled, label).changed() {
+                                let ratings = new_filter.ratings.get_or_insert_with(Vec::new);
+                                if is_enabled {
+                                    if !ratings.contains(&rating) {
+                                        ratings.push(rating);
+                                    }
+                                } else {
+                                    ratings.retain(|r| r != &rating);
                                 }
-                            } else {
-                                tags.retain(|t| t != &tag);
-                            }
 
-                            if tags.is_empty() {
-                                new_filter.tags = None;
+                                if ratings.is_empty() {
+                                    new_filter.ratings = None;
+                                }
                             }
                         }
-                    }
-                }
 
-                if get_current_filter() != new_filter {
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
-                }
-            });
-
-            ui.menu_button("Albums", |ui| {
-                let mut new_filter = get_current_filter();
-                let mut available_albums = dep!(PhotoManager, |pm| {
-                    pm.albums_iter()
-                        .map(|album| (album.id.clone(), album.name.clone()))
-                        .collect::<Vec<_>>()
-                });
-                available_albums.sort_by(|(_, left), (_, right)| {
-                    left.to_lowercase().cmp(&right.to_lowercase())
-                });
-
-                if ui.radio(new_filter.album.is_none(), "All Albums").clicked() {
-                    new_filter.album = None;
-                }
-
-                if available_albums.is_empty() {
-                    ui.label("No Albums");
-                } else {
-                    ui.separator();
-                    for (album_id, album_name) in available_albums {
-                        let is_selected = new_filter.album.as_ref() == Some(&album_id);
-                        if ui.radio(is_selected, &album_name).clicked() {
-                            new_filter.album = Some(album_id);
+                        if get_current_filter() != new_filter {
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
                         }
+                    });
+
+                    ui.menu_button("Tags", |ui| {
+                        let mut new_filter = get_current_filter();
+                        let available_tags = dep!(PhotoManager, |pm| pm.all_tags());
+
+                        if available_tags.is_empty() {
+                            ui.label("No Tags");
+                        } else {
+                            for tag in available_tags {
+                                let mut is_enabled = new_filter
+                                    .tags
+                                    .as_ref()
+                                    .map(|tags| tags.contains(&tag))
+                                    .unwrap_or(false);
+
+                                if ui.checkbox(&mut is_enabled, &tag).changed() {
+                                    let tags = new_filter.tags.get_or_insert_with(Vec::new);
+                                    if is_enabled {
+                                        if !tags.contains(&tag) {
+                                            tags.push(tag.clone());
+                                        }
+                                    } else {
+                                        tags.retain(|t| t != &tag);
+                                    }
+
+                                    if tags.is_empty() {
+                                        new_filter.tags = None;
+                                    }
+                                }
+                            }
+                        }
+
+                        if get_current_filter() != new_filter {
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
+                        }
+                    });
+
+                    ui.menu_button("Albums", |ui| {
+                        let mut new_filter = get_current_filter();
+                        let mut available_albums = dep!(PhotoManager, |pm| {
+                            pm.albums_iter()
+                                .map(|album| (album.id.clone(), album.name.clone()))
+                                .collect::<Vec<_>>()
+                        });
+                        available_albums.sort_by(|(_, left), (_, right)| {
+                            left.to_lowercase().cmp(&right.to_lowercase())
+                        });
+
+                        if ui.radio(new_filter.album.is_none(), "All Albums").clicked() {
+                            new_filter.album = None;
+                        }
+
+                        if available_albums.is_empty() {
+                            ui.label("No Albums");
+                        } else {
+                            ui.separator();
+                            for (album_id, album_name) in available_albums {
+                                let is_selected = new_filter.album.as_ref() == Some(&album_id);
+                                if ui.radio(is_selected, &album_name).clicked() {
+                                    new_filter.album = Some(album_id);
+                                }
+                            }
+                        }
+
+                        if get_current_filter() != new_filter {
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
+                        }
+                    });
+
+                    ui.menu_button("Grouping", |ui| {
+                        let new_grouping =
+                            dep!(PhotoManager, |pm| pm.get_current_filter().grouping);
+
+                        if ui
+                            .radio(new_grouping == PhotoGrouping::Date, "Date")
+                            .clicked()
+                        {
+                            let mut filter =
+                                dep!(PhotoManager, |pm| pm.get_current_filter().clone());
+                            filter.grouping = PhotoGrouping::Date;
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
+                        }
+
+                        if ui
+                            .radio(new_grouping == PhotoGrouping::Rating, "Rating")
+                            .clicked()
+                        {
+                            let mut filter =
+                                dep!(PhotoManager, |pm| pm.get_current_filter().clone());
+                            filter.grouping = PhotoGrouping::Rating;
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
+                        }
+
+                        if ui
+                            .radio(new_grouping == PhotoGrouping::Tag, "Tag")
+                            .clicked()
+                        {
+                            let mut filter =
+                                dep!(PhotoManager, |pm| pm.get_current_filter().clone());
+                            filter.grouping = PhotoGrouping::Tag;
+                            dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
+                        }
+                    });
+
+                    if ui.button("Clear All Filters").clicked() {
+                        dep_mut!(PhotoManager, |pm| pm
+                            .set_current_filter(PhotoQuery::default()));
                     }
-                }
+                });
+        });
+}
 
-                if get_current_filter() != new_filter {
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(new_filter));
-                }
+fn add_scale_controls(ui: &mut Ui, scale: &mut f32) {
+    ui.painter()
+        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
+
+    Frame::NONE
+        .inner_margin(Margin::same(BAR_INNER_PADDING))
+        .show(ui, |ui| {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add(
+                    Image::from(Asset::larger())
+                        .tint(color::WHITE)
+                        .maintain_aspect_ratio(true)
+                        .fit_to_exact_size(Vec2::splat(20.0)),
+                );
+                ui.add(Slider::new(scale, 0.5..=1.5).show_value(true));
+                ui.add(
+                    Image::from(Asset::smaller())
+                        .tint(color::WHITE)
+                        .maintain_aspect_ratio(true)
+                        .fit_to_exact_size(Vec2::splat(20.0)),
+                );
             });
-
-            ui.menu_button("Grouping", |ui| {
-                let new_grouping = dep!(PhotoManager, |pm| pm.get_current_filter().grouping);
-
-                if ui
-                    .radio(new_grouping == PhotoGrouping::Date, "Date")
-                    .clicked()
-                {
-                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
-                    filter.grouping = PhotoGrouping::Date;
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
-                }
-
-                if ui
-                    .radio(new_grouping == PhotoGrouping::Rating, "Rating")
-                    .clicked()
-                {
-                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
-                    filter.grouping = PhotoGrouping::Rating;
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
-                }
-
-                if ui
-                    .radio(new_grouping == PhotoGrouping::Tag, "Tag")
-                    .clicked()
-                {
-                    let mut filter = dep!(PhotoManager, |pm| pm.get_current_filter().clone());
-                    filter.grouping = PhotoGrouping::Tag;
-                    dep_mut!(PhotoManager, |pm| pm.set_current_filter(filter));
-                }
-            });
-
-            if ui.button("Clear All Filters").clicked() {
-                dep_mut!(PhotoManager, |pm| pm
-                    .set_current_filter(PhotoQuery::default()));
-            }
         });
 }
 

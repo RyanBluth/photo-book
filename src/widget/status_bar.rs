@@ -1,4 +1,4 @@
-use egui::{Align, Color32, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{Align, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
 
 use crate::{theme, utils::EguiUiExt};
 

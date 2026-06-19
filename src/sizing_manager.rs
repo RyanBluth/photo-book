@@ -49,7 +49,7 @@ impl SizingManager {
         &mut self,
         ui: &mut Ui,
         id: Id,
-        add_contents: impl Fn(&mut Ui) + 'a,
+        mut add_contents: impl FnMut(&mut Ui) + 'a,
         layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
     ) {
         let available_rect = ui.available_rect_before_wrap();

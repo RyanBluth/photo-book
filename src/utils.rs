@@ -385,7 +385,7 @@ pub trait EguiUiExt {
     fn sized<'a>(
         &mut self,
         id: Id,
-        add_contents: impl Fn(&mut Ui) + 'a,
+        add_contents: impl FnMut(&mut Ui) + 'a,
         layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
     );
 }
@@ -422,7 +422,7 @@ impl EguiUiExt for Ui {
     fn sized<'a>(
         &mut self,
         id: Id,
-        add_contents: impl Fn(&mut Ui) + 'a,
+        add_contents: impl FnMut(&mut Ui) + 'a,
         layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
     ) {
         dep_mut!(SizingManager, |sizing_manager| {

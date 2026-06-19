@@ -693,6 +693,7 @@ impl OrganizeEditScene {
             });
 
         let content_response = egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.inner_margin(0.0))
             .show_inside(ui, |ui| self.organize.write().unwrap().ui(ui))
             .inner;
 
@@ -776,6 +777,7 @@ impl Scene for OrganizeEditScene {
 
         egui::Panel::bottom("root_status_bar")
             .exact_size(StatusBar::height())
+            .frame(egui::Frame::NONE.inner_margin(0.0))
             .show_inside(ui, |ui| {
                 StatusBar::new(&mut self.status_bar_state).show(ui);
             });
@@ -785,6 +787,7 @@ impl Scene for OrganizeEditScene {
                 .resizable(true)
                 .default_size(220.0)
                 .size_range(120.0..=500.0)
+                .frame(egui::Frame::NONE.inner_margin(0.0))
                 .show_inside(ui, |ui| {
                     dep!(StringLog, |log| {
                         LogViewer::new(&*log)
@@ -795,6 +798,7 @@ impl Scene for OrganizeEditScene {
         }
 
         egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.inner_margin(0.0))
             .show_inside(ui, |ui| {
                 ui.painter().rect_filled(
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 34.0)),
