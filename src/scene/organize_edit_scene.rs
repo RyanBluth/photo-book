@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use egui::{Id, Pos2, Rect, Ui};
+use egui::{Id, Margin, Pos2, Rect, Ui};
 use egui_tiles::Tree;
 use log::{error, info};
 
@@ -693,7 +693,11 @@ impl OrganizeEditScene {
             });
 
         let content_response = egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.inner_margin(0.0))
+            .frame(egui::Frame {
+                inner_margin: Margin::ZERO,
+                fill: color::SURFACE_X_DARK,
+                ..Default::default()
+            })
             .show_inside(ui, |ui| self.organize.write().unwrap().ui(ui))
             .inner;
 
@@ -774,10 +778,15 @@ impl Scene for OrganizeEditScene {
     fn ui(&mut self, ui: &mut Ui) -> SceneResponse {
         self.check_new_book_modal();
         self.check_page_settings_modal();
+        let frame = egui::Frame {
+            inner_margin: Margin::ZERO,
+            fill: color::SURFACE_X_DARK,
+            ..Default::default()
+        };
 
         egui::Panel::bottom("root_status_bar")
             .exact_size(StatusBar::height())
-            .frame(egui::Frame::NONE.inner_margin(0.0))
+            .frame(frame)
             .show_inside(ui, |ui| {
                 StatusBar::new(&mut self.status_bar_state).show(ui);
             });
@@ -787,7 +796,7 @@ impl Scene for OrganizeEditScene {
                 .resizable(true)
                 .default_size(220.0)
                 .size_range(120.0..=500.0)
-                .frame(egui::Frame::NONE.inner_margin(0.0))
+                .frame(frame)
                 .show_inside(ui, |ui| {
                     dep!(StringLog, |log| {
                         LogViewer::new(&*log)
@@ -798,7 +807,7 @@ impl Scene for OrganizeEditScene {
         }
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::NONE.inner_margin(0.0))
+            .frame(frame)
             .show_inside(ui, |ui| {
                 ui.painter().rect_filled(
                     Rect::from_min_max(Pos2::ZERO, Pos2::new(ui.max_rect().width() + 100.0, 34.0)),

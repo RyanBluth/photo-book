@@ -28,13 +28,15 @@ impl<'a> StatusBar<'a> {
         );
 
         ui.painter()
-            .rect_filled(bar_rect, 0.0, theme::color::SURFACE_EXTRA_DARK);
+            .rect_filled(bar_rect, 0.0, theme::color::SURFACE_XX_DARK);
+
+        let inner_content_rect = bar_rect.shrink2(Vec2::new(12.0, 4.0));
 
         let layout = Layout::left_to_right(Align::Center).with_cross_justify(true);
         let left_key = ui.id().with("status_left");
         let right_key = ui.id().with("status_right");
 
-        let content_height = Self::height();
+        let content_height = Self::height() - 8.0;
         let mut response = StatusBarResponse::default();
 
         ui.sized(
@@ -42,7 +44,7 @@ impl<'a> StatusBar<'a> {
             |ui| Self::left_content(ui),
             |ui, left_size, add_contents| {
                 let left_rect = Rect::from_min_size(
-                    bar_rect.left_top(),
+                    inner_content_rect.left_top(),
                     Vec2::new(left_size.x, content_height),
                 );
                 Self::render_child(ui, layout, left_rect, "status_left", add_contents);
@@ -55,8 +57,11 @@ impl<'a> StatusBar<'a> {
             |ui| Self::right_content(ui),
             |ui, right_size, _add_contents| {
                 let right_rect = Rect::from_min_max(
-                    egui::pos2(bar_rect.right() - right_size.x, bar_rect.top()),
-                    bar_rect.right_bottom(),
+                    egui::pos2(
+                        inner_content_rect.right() - right_size.x,
+                        inner_content_rect.top(),
+                    ),
+                    inner_content_rect.right_bottom(),
                 );
                 Self::render_child(ui, layout, right_rect, "status_right", |ui| {
                     self.right_content_with_state(ui, &mut response);
@@ -65,7 +70,7 @@ impl<'a> StatusBar<'a> {
             },
         );
 
-        ui.advance_cursor_after_rect(bar_rect);
+        ui.advance_cursor_after_rect(inner_content_rect);
 
         response
     }
@@ -109,7 +114,7 @@ impl<'a> StatusBar<'a> {
     }
 
     pub fn log_viewer_button(ui: &mut Ui, is_open: bool) -> Response {
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(24.0, 18.0), Sense::click());
 
         let fill = if is_open {
             theme::color::ACCENT_MUTED
