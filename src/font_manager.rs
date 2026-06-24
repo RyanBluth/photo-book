@@ -5,6 +5,7 @@ use font_kit::source::SystemSource;
 use font_kit::{handle::Handle, properties::Style};
 use indexmap::IndexMap;
 
+use crate::app_status::{self, AppJob, AppStatus};
 use crate::dep_mut;
 
 #[derive(Debug, PartialEq)]
@@ -34,6 +35,9 @@ impl FontManager {
             self.loading_state = LoadingState::Loading;
             let ctx = ctx.clone();
 
+            dep_mut!(AppStatus, |app_status| app_status
+                .start_indefinitie(AppJob::LoadingFonts));
+
             tokio::spawn(async move {
                 match Self::load_font_definitions().await {
                     Some((fonts, font_definitions)) => {
@@ -50,6 +54,8 @@ impl FontManager {
                         });
                     }
                 }
+                dep_mut!(AppStatus, |app_status| app_status
+                    .complete(AppJob::LoadingFonts));
             });
         }
     }

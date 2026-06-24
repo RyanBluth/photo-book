@@ -20,6 +20,7 @@ use tokio::task::spawn_blocking;
 use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
 use crate::{
+    app_status::{AppJob, AppJobStatus, AppStatus},
     dep, dep_mut,
     dirs::Dirs,
     model::{
@@ -134,6 +135,9 @@ impl PhotoManager {
     }
 
     pub fn load_directory(path: PathBuf) -> anyhow::Result<()> {
+        dep_mut!(AppStatus, |app_status| {
+            app_status.update(AppJob::DiscoveringPhotos, AppJobStatus::Indefinite);
+        });
         tokio::spawn(async move {
             let glob_patterns = vec![
                 format!("{}/**/*.jpg", path.to_string_lossy()),
@@ -188,6 +192,10 @@ impl PhotoManager {
             let photo_paths: Vec<PathBuf> = dep!(PhotoManager, |photo_manager| photo_manager
                 .photo_database
                 .get_all_photo_paths());
+
+            dep_mut!(AppStatus, |app_status| {
+                app_status.complete(AppJob::DiscoveringPhotos);
+            });
 
             let _ = Self::gen_thumbnails(photo_paths);
 
@@ -667,6 +675,10 @@ impl PhotoManager {
     }
 
     fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
+        dep_mut!(AppStatus, |app_status| {
+            app_status.start_finite(AppJob::GeneratingThumbnails, photo_paths.len());
+        });
+
         let thumbnail_dir = Dirs::Thumbnails.path();
 
         let partitions = utils::partition_iterator(photo_paths.into_iter(), 16);
@@ -677,6 +689,9 @@ impl PhotoManager {
                 for photo in partition {
                     let res: Result<(), anyhow::Error> =
                         Self::gen_thumbnail(&photo, &thumbnail_dir).await;
+                    dep_mut!(AppStatus, |app_status| {
+                        app_status.increment_and_complete_if_done(AppJob::GeneratingThumbnails);
+                    });
                     if res.is_err() {
                         // TODO: Handle this better
                         error!("{:?}", res);

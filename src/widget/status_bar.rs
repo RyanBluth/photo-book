@@ -1,6 +1,8 @@
-use egui::{Align, Layout, Rect, Response, Sense, Stroke, Ui, Vec2};
+use egui::{
+    Align, FontId, Layout, Rect, Response, RichText, Sense, Spinner, Stroke, Ui, UiBuilder, Vec2,
+};
 
-use crate::{theme, utils::EguiUiExt};
+use crate::{app_status::AppStatus, dep, theme, utils::EguiUiExt};
 
 #[derive(Debug, Clone, Default)]
 pub struct StatusBarState {
@@ -33,29 +35,29 @@ impl<'a> StatusBar<'a> {
         let inner_content_rect = bar_rect.shrink2(Vec2::new(12.0, 4.0));
 
         let layout = Layout::left_to_right(Align::Center).with_cross_justify(true);
-        let left_key = ui.id().with("status_left");
-        let right_key = ui.id().with("status_right");
 
         let content_height = Self::height() - 8.0;
         let mut response = StatusBarResponse::default();
 
         ui.sized(
-            left_key,
+            ui.id().with("status_left"),
             |ui| Self::left_content(ui),
             |ui, left_size, add_contents| {
                 let left_rect = Rect::from_min_size(
                     inner_content_rect.left_top(),
                     Vec2::new(left_size.x, content_height),
                 );
-                Self::render_child(ui, layout, left_rect, "status_left", add_contents);
-                ui.interact(left_rect, ui.id().with("left"), Sense::hover());
+                ui.scope_builder(
+                    UiBuilder::new().layout(layout).max_rect(left_rect),
+                    add_contents,
+                );
             },
         );
 
         ui.sized(
-            right_key,
-            |ui| Self::right_content(ui),
-            |ui, right_size, _add_contents| {
+            ui.id().with("status_right"),
+            |ui| self.right_content(ui, &mut response),
+            |ui, right_size, add_contents| {
                 let right_rect = Rect::from_min_max(
                     egui::pos2(
                         inner_content_rect.right() - right_size.x,
@@ -63,43 +65,25 @@ impl<'a> StatusBar<'a> {
                     ),
                     inner_content_rect.right_bottom(),
                 );
-                Self::render_child(ui, layout, right_rect, "status_right", |ui| {
-                    self.right_content_with_state(ui, &mut response);
-                });
-                ui.interact(right_rect, ui.id().with("right"), Sense::hover());
+                ui.scope_builder(
+                    UiBuilder::new().layout(layout).max_rect(right_rect),
+                    add_contents,
+                );
             },
         );
-
-        ui.advance_cursor_after_rect(inner_content_rect);
-
         response
     }
 
-    fn render_child(
-        ui: &mut Ui,
-        layout: Layout,
-        rect: Rect,
-        id_salt: &'static str,
-        add_contents: impl FnOnce(&mut Ui),
-    ) {
-        let mut child_ui = ui.new_child(
-            egui::UiBuilder::new()
-                .id_salt(id_salt)
-                .max_rect(rect)
-                .layout(layout),
-        );
-        add_contents(&mut child_ui);
-    }
-
     fn left_content(ui: &mut Ui) {
-        ui.label("Status bar");
+        dep!(AppStatus, |app_status| {
+            for item in app_status.iter() {
+                ui.add(Spinner::new().size(12.0));
+                ui.label(RichText::new(item.description()).font(FontId::monospace(12.0)));
+            }
+        });
     }
 
-    fn right_content(ui: &mut Ui) {
-        Self::log_viewer_button(ui, false);
-    }
-
-    fn right_content_with_state(&mut self, ui: &mut Ui, response: &mut StatusBarResponse) {
+    fn right_content(&mut self, ui: &mut Ui, response: &mut StatusBarResponse) {
         if Self::log_viewer_button(ui, self.state.log_viewer_open)
             .on_hover_text("Toggle log viewer")
             .clicked()

@@ -64,6 +64,7 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
+mod app_status;
 
 static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 

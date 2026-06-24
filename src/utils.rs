@@ -5,7 +5,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Response, Sense, Ui};
 
 use crate::{
     cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue,
@@ -388,6 +388,13 @@ pub trait EguiUiExt {
         add_contents: impl FnMut(&mut Ui) + 'a,
         layout: impl FnOnce(&mut Ui, Vec2, Box<dyn FnOnce(&mut Ui) + 'a>),
     );
+    fn child<R>(
+        &mut self,
+        max_rect: Rect,
+        layout: Layout,
+        sense: Sense,
+        add_content: impl FnOnce(&mut Ui) -> R,
+    ) -> R;
 }
 
 impl EguiUiExt for Ui {
@@ -428,6 +435,18 @@ impl EguiUiExt for Ui {
         dep_mut!(SizingManager, |sizing_manager| {
             sizing_manager.sized(self, id, add_contents, layout);
         });
+    }
+
+    fn child<R>(
+        &mut self,
+        max_rect: Rect,
+        layout: Layout,
+        sense: Sense,
+        add_content: impl FnOnce(&mut Ui) -> R,
+    ) -> R {
+        let mut child_ui = self.new_child(egui::UiBuilder::new().max_rect(max_rect).layout(layout));
+        self.interact(max_rect, child_ui.id(), sense);
+        add_content(&mut child_ui)
     }
 }
 
