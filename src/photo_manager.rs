@@ -142,6 +142,7 @@ impl PhotoManager {
             let glob_patterns = vec![
                 format!("{}/**/*.jpg", path.to_string_lossy()),
                 format!("{}/**/*.jpeg", path.to_string_lossy()),
+                format!("{}/**/*.png", path.to_string_lossy()),
             ];
 
             let glob_iter = glob_patterns.iter().flat_map(|pattern: &String| {
@@ -160,7 +161,7 @@ impl PhotoManager {
                 .filter_map(|entry| {
                     let path = entry.as_ref().ok()?;
                     let lowercase_extension = path.extension()?.to_ascii_lowercase();
-                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg")
+                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg" || lowercase_extension == "png")
                         && !dep!(PhotoManager, |pm| pm.photo_exists(path))
                     {
                         Some(path.clone())
