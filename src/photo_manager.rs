@@ -208,38 +208,27 @@ impl PhotoManager {
         Ok(())
     }
 
-    pub fn load_photos(&self, photos: Vec<(PathBuf, Option<PhotoRating>)>) {
+    pub fn load_photos(&self, photos: Vec<Photo>) {
         tokio::spawn(async move {
             let mut photos_since_regroup: usize = 0;
-            let filtered_photos: Vec<(PathBuf, Option<PhotoRating>)> = photos
+            let filtered_photos: Vec<Photo> = photos
                 .into_iter()
-                .filter(|(path, _)| !dep!(PhotoManager, |pm| pm.photo_exists(path)))
+                .filter(|photo| !dep!(PhotoManager, |pm| pm.photo_exists(&photo.path)))
                 .collect();
 
             let num_photos = filtered_photos.len();
+            dep_mut!(PhotoManager, |photo_manager| {
+                for photo in filtered_photos {
+                    photo_manager.photo_database.add_photo(photo);
 
-            for (path, _) in filtered_photos {
-                let photo = Photo::new_async(path.clone()).await;
+                    photos_since_regroup += 1;
 
-                match photo {
-                    Result::Err(err) => {
-                        error!("Failed to load photo: {:?} - {:?}", path, err);
-                        continue;
+                    if photos_since_regroup > 500 || num_photos == photos_since_regroup {
+                        photos_since_regroup = 0;
+                        photo_manager.sort_and_regroup();
                     }
-                    Result::Ok(photo) => {
-                        dep_mut!(PhotoManager, |photo_manager| {
-                            photo_manager.photo_database.add_photo(photo);
-
-                            photos_since_regroup += 1;
-
-                            if photos_since_regroup > 500 || num_photos == photos_since_regroup {
-                                photos_since_regroup = 0;
-                                photo_manager.sort_and_regroup();
-                            }
-                        });
-                    }
-                };
-            }
+                }
+            });
 
             let (photo_paths, _) = dep_mut!(PhotoManager, |photo_manager| {
                 let photo_paths: Vec<PathBuf> = photo_manager.photo_database.get_all_photo_paths();

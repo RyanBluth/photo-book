@@ -175,14 +175,14 @@ impl From<Project> for OrganizeEditScene {
             .map(|photo| (photo.path.clone(), photo.rating, photo.tags.clone()))
             .collect();
 
+        let photos = project
+            .photos
+            .iter()
+            .map(|photo| AppPhoto::with_metadata(photo.path.clone(), photo.metadata.clone().into()))
+            .collect();
+
         dep!(PhotoManager, |photo_manager| {
-            photo_manager.load_photos(
-                project
-                    .photos
-                    .into_iter()
-                    .map(|photo| (photo.path, None))
-                    .collect(),
-            );
+            photo_manager.load_photos(photos);
         });
 
         dep_mut!(PhotoManager, |photo_manager| {

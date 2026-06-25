@@ -504,6 +504,15 @@ impl Photo {
         })
     }
 
+    pub fn with_metadata(path: PathBuf, metadata: PhotoMetadata) -> Self {
+        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        Self {
+            path,
+            metadata,
+            thumbnail_hash,
+        }
+    }
+
     pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path_async(&path).await?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
