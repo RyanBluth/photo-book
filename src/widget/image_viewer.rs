@@ -3,16 +3,13 @@ use eframe::{
     emath::Rot2,
     epaint::{Mesh, Pos2, Rect, Shape, Vec2},
 };
+use egui::CursorIcon;
 
 use crate::{
-    dep_mut,
-    photo::{
+    cursor_manager::CursorManager, dep_mut, photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
-    },
-    photo_manager::PhotoManager,
-    theme::color,
-    utils::RectExt,
+    }, photo_manager::PhotoManager, theme::color, utils::RectExt
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,6 +189,22 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         let image_rect_size = image_rect.size();
+
+        let can_drag = image_rect.width() > rect.width() || image_rect.height() > rect.height();
+
+        if can_drag {
+            dep_mut!(CursorManager, |cursor_manager| {
+                ui.input(|input| {
+                    if let Some(pointer_pos) = input.pointer.latest_pos() && rect.contains(pointer_pos) {
+                        if input.pointer.primary_down() {
+                            cursor_manager.set_cursor(CursorIcon::Grabbing);
+                        } else {
+                            cursor_manager.set_cursor(CursorIcon::Grab);
+                        }
+                    }
+                });
+            });
+        }
 
         // Adjust image_rect so it always fills rect, or is centered in rect
         if image_rect.width() >= rect.width() {
