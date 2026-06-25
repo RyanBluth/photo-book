@@ -80,6 +80,7 @@ impl Project {
                     rating: photo_manager.get_photo_rating(&photo.path),
                     tags: photo_manager.get_photo_tags(&photo.path).into(),
                     metadata: photo.metadata.clone().into(),
+                    last_modified: photo.last_modified.clone(),
                 })
                 .collect()
         });
@@ -366,6 +367,7 @@ pub struct Photo {
     pub rating: PhotoRating,
     pub tags: HashSet<String>,
     pub metadata: PhotoMetadata,
+    pub last_modified: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Savefile)]
@@ -730,6 +732,7 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
                         .into()
                 }),
                 metadata: canvas_photo.photo.metadata.clone().into(),
+                last_modified: canvas_photo.photo.last_modified.clone(),
             },
             crop: canvas_photo.crop.into(),
         }

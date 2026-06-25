@@ -1,3 +1,4 @@
+use image::metadata;
 use std::{
     collections::{HashMap, HashSet},
     f32::consts::PI,
@@ -154,14 +155,16 @@ impl MetadataCollection {
     }
 }
 
-impl<T> From<T> for MetadataCollection where T:Iterator<Item = (PhotoMetadataFieldLabel, PhotoMetadataField)>{
+impl<T> From<T> for MetadataCollection
+where
+    T: Iterator<Item = (PhotoMetadataFieldLabel, PhotoMetadataField)>,
+{
     fn from(value: T) -> Self {
         Self {
-            fields: value.collect()
+            fields: value.collect(),
         }
     }
 }
-
 
 metadata_fields!(
     (Path, PathBuf),
@@ -491,35 +494,42 @@ pub struct Photo {
     pub path: PathBuf,
     pub metadata: PhotoMetadata,
     pub thumbnail_hash: String,
+    pub last_modified: Option<DateTime<Utc>>,
 }
 
 impl Photo {
     pub fn new(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path(&path)?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let last_modified = Self::last_modified(&path);
         Ok(Self {
             path,
             metadata,
             thumbnail_hash,
+            last_modified,
         })
     }
 
     pub fn with_metadata(path: PathBuf, metadata: PhotoMetadata) -> Self {
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let last_modified = Self::last_modified(&path);
         Self {
             path,
             metadata,
             thumbnail_hash,
+            last_modified,
         }
     }
 
     pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path_async(&path).await?;
         let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let last_modified = Self::last_modified(&path);
         Ok(Self {
             path,
             metadata,
             thumbnail_hash,
+            last_modified
         })
     }
 
@@ -600,6 +610,20 @@ impl Photo {
 
     pub fn remove_tag(&self, tag: &String) {
         dep_mut!(PhotoManager, |pm| pm.remove_photo_tag(&self.path, tag));
+    }
+
+    fn last_modified(path: &PathBuf) -> Option<DateTime<Utc>> {
+        path.metadata()
+            .map(|metadata| {
+                if let Ok(date) = metadata.modified() {
+                    Some(date.into())
+                } else if let Ok(date) = metadata.created() {
+                    Some(date.into())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(None)
     }
 }
 

@@ -722,6 +722,7 @@ mod tests {
             path: PathBuf::from(path),
             metadata,
             thumbnail_hash: "test_hash".to_string(),
+            last_modified: None,
         }
     }
 
