@@ -148,7 +148,20 @@ impl MetadataCollection {
     pub fn get(&self, label: PhotoMetadataFieldLabel) -> Option<&PhotoMetadataField> {
         self.fields.get(&label)
     }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&PhotoMetadataFieldLabel, &PhotoMetadataField)> {
+        self.fields.iter()
+    }
 }
+
+impl<T> From<T> for MetadataCollection where T:Iterator<Item = (PhotoMetadataFieldLabel, PhotoMetadataField)>{
+    fn from(value: T) -> Self {
+        Self {
+            fields: value.collect()
+        }
+    }
+}
+
 
 metadata_fields!(
     (Path, PathBuf),

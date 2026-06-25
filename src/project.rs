@@ -1,5 +1,6 @@
 use std::{collections::HashSet, path::PathBuf};
 
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use savefile_derive::Savefile;
 
@@ -13,7 +14,11 @@ use crate::{
         photo_grouping::PhotoGrouping as AppPhotoGrouping, scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
-    photo::{Photo as AppPhoto, PhotoRating as AppPhotoRating},
+    photo::{
+        MetadataCollection as AppMetadataCollection, Photo as AppPhoto,
+        PhotoMetadata as AppPhotoMetadata, PhotoMetadataField as AppPhotoMetadataField,
+        PhotoRating as AppPhotoRating, PhotoRotation as AppPhotoRotation, Rational as AppRational,
+    },
     photo_manager::PhotoManager,
     project_settings::{ProjectSettings as AppProjectSettings, ProjectSettingsManager},
     scene::{
@@ -68,12 +73,13 @@ impl Project {
         let photos = dep!(PhotoManager, |photo_manager| {
             photo_manager
                 .photo_database
-                .get_all_photo_paths()
-                .iter()
-                .map(|path| Photo {
-                    path: path.clone(),
-                    rating: photo_manager.get_photo_rating(path),
-                    tags: photo_manager.get_photo_tags(path).into(),
+                .all_photos_iter()
+                // We do this instead of Into::into avoid deadlocks from photo.rating() and photo.tags()
+                .map(|photo| Photo {
+                    path: photo.path.clone(),
+                    rating: photo_manager.get_photo_rating(&photo.path),
+                    tags: photo_manager.get_photo_tags(&photo.path).into(),
+                    metadata: photo.metadata.clone().into(),
                 })
                 .collect()
         });
@@ -359,6 +365,203 @@ pub struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
     pub tags: HashSet<String>,
+    pub metadata: PhotoMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct PhotoMetadata {
+    pub fields: Vec<PhotoMetadataField>,
+}
+
+impl From<PhotoMetadata> for AppPhotoMetadata {
+    fn from(value: PhotoMetadata) -> Self {
+        Self {
+            fields: value
+                .fields
+                .iter()
+                .map(|field| {
+                    (
+                        AppPhotoMetadataField::from(field.clone()).label(),
+                        AppPhotoMetadataField::from(field.clone()),
+                    )
+                })
+                .into(),
+        }
+    }
+}
+
+impl From<AppPhotoMetadata> for PhotoMetadata {
+    fn from(value: AppPhotoMetadata) -> Self {
+        PhotoMetadata {
+            fields: value
+                .iter()
+                .map(|(_, field)| field.clone())
+                .map(Into::into)
+                .collect(),
+        }
+    }
+}
+
+impl From<AppMetadataCollection> for Vec<PhotoMetadataField> {
+    fn from(value: AppMetadataCollection) -> Self {
+        value
+            .iter()
+            .map(|(_, field)| field.clone())
+            .map(Into::into)
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum PhotoMetadataField {
+    Path(PathBuf),
+    Width(usize),
+    Height(usize),
+    Rotation(PhotoRotation),
+    RotatedWidth(usize),
+    RotatedHeight(usize),
+    Camera(String),
+    DateTime(DateTime<Utc>),
+    ISO(u32),
+    ShutterSpeed(Rational),
+    Aperture(Rational),
+    FocalLength(Rational),
+}
+
+impl From<AppPhotoMetadataField> for PhotoMetadataField {
+    fn from(value: AppPhotoMetadataField) -> Self {
+        match value {
+            AppPhotoMetadataField::Path(path_buf) => PhotoMetadataField::Path(path_buf),
+            AppPhotoMetadataField::Width(width) => PhotoMetadataField::Width(width),
+            AppPhotoMetadataField::Height(height) => PhotoMetadataField::Height(height),
+            AppPhotoMetadataField::Rotation(photo_rotation) => {
+                PhotoMetadataField::Rotation(photo_rotation.into())
+            }
+            AppPhotoMetadataField::RotatedWidth(width) => PhotoMetadataField::RotatedWidth(width),
+            AppPhotoMetadataField::RotatedHeight(height) => {
+                PhotoMetadataField::RotatedHeight(height)
+            }
+            AppPhotoMetadataField::Camera(camera) => PhotoMetadataField::Camera(camera),
+            AppPhotoMetadataField::DateTime(date_time) => PhotoMetadataField::DateTime(date_time),
+            AppPhotoMetadataField::ISO(iso) => PhotoMetadataField::ISO(iso),
+            AppPhotoMetadataField::ShutterSpeed(speed) => {
+                PhotoMetadataField::ShutterSpeed(speed.into())
+            }
+            AppPhotoMetadataField::Aperture(aperature) => {
+                PhotoMetadataField::Aperture(aperature.into())
+            }
+            AppPhotoMetadataField::FocalLength(focal_length) => {
+                PhotoMetadataField::FocalLength(focal_length.into())
+            }
+        }
+    }
+}
+
+impl From<PhotoMetadataField> for AppPhotoMetadataField {
+    fn from(value: PhotoMetadataField) -> Self {
+        match value {
+            PhotoMetadataField::Path(path_buf) => AppPhotoMetadataField::Path(path_buf),
+            PhotoMetadataField::Width(width) => AppPhotoMetadataField::Width(width),
+            PhotoMetadataField::Height(height) => AppPhotoMetadataField::Height(height),
+            PhotoMetadataField::Rotation(photo_rotation) => {
+                AppPhotoMetadataField::Rotation(photo_rotation.into())
+            }
+            PhotoMetadataField::RotatedWidth(width) => AppPhotoMetadataField::RotatedWidth(width),
+            PhotoMetadataField::RotatedHeight(height) => {
+                AppPhotoMetadataField::RotatedHeight(height)
+            }
+            PhotoMetadataField::Camera(camera) => AppPhotoMetadataField::Camera(camera),
+            PhotoMetadataField::DateTime(date_time) => AppPhotoMetadataField::DateTime(date_time),
+            PhotoMetadataField::ISO(iso) => AppPhotoMetadataField::ISO(iso),
+            PhotoMetadataField::ShutterSpeed(speed) => {
+                AppPhotoMetadataField::ShutterSpeed(speed.into())
+            }
+            PhotoMetadataField::Aperture(aperature) => {
+                AppPhotoMetadataField::Aperture(aperature.into())
+            }
+            PhotoMetadataField::FocalLength(focal_length) => {
+                AppPhotoMetadataField::FocalLength(focal_length.into())
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct Rational {
+    pub num: i32,
+    pub denom: i32,
+}
+
+impl From<Rational> for AppRational {
+    fn from(value: Rational) -> Self {
+        Self {
+            num: value.num,
+            denom: value.denom,
+        }
+    }
+}
+
+impl From<AppRational> for Rational {
+    fn from(value: AppRational) -> Self {
+        Self {
+            num: value.num,
+            denom: value.denom,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum PhotoRotation {
+    Normal,
+    MirrorHorizontal,
+    Rotate180,
+    MirrorVerticalAndRotate180,
+    MirrorHorizontalAndRotate90CW,
+    Rotate90CW,
+    MirrorHorizontalAndRotate270CW,
+    Rotate270CW,
+}
+
+impl From<PhotoRotation> for AppPhotoRotation {
+    fn from(value: PhotoRotation) -> Self {
+        match value {
+            PhotoRotation::Normal => AppPhotoRotation::Normal,
+            PhotoRotation::MirrorHorizontal => AppPhotoRotation::MirrorHorizontal,
+            PhotoRotation::Rotate180 => AppPhotoRotation::Rotate180,
+            PhotoRotation::MirrorVerticalAndRotate180 => {
+                AppPhotoRotation::MirrorVerticalAndRotate180
+            }
+            PhotoRotation::MirrorHorizontalAndRotate90CW => {
+                AppPhotoRotation::MirrorHorizontalAndRotate90CW
+            }
+            PhotoRotation::Rotate90CW => AppPhotoRotation::Rotate90CW,
+            PhotoRotation::MirrorHorizontalAndRotate270CW => {
+                AppPhotoRotation::MirrorHorizontalAndRotate270CW
+            }
+            PhotoRotation::Rotate270CW => AppPhotoRotation::Rotate270CW,
+        }
+    }
+}
+
+impl From<AppPhotoRotation> for PhotoRotation {
+    fn from(value: AppPhotoRotation) -> Self {
+        match value {
+            AppPhotoRotation::Normal => PhotoRotation::Normal,
+            AppPhotoRotation::MirrorHorizontal => PhotoRotation::MirrorHorizontal,
+            AppPhotoRotation::Rotate180 => PhotoRotation::Rotate180,
+            AppPhotoRotation::MirrorVerticalAndRotate180 => {
+                PhotoRotation::MirrorVerticalAndRotate180
+            }
+            AppPhotoRotation::MirrorHorizontalAndRotate90CW => {
+                PhotoRotation::MirrorHorizontalAndRotate90CW
+            }
+            AppPhotoRotation::Rotate90CW => PhotoRotation::Rotate90CW,
+            AppPhotoRotation::MirrorHorizontalAndRotate270CW => {
+                PhotoRotation::MirrorHorizontalAndRotate270CW
+            }
+            AppPhotoRotation::Rotate270CW => PhotoRotation::Rotate270CW,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Savefile)]
@@ -515,6 +718,7 @@ pub struct CanvasPhoto {
 impl From<AppCanvasPhoto> for CanvasPhoto {
     fn from(canvas_photo: AppCanvasPhoto) -> Self {
         Self {
+            // We do this instead of Into::into avoid deadlocks from photo.rating() and photo.tags()
             photo: Photo {
                 path: canvas_photo.photo.path.clone(),
                 rating: dep!(PhotoManager, |photo_manager| {
@@ -525,6 +729,7 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
                         .get_photo_tags(&canvas_photo.photo.path)
                         .into()
                 }),
+                metadata: canvas_photo.photo.metadata.clone().into(),
             },
             crop: canvas_photo.crop.into(),
         }

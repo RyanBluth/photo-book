@@ -161,7 +161,9 @@ impl PhotoManager {
                 .filter_map(|entry| {
                     let path = entry.as_ref().ok()?;
                     let lowercase_extension = path.extension()?.to_ascii_lowercase();
-                    if (lowercase_extension == "jpg" || lowercase_extension == "jpeg" || lowercase_extension == "png")
+                    if (lowercase_extension == "jpg"
+                        || lowercase_extension == "jpeg"
+                        || lowercase_extension == "png")
                         && !dep!(PhotoManager, |pm| pm.photo_exists(path))
                     {
                         Some(path.clone())
@@ -676,9 +678,11 @@ impl PhotoManager {
     }
 
     fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
-        dep_mut!(AppStatus, |app_status| {
-            app_status.start_finite(AppJob::GeneratingThumbnails, photo_paths.len());
-        });
+        if photo_paths.len() > 0 {
+            dep_mut!(AppStatus, |app_status| {
+                app_status.start_finite(AppJob::GeneratingThumbnails, photo_paths.len());
+            });
+        }
 
         let thumbnail_dir = Dirs::Thumbnails.path();
 

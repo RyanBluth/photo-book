@@ -403,6 +403,10 @@ impl PhotoDatabase {
         self.path_map.backward.keys().cloned().collect()
     }
 
+    pub fn all_photos_iter(&self) -> impl Iterator<Item = &Photo> {
+        self.photos.iter()
+    }
+
     /// Get flattened file trees (for UI display)
     pub fn get_flattened_file_trees(&mut self) -> Arc<Vec<crate::file_tree::FlattenedTreeItem>> {
         self.file_collection.flattened_file_trees()
