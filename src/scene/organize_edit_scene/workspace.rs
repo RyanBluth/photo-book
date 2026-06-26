@@ -1,10 +1,11 @@
-use egui::Ui;
+use std::fmt::Pointer;
+
+use egui::{Id, Response, Sense, TextStyle, Ui, vec2, Vec2, Stroke};
 use egui_tiles::{
-    Behavior as TileBehavior, Container, SimplificationOptions, Tile, TileId, Tiles, Tree,
-    UiResponse as TileUiResponse,
+    Behavior as TileBehavior, Container, SimplificationOptions, TabState, Tile, TileId, Tiles, Tree, UiResponse as TileUiResponse
 };
 
-use crate::scene::Scene;
+use crate::{cursor_manager::CursorManager, dep_mut, scene::Scene};
 
 use super::{BookId, OrganizeEditScene, SceneResponse, photo_viewer::PhotoViewerId};
 
@@ -293,6 +294,133 @@ impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
         }
 
         TileUiResponse::None
+    }
+
+    fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
+        32.0
+    }
+
+    fn tab_ui(
+        &mut self,
+        tiles: &mut Tiles<WorkspacePane>,
+        ui: &mut Ui,
+        id: Id,
+        tile_id: TileId,
+        state: &TabState,
+    ) -> Response {
+        let text = self.tab_title_for_tile(tiles, tile_id);
+        let close_btn_size = Vec2::splat(self.close_button_outer_size());
+        let close_btn_left_padding = 4.0;
+        let font_id = TextStyle::Button.resolve(ui.style());
+        let galley = text.into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, font_id);
+
+        let x_margin = self.tab_title_spacing(ui.visuals());
+
+        let button_width = galley.size().x
+            + 2.0 * x_margin
+            + f32::from(state.closable) * (close_btn_left_padding + close_btn_size.x * 2.0);
+        let (_, tab_rect) = ui.allocate_space(vec2(button_width, ui.available_height()));
+
+        let draggable = self.is_tile_draggable(tiles, tile_id);
+        let sense = if draggable {
+            Sense::click_and_drag()
+        } else {
+            Sense::click()
+        };
+        let tab_response = ui.interact(tab_rect, id, sense);
+        let tab_response = if draggable {
+            tab_response.on_hover_cursor(self.tab_hover_cursor_icon())
+        } else {
+            tab_response
+        };
+
+        let is_hovered = tab_response.contains_pointer();
+
+        if is_hovered {
+            dep_mut!(CursorManager, |cm| {
+                cm.set_cursor(egui::CursorIcon::PointingHand);
+            })
+        }
+
+        // Show a gap when dragged
+        if ui.is_rect_visible(tab_rect) && !state.is_being_dragged {
+            let bg_color = self.tab_bg_color(ui.visuals(), tiles, tile_id, state);
+            let stroke = self.tab_outline_stroke(ui.visuals(), tiles, tile_id, state);
+            ui.painter().rect(
+                tab_rect.shrink(0.5),
+                0.0,
+                bg_color,
+                stroke,
+                egui::StrokeKind::Inside,
+            );
+
+            if state.active {
+                // Make the tab name area connect with the tab ui area:
+                ui.painter().hline(
+                    tab_rect.x_range().shrink(stroke.width),
+                    tab_rect.bottom(),
+                    Stroke::new(stroke.width + 2.0, bg_color),
+                );
+            }
+
+            // Prepare title's text for rendering
+            let text_color = self.tab_text_color(ui.visuals(), tiles, tile_id, state);
+            let text_rect = tab_rect.shrink(x_margin).translate(if state.closable {
+                Vec2::new(close_btn_size.x, 0.0)
+            } else {
+                Vec2::ZERO
+            });
+            let text_position = egui::Align2::LEFT_CENTER
+                .align_size_within_rect(galley.size(), text_rect)
+                .min;
+
+            // Render the title
+            ui.painter().galley(text_position, galley, text_color);
+
+            // Conditionally render the close button
+            if state.closable && is_hovered {
+                let close_btn_rect = egui::Align2::RIGHT_CENTER
+                    .align_size_within_rect(close_btn_size, tab_rect.shrink(x_margin));
+
+                // Allocate
+                let close_btn_id = ui.auto_id_with("tab_close_btn");
+                let close_btn_response = ui
+                    .interact(close_btn_rect, close_btn_id, Sense::click_and_drag())
+                    .on_hover_cursor(egui::CursorIcon::Default);
+
+                let visuals = ui.style().interact(&close_btn_response);
+
+                // Scale based on the interaction visuals
+                let rect = close_btn_rect.shrink(2.0);
+
+                let stroke = Stroke::new(2.5, visuals.fg_stroke.color);
+
+                // paint the crossed lines
+                ui.painter() // paints \
+                    .line_segment([rect.left_top(), rect.right_bottom()], stroke);
+                ui.painter() // paints /
+                    .line_segment([rect.right_top(), rect.left_bottom()], stroke);
+
+                // Give the user a chance to react to the close button being clicked
+                // Only close if the user returns true (handled)
+                if close_btn_response.clicked()
+                    || tab_response.clicked_by(egui::PointerButton::Middle)
+                {
+                    log::debug!("Tab close requested for tile: {tile_id:?}");
+
+                    // Close the tab if the implementation wants to
+                    if self.on_tab_close(tiles, tile_id) {
+                        log::debug!("Implementation confirmed close request for tile: {tile_id:?}");
+
+                        tiles.remove(tile_id);
+                    } else {
+                        log::debug!("Implementation denied close request for tile: {tile_id:?}");
+                    }
+                }
+            }
+        }
+
+        self.on_tab_button(tiles, tile_id, tab_response)
     }
 
     fn tab_title_for_pane(&mut self, pane: &WorkspacePane) -> egui::WidgetText {
