@@ -18,6 +18,7 @@ use eframe::{
     egui::{self, Context, Ui, ViewportBuilder},
 };
 
+use egui::Color32;
 use font_manager::FontManager;
 
 use dirs::Dirs;
@@ -29,6 +30,7 @@ use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
 use string_log::StringLogWriter;
+use wgpu::Color;
 
 use crate::deferred_work_manager::DeferredWorkManager;
 

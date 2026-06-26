@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    Align, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, Slider, Ui, UiBuilder,
-    containers::menu::MenuConfig,
+    Align, Color32, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, RichText, Slider, Ui, UiBuilder, containers::menu::MenuConfig
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
@@ -79,7 +78,7 @@ impl<'a> ImageGallery<'a> {
                     }
                 }
 
-                let spacing = 10.0;
+                let spacing = 24.0;
 
                 let gallery_rect: Rect = ui.available_rect_before_wrap();
                 let top_bar_id = ui.id().with("top_bar");
@@ -142,7 +141,7 @@ impl<'a> ImageGallery<'a> {
                                 let rows = group.len().div_ceil(num_columns);
 
                                 let mut metadatas: Vec<RowMetadata> = vec![RowMetadata {
-                                    height: 30.0,
+                                    height: 16.0,
                                     is_title: true,
                                     section: title.clone(),
                                     row_index_in_section: 0,
@@ -195,14 +194,15 @@ impl<'a> ImageGallery<'a> {
                             let row_index = row.index();
                             let metadata = &row_metadatas[row_index];
                             let offest = metadata.row_index_in_section * num_columns;
-
                             let group = grouped_photos.get(&metadata.section).unwrap();
 
                             if metadata.is_title {
                                 row.col(|ui| {
                                     ui.vertical(|ui| {
-                                        ui.add_space(10.0);
-                                        ui.heading(metadata.section.clone());
+                                        ui.label(
+                                            RichText::new(metadata.section.clone())
+                                                .font(FontId::proportional(16.0))
+                                        );
                                     });
                                 });
                             } else {

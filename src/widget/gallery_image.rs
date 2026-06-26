@@ -2,7 +2,7 @@ use eframe::{
     egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
     epaint::Vec2,
 };
-use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
+use egui::{Color32, Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
 use crate::{photo::Photo, theme::color, utils::Truncate, widget::placeholder::RectPlaceholder};
@@ -33,7 +33,6 @@ impl Widget for GalleryImage {
             format!("GalleryImage_{}", self.photo.path.to_string_lossy()),
             |ui| {
                 let size = ui.available_size();
-
                 let image_size = match self.photo.max_dimension() {
                     crate::photo::MaxPhotoDimension::Width => Vec2::new(
                         size.x,
@@ -52,105 +51,88 @@ impl Widget for GalleryImage {
                 ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(0.0);
 
-                    ui.painter()
-                        .rect_filled(ui.max_rect(), 6.0, color::SURFACE_DARK);
-
-                    if self.selected {
-                        ui.painter().rect_stroke(
-                            ui.max_rect(),
-                            4.0,
-                            Stroke::new(3.0, color::ACCENT),
-                            StrokeKind::Inside,
-                        );
-                    }
-
                     ui.vertical_centered(|ui| {
-                        ui.add_space(10.0);
-
-                        ui.horizontal(|ui| {
-                            ui.add_space(10.0);
-
-                            ui.label(
-                                self.photo
-                                    .path
-                                    .file_name()
-                                    .map(|file_name| file_name.to_string_lossy().truncate(30))
-                                    .unwrap_or_else(|| {
-                                        self.photo.path.to_string_lossy().truncate(30)
-                                    }),
-                            );
-                        });
-
-                        ui.vertical_centered(|ui| {
-                            let available_size = ui.available_size();
-                            let width_scale = available_size.x / image_size.x;
-                            let height_scale = available_size.y / image_size.y;
-                            let scale: f32 = width_scale.min(height_scale);
-                            let scaled_image_size: Vec2 = image_size
-                                * scale
-                                * if self.photo.metadata.rotation().is_horizontal() {
-                                    0.9
-                                } else {
-                                    0.75
-                                };
-                            let rotated_scaled_image_size = {
-                                let image_size =
-                                    if self.photo.metadata.does_rotation_alter_dimensions() {
-                                        scaled_image_size.rot90().abs()
-                                    } else {
-                                        scaled_image_size
-                                    };
-
-                                if image_size.x < 0.0
-                                    || image_size.y < 0.0
-                                    || image_size.x.is_nan()
-                                    || image_size.y.is_nan()
-                                {
-                                    available_size - Vec2::splat(20.0)
-                                } else {
-                                    image_size
-                                }
-                            };
-
-                            let verical_spacing = if matches!(self.texture, Ok(Some(_))) {
-                                (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0)
+                        let available_size = ui.available_size();
+                        let width_scale = available_size.x / image_size.x;
+                        let height_scale = available_size.y / image_size.y;
+                        let scale: f32 = width_scale.min(height_scale);
+                        let scaled_image_size: Vec2 = image_size * scale;
+                        let rotated_image_size = {
+                            let image_size = if self.photo.metadata.does_rotation_alter_dimensions()
+                            {
+                                image_size.rot90().abs()
                             } else {
-                                (0.0 as f32)
-                                    .max((available_size.y - rotated_scaled_image_size.y) / 2.0)
+                                image_size
                             };
 
-                            ui.add_space(verical_spacing);
+                            if image_size.x < 0.0
+                                || image_size.y < 0.0
+                                || image_size.x.is_nan()
+                                || image_size.y.is_nan()
+                            {
+                                available_size - Vec2::splat(20.0)
+                            } else {
+                                image_size
+                            }
+                        };
 
-                            match self.texture {
-                                Ok(Some(texture)) => {
-                                    let rotation = self.photo.metadata.rotation();
-                                    ui.add(
+                        let verical_spacing = if matches!(self.texture, Ok(Some(_))) {
+                            (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0)
+                        } else {
+                            (0.0 as f32).max((available_size.y - rotated_image_size.y) / 2.0)
+                        };
+
+                        ui.add_space(verical_spacing);
+
+                        let image_rect = match self.texture {
+                            Ok(Some(texture)) => {
+                                let rotation = self.photo.metadata.rotation();
+                                let rect = ui
+                                    .add(
                                         Image::from_texture(texture)
                                             .rotate(rotation.radians(), Vec2::splat(0.5))
                                             .fit_to_exact_size(scaled_image_size),
-                                    );
-                                }
-                                Ok(None) => {
-                                    let response = RectPlaceholder::new(
-                                        rotated_scaled_image_size,
-                                        color::SURFACE_MUTED,
                                     )
-                                    .ui(ui);
-
-                                    ui.put(response.rect, Spinner::new());
-                                }
-                                Err(err) => {
-                                    // Show themed error placeholder for now.
-                                    // TODO: Show error message or something
-                                    RectPlaceholder::new(rotated_scaled_image_size, color::ERROR)
-                                        .ui(ui);
-                                    error!(
-                                        "Failed to load image: {:?}. {:?}",
-                                        self.photo.path, err
-                                    );
-                                }
+                                    .rect;
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    5.0,
+                                    Stroke::new(5.0, color::SURFACE_X_DARK),
+                                    StrokeKind::Outside,
+                                );
+                                rect
                             }
-                        });
+                            Ok(None) => {
+                                let response = RectPlaceholder::new(
+                                    rotated_image_size,
+                                    color::SURFACE_MUTED,
+                                    4.0,
+                                )
+                                .ui(ui);
+
+                                ui.put(response.rect, Spinner::new());
+                                response.rect
+                            }
+                            Err(err) => {
+                                // Show themed error placeholder for now.
+                                // TODO: Show error message or something
+                                let rect =
+                                    RectPlaceholder::new(rotated_image_size, color::ERROR, 4.0)
+                                        .ui(ui)
+                                        .rect;
+                                error!("Failed to load image: {:?}. {:?}", self.photo.path, err);
+                                rect
+                            }
+                        };
+
+                        if self.selected {
+                            ui.painter().rect_stroke(
+                                image_rect.expand(2.0),
+                                6.0,
+                                Stroke::new(3.0, color::ACCENT),
+                                StrokeKind::Inside,
+                            );
+                        }
                     });
                 });
 
