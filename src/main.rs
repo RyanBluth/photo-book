@@ -52,6 +52,8 @@ mod id;
 mod layout;
 mod modal;
 mod model;
+#[cfg(target_os = "macos")]
+mod native_mac_menu;
 mod photo;
 mod photo_database;
 mod photo_manager;
@@ -166,11 +168,16 @@ async fn main() -> anyhow::Result<()> {
     };
 
     eframe::run_native(
-        "Show an image with eframe/egui",
+        "Photobook",
         options,
         Box::new(|_cc| {
             //re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
-            Ok(Box::<PhotoBookApp>::new(PhotoBookApp::new()))
+            let mut app = PhotoBookApp::new();
+            #[cfg(target_os = "macos")]
+            {
+                app.menu_handler = native_mac_menu::install();
+            }
+            Ok(Box::new(app))
         }),
     )
     .map_err(|e| anyhow::anyhow!("Error running native app: {}", e))
@@ -189,6 +196,8 @@ struct PhotoBookApp {
     loaded_fonts: bool,
     scene_manager: SceneManager,
     loaded_initial_scene: bool,
+    #[cfg(target_os = "macos")]
+    menu_handler: Option<objc2::rc::Retained<native_mac_menu::NativeMenuHandler>>,
 }
 
 impl PhotoBookApp {
@@ -197,6 +206,8 @@ impl PhotoBookApp {
             loaded_fonts: false,
             scene_manager: SceneManager::default(),
             loaded_initial_scene: false,
+            #[cfg(target_os = "macos")]
+            menu_handler: None,
         }
     }
 
@@ -292,6 +303,15 @@ impl eframe::App for PhotoBookApp {
 
             self.loaded_initial_scene = true;
             self.scene_manager = Self::initialize_scene_manager();
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            for command in native_mac_menu::drain_commands() {
+                self.scene_manager
+                    .root_scene
+                    .handle_menu_command(command, ctx);
+            }
         }
 
         if !self.loaded_fonts {

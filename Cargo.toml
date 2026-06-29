@@ -58,6 +58,11 @@ savefile = { version = "0.20.2", features = ["bzip2", "serde"] }
 savefile-derive = "0.20.2"
 uuid = { version = "1.23", features = ["v4"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSWindow"] }
+objc2-foundation = { version = "0.3.2", features = ["NSObject", "NSString"] }
+
 [dev-dependencies]
 egui_kittest = { version = "0.34.3", features = ["wgpu", "snapshot"] }
 
