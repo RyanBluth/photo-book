@@ -129,24 +129,6 @@ impl<'a> CanvasInfo<'a> {
                     LayersResponse::None => {}
                 }
 
-                if ui.button("Add Text").clicked() {
-                    let layer = Layer::new_text_layer();
-                    self.canvas_state.layers.insert(layer.id, layer);
-                    history = Some(CanvasHistoryKind::AddText);
-                }
-
-                if ui.button("Add Shape").clicked() {
-                    let layer = Layer::new_rectangle_shape_layer();
-                    self.canvas_state.layers.insert(layer.id, layer);
-                    history = Some(CanvasHistoryKind::AddShape);
-                }
-
-                if ui.button("Add Ellipse Shape").clicked() {
-                    let layer = Layer::new_ellipse_shape_layer();
-                    self.canvas_state.layers.insert(layer.id, layer);
-                    history = Some(CanvasHistoryKind::AddShape);
-                }
-
                 ui.separator();
 
                 HistoryInfo::new(&mut HistoryInfoState::new(self.history_manager)).show(ui);
