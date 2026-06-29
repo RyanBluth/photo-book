@@ -1,11 +1,11 @@
 use eframe::{
-    egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
+    egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
     epaint::Vec2,
 };
-use egui::{Color32, Spinner, Stroke, StrokeKind, UiBuilder};
+use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
-use crate::{photo::Photo, theme::color, utils::Truncate, widget::placeholder::RectPlaceholder};
+use crate::{photo::Photo, theme::color, utils::RectExt, widget::placeholder::RectPlaceholder};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -84,23 +84,24 @@ impl Widget for GalleryImage {
 
                         ui.add_space(verical_spacing);
 
-                        let image_rect = match self.texture {
+                        let (image_rect, image_rotation) = match self.texture {
                             Ok(Some(texture)) => {
                                 let rotation = self.photo.metadata.rotation();
+                                let rotation = rotation.radians();
                                 let rect = ui
                                     .add(
                                         Image::from_texture(texture)
-                                            .rotate(rotation.radians(), Vec2::splat(0.5))
+                                            .rotate(rotation, Vec2::splat(0.5))
                                             .fit_to_exact_size(scaled_image_size),
                                     )
                                     .rect;
                                 ui.painter().rect_stroke(
-                                    rect,
+                                    rect.rotate_bb_around_center(rotation),
                                     5.0,
                                     Stroke::new(5.0, color::SURFACE_X_DARK),
                                     StrokeKind::Outside,
                                 );
-                                rect
+                                (rect, rotation)
                             }
                             Ok(None) => {
                                 let response = RectPlaceholder::new(
@@ -111,7 +112,7 @@ impl Widget for GalleryImage {
                                 .ui(ui);
 
                                 ui.put(response.rect, Spinner::new());
-                                response.rect
+                                (response.rect, 0.0)
                             }
                             Err(err) => {
                                 // Show themed error placeholder for now.
@@ -121,13 +122,15 @@ impl Widget for GalleryImage {
                                         .ui(ui)
                                         .rect;
                                 error!("Failed to load image: {:?}. {:?}", self.photo.path, err);
-                                rect
+                                (rect, 0.0)
                             }
                         };
 
                         if self.selected {
                             ui.painter().rect_stroke(
-                                image_rect.expand(3.0),
+                                image_rect
+                                    .expand(3.0)
+                                    .rotate_bb_around_center(image_rotation),
                                 6.0,
                                 Stroke::new(3.0, color::ACCENT),
                                 StrokeKind::Inside,
