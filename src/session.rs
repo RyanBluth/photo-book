@@ -11,7 +11,7 @@ use crate::{
         save_warning::{SaveWarningModal, SaveWarningResponse, SaveWarningSource},
     },
     photo_manager::PhotoManager,
-    project::{Project, ProjectError},
+    project::{Project, ProjectError, ProjectPreferences},
     scene::{gallery_scene::GalleryScene, organize_edit_scene::OrganizeEditScene},
     selection_manager::SelectionManager,
 };
@@ -45,6 +45,7 @@ impl From<native_dialog::Error> for SessionError {
 
 pub struct Session {
     pub active_project: Option<PathBuf>,
+    pub project_preferences: ProjectPreferences,
     saved_project: Option<Project>,
     save_warning_modal_id: Option<TypedModalId<SaveWarningModal>>,
     pending_operation: Option<PendingOperation>,
@@ -54,6 +55,7 @@ impl Session {
     pub fn new() -> Self {
         Self {
             active_project: None,
+            project_preferences: ProjectPreferences::default(),
             saved_project: None,
             save_warning_modal_id: None,
             pending_operation: None,
@@ -143,7 +145,7 @@ impl Session {
             }
         };
 
-        let project = Project::new(scene);
+        let project = Project::new_with_preferences(scene, self.project_preferences.clone());
         Project::save_project(&path, &project)?;
         dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
@@ -157,6 +159,7 @@ impl Session {
 
     pub fn mark_project_loaded(&mut self, path: PathBuf, project: Project) {
         self.active_project = Some(path);
+        self.project_preferences = project.preferences.clone();
         self.saved_project = Some(project);
     }
 
@@ -220,7 +223,9 @@ impl Session {
             .clear());
 
         let project = Project::load_project(&path)?;
-        let scene = project.clone().into();
+        self.project_preferences = project.preferences.clone();
+        let mut scene: OrganizeEditScene = project.clone().into();
+        scene.apply_project_preferences(&self.project_preferences);
 
         dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
@@ -234,8 +239,10 @@ impl Session {
 
     fn new_project_internal(&mut self) -> Result<OrganizeEditScene, SessionError> {
         self.active_project = None;
+        self.project_preferences = ProjectPreferences::default();
         self.saved_project = None;
-        let scene = OrganizeEditScene::new(GalleryScene::new(), None);
+        let mut scene = OrganizeEditScene::new(GalleryScene::new(), None);
+        scene.apply_project_preferences(&self.project_preferences);
 
         dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.clear();
@@ -251,7 +258,8 @@ impl Session {
             return false;
         }
 
-        let current_project = Project::new(current_scene);
+        let current_project =
+            Project::new_with_preferences(current_scene, self.project_preferences.clone());
         self.saved_project
             .as_ref()
             .map(|saved_project| saved_project != &current_project)

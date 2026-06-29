@@ -49,14 +49,11 @@ impl GalleryScene {
         let mut tiles = Tiles::default();
 
         let gallery_pane_id = tiles.insert_pane(GalleryScenePane::Gallery);
-
-        let right_tabs = vec![tiles.insert_pane(GalleryScenePane::PhotoInfo)];
-        let right_tabs_id = tiles.insert_tab_tile(right_tabs);
+        let photo_info_id = tiles.insert_pane(GalleryScenePane::PhotoInfo);
 
         let mut linear_layout =
-            Linear::new(LinearDir::Horizontal, vec![gallery_pane_id, right_tabs_id]);
-
-        linear_layout.shares.set_share(right_tabs_id, 0.2);
+            Linear::new(LinearDir::Horizontal, vec![gallery_pane_id, photo_info_id]);
+        linear_layout.shares.set_share(photo_info_id, 0.2);
 
         Self {
             state: GallerySceneState::default(),
@@ -65,6 +62,12 @@ impl GalleryScene {
                 tiles.insert_container(linear_layout),
                 tiles,
             ),
+        }
+    }
+
+    pub fn set_right_sidebar_open(&mut self, open: bool) {
+        if let Some(tile_id) = self.tree.tiles.find_pane(&GalleryScenePane::PhotoInfo) {
+            self.tree.tiles.set_visible(tile_id, open);
         }
     }
 }

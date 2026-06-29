@@ -36,7 +36,7 @@ impl ViewerSceneState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ViewerScenePane {
     Viewer,
     PhotoInfo,
@@ -68,6 +68,12 @@ impl ViewerScene {
                 tiles.insert_container(linear_layout),
                 tiles,
             ),
+        }
+    }
+
+    pub fn set_right_sidebar_open(&mut self, open: bool) {
+        if let Some(tile_id) = self.tree.tiles.find_pane(&ViewerScenePane::PhotoInfo) {
+            self.tree.tiles.set_visible(tile_id, open);
         }
     }
 

@@ -56,13 +56,15 @@ impl AutoSaveManager {
             }
         };
 
-        if let Some(active_project) = auto_save.active_project {
-            dep_mut!(Session, |session| {
+        let project = auto_save.project;
+        dep_mut!(Session, |session| {
+            if let Some(active_project) = auto_save.active_project {
                 session.active_project = Some(active_project);
-            });
-        }
+            }
+            session.project_preferences = project.preferences.clone();
+        });
 
-        Some(auto_save.project.into())
+        Some(project.into())
     }
 
     pub fn auto_save_if_needed(

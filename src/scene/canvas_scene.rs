@@ -103,7 +103,7 @@ impl CanvasSceneState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum CanvasScenePane {
     Gallery,
     Canvas,
@@ -154,6 +154,18 @@ impl CanvasScene {
             state,
             tree: egui_tiles::Tree::new(tree_id, tiles.insert_container(linear_layout), tiles),
         }
+    }
+
+    pub fn set_right_sidebar_open(&mut self, open: bool) {
+        let Some(info_tile_id) = self.tree.tiles.find_pane(&CanvasScenePane::Info) else {
+            return;
+        };
+        let right_sidebar_tile_id = self
+            .tree
+            .tiles
+            .parent_of(info_tile_id)
+            .unwrap_or(info_tile_id);
+        self.tree.tiles.set_visible(right_sidebar_tile_id, open);
     }
 
     #[allow(dead_code)]

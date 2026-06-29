@@ -1,8 +1,7 @@
-use std::fmt::Pointer;
-
-use egui::{Id, Response, Sense, TextStyle, Ui, vec2, Vec2, Stroke};
+use egui::{Id, Response, Sense, Stroke, TextStyle, Ui, Vec2, vec2};
 use egui_tiles::{
-    Behavior as TileBehavior, Container, SimplificationOptions, TabState, Tile, TileId, Tiles, Tree, UiResponse as TileUiResponse
+    Behavior as TileBehavior, Container, SimplificationOptions, TabState, Tile, TileId, Tiles,
+    Tree, UiResponse as TileUiResponse,
 };
 
 use crate::{cursor_manager::CursorManager, dep_mut, scene::Scene};
@@ -189,7 +188,6 @@ impl OrganizeEditScene {
         let mut content_response = None;
         let mut workspace_action = None;
         let mut tab_close_request = None;
-
         {
             let mut behavior = WorkspaceTabsBehavior {
                 scene: self,

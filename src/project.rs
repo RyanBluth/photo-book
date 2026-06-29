@@ -26,6 +26,7 @@ use crate::{
         gallery_scene::GalleryScene,
         organize_edit_scene::{Book as AppBook, OrganizeEditScene},
     },
+    session::Session,
     template::{
         Template as AppTemplate, TemplateRegion as AppTemplateRegion,
         TemplateRegionKind as AppTemplateRegionKind,
@@ -45,7 +46,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 6;
+pub const PROJECT_VERSION: u32 = 7;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -66,10 +67,19 @@ pub struct Project {
     pub group_by: ProjectPhotoGrouping,
     pub project_settings: ProjectSettings,
     pub albums: Vec<Album>,
+    pub preferences: ProjectPreferences,
 }
 
 impl Project {
     pub fn new(root_scene: &OrganizeEditScene) -> Project {
+        let preferences = dep!(Session, |session| session.project_preferences.clone());
+        Self::new_with_preferences(root_scene, preferences)
+    }
+
+    pub fn new_with_preferences(
+        root_scene: &OrganizeEditScene,
+        preferences: ProjectPreferences,
+    ) -> Project {
         let photos = dep!(PhotoManager, |photo_manager| {
             photo_manager
                 .photo_database
@@ -125,6 +135,7 @@ impl Project {
             group_by: group_by.into(),
             project_settings: project_settings.into(),
             albums,
+            preferences,
         }
     }
 
@@ -166,6 +177,8 @@ impl Project {
 
 impl From<Project> for OrganizeEditScene {
     fn from(project: Project) -> Self {
+        let preferences = project.preferences.clone();
+
         dep_mut!(ProjectSettingsManager, |settings| {
             settings.project_settings = project.project_settings.into();
         });
@@ -206,11 +219,27 @@ impl From<Project> for OrganizeEditScene {
             .map(AppBook::from)
             .collect::<Vec<_>>();
 
-        let scene = OrganizeEditScene::with_books(GalleryScene::new(), books);
+        let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), books);
+        scene.apply_project_preferences(&preferences);
 
         //photo_manager.group_photos_by(project.group_by.into());
 
         scene
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct ProjectPreferences {
+    pub right_sidebar_open: bool,
+    pub log_viewer_open: bool,
+}
+
+impl Default for ProjectPreferences {
+    fn default() -> Self {
+        Self {
+            right_sidebar_open: true,
+            log_viewer_open: false,
+        }
     }
 }
 

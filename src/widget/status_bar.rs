@@ -2,25 +2,19 @@ use egui::{
     Align, FontId, Layout, Rect, Response, RichText, Sense, Spinner, Stroke, Ui, UiBuilder, Vec2,
 };
 
-use crate::{app_status::AppStatus, dep, theme, utils::EguiUiExt};
-
-#[derive(Debug, Clone, Default)]
-pub struct StatusBarState {
-    pub log_viewer_open: bool,
-}
+use crate::{app_status::AppStatus, dep, dep_mut, session::Session, theme, utils::EguiUiExt};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusBarResponse {
     pub log_viewer_toggled: bool,
+    pub right_sidebar_toggled: bool,
 }
 
-pub struct StatusBar<'a> {
-    state: &'a mut StatusBarState,
-}
+pub struct StatusBar;
 
-impl<'a> StatusBar<'a> {
-    pub fn new(state: &'a mut StatusBarState) -> Self {
-        Self { state }
+impl StatusBar {
+    pub fn new() -> Self {
+        Self
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> StatusBarResponse {
@@ -84,17 +78,69 @@ impl<'a> StatusBar<'a> {
     }
 
     fn right_content(&mut self, ui: &mut Ui, response: &mut StatusBarResponse) {
-        if Self::log_viewer_button(ui, self.state.log_viewer_open)
-            .on_hover_text("Toggle log viewer")
-            .clicked()
-        {
-            self.state.log_viewer_open = !self.state.log_viewer_open;
-            response.log_viewer_toggled = true;
-        }
+        let preferences = dep!(Session, |session| session.project_preferences.clone());
+        ui.horizontal(|ui| {
+            if Self::log_viewer_button(ui, preferences.log_viewer_open)
+                .on_hover_text("Toggle log viewer")
+                .clicked()
+            {
+                dep_mut!(Session, |session| {
+                    session.project_preferences.log_viewer_open =
+                        !session.project_preferences.log_viewer_open;
+                });
+                response.log_viewer_toggled = true;
+            }
+
+            if Self::right_sidebar_button(ui, preferences.right_sidebar_open)
+                .on_hover_text("Toggle right sidebar")
+                .clicked()
+            {
+                dep_mut!(Session, |session| {
+                    session.project_preferences.right_sidebar_open =
+                        !session.project_preferences.right_sidebar_open;
+                });
+                response.right_sidebar_toggled = true;
+            }
+        });
     }
 
     pub fn height() -> f32 {
         30.0
+    }
+
+    pub fn right_sidebar_button(ui: &mut Ui, is_open: bool) -> Response {
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(24.0, 18.0), Sense::click());
+        let fill = if is_open {
+            theme::color::ACCENT_MUTED
+        } else if response.hovered() {
+            theme::color::SURFACE_MUTED
+        } else {
+            theme::color::SURFACE_DARK
+        };
+        ui.painter().rect_filled(rect, 3.0, fill);
+
+        let stroke = Stroke::new(
+            1.5,
+            if is_open {
+                theme::color::ACCENT
+            } else {
+                theme::color::WHITE
+            },
+        );
+
+        let outline = rect.shrink2(Vec2::new(5.0, 4.0));
+        ui.painter()
+            .rect_stroke(outline, 1.0, stroke, egui::StrokeKind::Inside);
+        let sidebar_x = outline.right() - 4.0;
+        ui.painter().line_segment(
+            [
+                egui::pos2(sidebar_x, outline.top()),
+                egui::pos2(sidebar_x, outline.bottom()),
+            ],
+            stroke,
+        );
+
+        response
     }
 
     pub fn log_viewer_button(ui: &mut Ui, is_open: bool) -> Response {

@@ -22,6 +22,7 @@ use crate::{
     },
     model::photo_grouping::PhotoGrouping,
     photo_manager::PhotoManager,
+    project::ProjectPreferences,
     project_settings::ProjectSettingsManager,
     selection_manager::SelectionManager,
     session::{Session, SessionError},
@@ -32,7 +33,7 @@ use crate::{
         book_list::BookListEntry,
         left_sidebar::{LeftSidebar, LeftSidebarResponse, LeftSidebarState},
         log_viewer::LogViewer,
-        status_bar::{StatusBar, StatusBarState},
+        status_bar::StatusBar,
     },
 };
 
@@ -65,7 +66,6 @@ pub struct OrganizeEditScene {
     page_settings_modal_id: Option<TypedModalId<PageSettingsModal>>,
     new_book_modal_id: Option<TypedModalId<NamePromptModal>>,
     pending_new_book_name: Option<String>,
-    status_bar_state: StatusBarState,
 }
 
 impl OrganizeEditScene {
@@ -97,7 +97,6 @@ impl OrganizeEditScene {
             page_settings_modal_id: None,
             new_book_modal_id: None,
             pending_new_book_name: None,
-            status_bar_state: StatusBarState::default(),
         }
     }
 
@@ -205,6 +204,7 @@ impl OrganizeEditScene {
         let edit_scene = Arc::new(RwLock::new(Self::canvas_scene_for_book(
             book_id, book.state,
         )));
+        self.apply_project_preferences_to_canvas_scene(&edit_scene);
         let tile_id = self.insert_book_tab(book_id.to_string());
         self.open_books.push(OpenBookEditor {
             book_id: book_id.to_string(),
@@ -214,7 +214,12 @@ impl OrganizeEditScene {
         self.selected_book_id = Some(book_id.to_string());
     }
 
-    pub(in crate::scene::organize_edit_scene) fn open_photo_viewer(&mut self, scene: ViewerScene) {
+    pub(in crate::scene::organize_edit_scene) fn open_photo_viewer(
+        &mut self,
+        mut scene: ViewerScene,
+    ) {
+        let preferences = Self::current_project_preferences();
+        scene.set_right_sidebar_open(preferences.right_sidebar_open);
         let photo_path = scene.photo_path().clone();
 
         if self.selected_book_id.is_some() {
@@ -720,6 +725,7 @@ impl OrganizeEditScene {
                 SceneTransition::Gallery(scene) => {
                     *self.organize.write().unwrap() = scene;
                     self.show_gallery();
+                    self.apply_session_project_preferences();
                     SceneResponse::None
                 }
                 SceneTransition::Canvas(scene) => {
@@ -747,10 +753,15 @@ impl OrganizeEditScene {
                         .iter_mut()
                         .find(|open_book| open_book.book_id == book_id)
                     {
-                        open_book.scene.write().unwrap().state = state;
+                        let mut open_scene = open_book.scene.write().unwrap();
+                        open_scene.state = state;
+                        open_scene.set_right_sidebar_open(
+                            Self::current_project_preferences().right_sidebar_open,
+                        );
                     } else {
                         let edit_scene =
                             Arc::new(RwLock::new(Self::canvas_scene_for_book(&book_id, state)));
+                        self.apply_project_preferences_to_canvas_scene(&edit_scene);
                         let tile_id = self.insert_book_tab(book_id.clone());
                         self.open_books.push(OpenBookEditor {
                             book_id: book_id.clone(),
@@ -772,6 +783,46 @@ impl OrganizeEditScene {
             _ => scene_response,
         }
     }
+
+    pub fn apply_project_preferences(&mut self, preferences: &ProjectPreferences) {
+        self.organize
+            .write()
+            .unwrap()
+            .set_right_sidebar_open(preferences.right_sidebar_open);
+
+        for open_book in &self.open_books {
+            open_book
+                .scene
+                .write()
+                .unwrap()
+                .set_right_sidebar_open(preferences.right_sidebar_open);
+        }
+
+        for open_viewer in &self.open_photo_viewers {
+            open_viewer
+                .scene
+                .write()
+                .unwrap()
+                .set_right_sidebar_open(preferences.right_sidebar_open);
+        }
+    }
+
+    fn apply_session_project_preferences(&mut self) {
+        let preferences = Self::current_project_preferences();
+        self.apply_project_preferences(&preferences);
+    }
+
+    fn apply_project_preferences_to_canvas_scene(&self, scene: &Arc<RwLock<CanvasScene>>) {
+        let preferences = Self::current_project_preferences();
+        scene
+            .write()
+            .unwrap()
+            .set_right_sidebar_open(preferences.right_sidebar_open);
+    }
+
+    fn current_project_preferences() -> ProjectPreferences {
+        dep!(Session, |session| session.project_preferences.clone())
+    }
 }
 
 impl Scene for OrganizeEditScene {
@@ -784,14 +835,17 @@ impl Scene for OrganizeEditScene {
             ..Default::default()
         };
 
-        egui::Panel::bottom("root_status_bar")
+        let status_bar_response = egui::Panel::bottom("root_status_bar")
             .exact_size(StatusBar::height())
             .frame(frame)
-            .show_inside(ui, |ui| {
-                StatusBar::new(&mut self.status_bar_state).show(ui);
-            });
+            .show_inside(ui, |ui| StatusBar::new().show(ui))
+            .inner;
 
-        if self.status_bar_state.log_viewer_open {
+        if status_bar_response.right_sidebar_toggled {
+            self.apply_session_project_preferences();
+        }
+
+        if Self::current_project_preferences().log_viewer_open {
             egui::Panel::bottom("root_log_viewer")
                 .resizable(true)
                 .default_size(220.0)
