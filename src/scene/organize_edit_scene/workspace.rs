@@ -1,10 +1,18 @@
+use std::{collections::HashMap, path::PathBuf};
+
 use egui::{Id, Response, Sense, Stroke, TextStyle, Ui, Vec2, vec2};
 use egui_tiles::{
     Behavior as TileBehavior, Container, SimplificationOptions, TabState, Tile, TileId, Tiles,
     Tree, UiResponse as TileUiResponse,
 };
 
-use crate::{cursor_manager::CursorManager, dep_mut, scene::Scene};
+use crate::{
+    cursor_manager::CursorManager,
+    dep_mut,
+    photo::Photo,
+    project::{ProjectWorkspaceTab, ProjectWorkspaceTabs},
+    scene::{Scene, viewer_scene::ViewerScene},
+};
 
 use super::{BookId, OrganizeEditScene, SceneResponse, photo_viewer::PhotoViewerId};
 
@@ -134,6 +142,100 @@ impl OrganizeEditScene {
                 Some(Tile::Pane(pane)) => Some(pane.clone()),
                 _ => None,
             })
+    }
+
+    fn project_workspace_tab_for_pane(&self, pane: &WorkspacePane) -> Option<ProjectWorkspaceTab> {
+        match pane {
+            WorkspacePane::Gallery => Some(ProjectWorkspaceTab::Gallery),
+            WorkspacePane::Book(id) => Some(ProjectWorkspaceTab::Book { id: id.clone() }),
+            WorkspacePane::PhotoViewer(viewer_id) => self
+                .open_photo_viewers
+                .iter()
+                .find(|open_viewer| open_viewer.viewer_id.as_str() == viewer_id.as_str())
+                .map(|open_viewer| ProjectWorkspaceTab::PhotoViewer {
+                    path: open_viewer.scene.read().unwrap().photo_path().clone(),
+                }),
+        }
+    }
+
+    pub fn project_workspace_tabs(&self) -> ProjectWorkspaceTabs {
+        let open_tabs = self
+            .workspace_tabs
+            .root
+            .and_then(|root| self.workspace_tabs.tiles.get(root))
+            .and_then(|tile| match tile {
+                Tile::Container(container) => Some(container.children_vec()),
+                Tile::Pane(_) => None,
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|tile_id| match self.workspace_tabs.tiles.get(tile_id) {
+                Some(Tile::Pane(pane)) => self.project_workspace_tab_for_pane(pane),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let selected_tab = self
+            .active_workspace_pane()
+            .and_then(|pane| self.project_workspace_tab_for_pane(&pane));
+
+        ProjectWorkspaceTabs {
+            open_tabs: if open_tabs.is_empty() {
+                vec![ProjectWorkspaceTab::Gallery]
+            } else {
+                open_tabs
+            },
+            selected_tab,
+        }
+    }
+
+    pub fn restore_workspace_tabs(
+        &mut self,
+        workspace_tabs: &ProjectWorkspaceTabs,
+        photos_by_path: &HashMap<PathBuf, Photo>,
+    ) {
+        self.open_books.clear();
+        self.open_photo_viewers.clear();
+        self.workspace_tabs = Self::initial_workspace_tabs();
+        self.selected_book_id = None;
+
+        for tab in &workspace_tabs.open_tabs {
+            match tab {
+                ProjectWorkspaceTab::Gallery => {}
+                ProjectWorkspaceTab::Book { id } => {
+                    self.select_book(id);
+                }
+                ProjectWorkspaceTab::PhotoViewer { path } => {
+                    if let Some(photo) = photos_by_path.get(path) {
+                        self.open_photo_viewer(ViewerScene::new(photo.clone()));
+                    }
+                }
+            }
+        }
+
+        match &workspace_tabs.selected_tab {
+            Some(ProjectWorkspaceTab::Book { id }) if self.activate_book_tab(id) => {
+                self.selected_book_id = Some(id.clone());
+            }
+            Some(ProjectWorkspaceTab::PhotoViewer { path }) => {
+                let viewer_id = self
+                    .open_photo_viewers
+                    .iter()
+                    .find(|open_viewer| open_viewer.scene.read().unwrap().photo_path() == path)
+                    .map(|open_viewer| open_viewer.viewer_id.clone());
+
+                if let Some(viewer_id) = viewer_id {
+                    self.activate_photo_viewer_tab(&viewer_id);
+                    self.selected_book_id = None;
+                } else {
+                    self.sync_active_workspace_tab();
+                }
+            }
+            _ => {
+                self.activate_gallery_tab();
+                self.selected_book_id = None;
+            }
+        }
     }
 
     pub(super) fn sync_active_workspace_tab(&mut self) {

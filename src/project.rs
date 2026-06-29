@@ -46,7 +46,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 7;
+pub const PROJECT_VERSION: u32 = 8;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -80,6 +80,9 @@ impl Project {
         root_scene: &OrganizeEditScene,
         preferences: ProjectPreferences,
     ) -> Project {
+        let mut preferences = preferences;
+        preferences.workspace_tabs = root_scene.project_workspace_tabs();
+
         let photos = dep!(PhotoManager, |photo_manager| {
             photo_manager
                 .photo_database
@@ -193,7 +196,12 @@ impl From<Project> for OrganizeEditScene {
             .photos
             .iter()
             .map(|photo| AppPhoto::with_metadata(photo.path.clone(), photo.metadata.clone().into()))
-            .collect();
+            .collect::<Vec<_>>();
+
+        let photo_lookup = photos
+            .iter()
+            .map(|photo| (photo.path.clone(), photo.clone()))
+            .collect::<std::collections::HashMap<_, _>>();
 
         dep!(PhotoManager, |photo_manager| {
             photo_manager.load_photos(photos);
@@ -221,6 +229,7 @@ impl From<Project> for OrganizeEditScene {
 
         let mut scene = OrganizeEditScene::with_books(GalleryScene::new(), books);
         scene.apply_project_preferences(&preferences);
+        scene.restore_workspace_tabs(&preferences.workspace_tabs, &photo_lookup);
 
         //photo_manager.group_photos_by(project.group_by.into());
 
@@ -232,6 +241,7 @@ impl From<Project> for OrganizeEditScene {
 pub struct ProjectPreferences {
     pub right_sidebar_open: bool,
     pub log_viewer_open: bool,
+    pub workspace_tabs: ProjectWorkspaceTabs,
 }
 
 impl Default for ProjectPreferences {
@@ -239,8 +249,31 @@ impl Default for ProjectPreferences {
         Self {
             right_sidebar_open: true,
             log_viewer_open: false,
+            workspace_tabs: ProjectWorkspaceTabs::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct ProjectWorkspaceTabs {
+    pub open_tabs: Vec<ProjectWorkspaceTab>,
+    pub selected_tab: Option<ProjectWorkspaceTab>,
+}
+
+impl Default for ProjectWorkspaceTabs {
+    fn default() -> Self {
+        Self {
+            open_tabs: vec![ProjectWorkspaceTab::Gallery],
+            selected_tab: Some(ProjectWorkspaceTab::Gallery),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Savefile)]
+pub enum ProjectWorkspaceTab {
+    Gallery,
+    Book { id: String },
+    PhotoViewer { path: PathBuf },
 }
 
 #[derive(Debug, Clone, PartialEq, Savefile)]
