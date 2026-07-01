@@ -6,7 +6,11 @@ use egui::{
 };
 
 use crate::{
-    cursor_manager::CursorManager, dep_mut, photo::Photo, photo_manager::PhotoManager, theme::color,
+    cursor_manager::CursorManager,
+    dep_mut,
+    photo::{self, Photo},
+    photo_manager::PhotoManager,
+    theme::color,
 };
 
 const DEFAULT_BAR_HEIGHT: f32 = 120.0;
@@ -225,32 +229,35 @@ fn thumbnail_cell(
     cell_width: f32,
     cell_height: f32,
 ) -> Response {
-    let (rect, response) =
-        ui.allocate_exact_size(Vec2::new(cell_width, cell_height), Sense::click());
-
-    let background = if selected {
-        color::ACCENT_MUTED
-    } else if response.hovered() {
-        color::SURFACE_MUTED
-    } else {
-        color::SURFACE_DARK
-    };
-
-    ui.painter().rect_filled(rect, 4.0, background);
-
-    let stroke = if selected {
-        Stroke::new(2.0, color::ACCENT)
-    } else {
-        Stroke::new(1.0, color::SURFACE_MUTED)
-    };
-    ui.painter()
-        .rect_stroke(rect, 4.0, stroke, StrokeKind::Inside);
-
-    let image_bounds = rect.shrink(CELL_PADDING);
+    let stroke_width = 3.0;
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(cell_width, cell_height - stroke_width * 2.0),
+        Sense::click(),
+    );
     let thumbnail = dep_mut!(PhotoManager, |photo_manager| {
         photo_manager.thumbnail_texture_for(photo, ui.ctx())
     });
-    paint_thumbnail(ui, photo, image_bounds, thumbnail);
+
+    let photo_rect = rect
+        .shrink2(Vec2::new(0.0, stroke_width * 2.0))
+        .translate(Vec2::new(0.0, stroke_width));
+    let thumbnail_rect = paint_thumbnail(ui, photo, photo_rect, thumbnail);
+
+    if selected {
+        ui.painter().rect_stroke(
+            thumbnail_rect,
+            stroke_width,
+            Stroke::new(stroke_width, color::ACCENT),
+            StrokeKind::Outside,
+        );
+    } else {
+        ui.painter().rect_stroke(
+            thumbnail_rect,
+            stroke_width,
+            Stroke::new(stroke_width, color::SURFACE_DARK),
+            StrokeKind::Outside,
+        );
+    }
 
     response.on_hover_text(photo.path.display().to_string())
 }
@@ -260,7 +267,7 @@ fn paint_thumbnail(
     photo: &Photo,
     bounds: Rect,
     thumbnail: anyhow::Result<Option<SizedTexture>>,
-) {
+) -> Rect {
     let image_size = fitted_unrotated_image_size(photo, bounds.size());
     let image_rect = Rect::from_center_size(bounds.center(), image_size);
     let placeholder_rect =
@@ -283,6 +290,8 @@ fn paint_thumbnail(
                 .rect_filled(placeholder_rect, 2.0, color::ERROR);
         }
     }
+
+    placeholder_rect
 }
 
 fn fitted_unrotated_image_size(photo: &Photo, available_size: Vec2) -> Vec2 {
