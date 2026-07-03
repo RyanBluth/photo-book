@@ -8,14 +8,19 @@ pub struct RectPlaceholder {
 
 impl RectPlaceholder {
     pub fn new(size: Vec2, color: Color32, corner_radius: f32) -> Self {
-        Self { size, color, corner_radius }
+        Self {
+            size,
+            color,
+            corner_radius,
+        }
     }
 }
 
 impl Widget for RectPlaceholder {
     fn ui(self, ui: &mut Ui) -> Response {
         let (rect, response) = ui.allocate_exact_size(self.size, Sense::hover());
-        ui.painter().rect_filled(rect, self.corner_radius, self.color);
+        ui.painter()
+            .rect_filled(rect, self.corner_radius, self.color);
         response
     }
 }

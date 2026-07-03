@@ -6,10 +6,15 @@ use eframe::{
 use egui::CursorIcon;
 
 use crate::{
-    cursor_manager::CursorManager, dep_mut, photo::{
+    cursor_manager::CursorManager,
+    dep_mut,
+    photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
-    }, photo_manager::PhotoManager, theme::color, utils::RectExt
+    },
+    photo_manager::PhotoManager,
+    theme::color,
+    utils::RectExt,
 };
 
 #[derive(Debug, Clone, PartialEq)]

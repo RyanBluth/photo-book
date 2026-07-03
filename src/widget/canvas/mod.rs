@@ -23,8 +23,8 @@ use eframe::{
     epaint::{Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
 };
 use egui::{
-    Order,
     epaint::{ColorMode, PathStroke},
+    Order,
 };
 
 use crate::{

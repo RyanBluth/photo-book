@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 
 use crate::{
     assets::Asset,
-    id::{PageId, next_page_id},
+    id::{next_page_id, PageId},
     scene::canvas_scene::CanvasHistoryManager,
     theme,
 };

@@ -1,6 +1,6 @@
 use egui::{RichText, Ui};
 
-use crate::widget::tree_list::{ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow};
+use crate::widget::tree_list::{SelectionStyle, TreeList, TreeListRow, ROW_HEIGHT};
 
 #[derive(Debug, Clone, Default)]
 pub struct BookListState;

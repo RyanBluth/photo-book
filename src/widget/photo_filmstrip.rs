@@ -1,8 +1,8 @@
 use std::{ops::Range, path::PathBuf};
 
 use egui::{
-    Align, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind,
-    Ui, UiBuilder, Vec2, load::SizedTexture, style::ScrollAnimation,
+    load::SizedTexture, style::ScrollAnimation, Align, CursorIcon, Image, Pos2, Rect, Response,
+    ScrollArea, Sense, Spinner, Stroke, StrokeKind, Ui, UiBuilder, Vec2,
 };
 
 use crate::{

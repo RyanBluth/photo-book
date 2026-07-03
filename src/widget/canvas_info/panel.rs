@@ -4,7 +4,7 @@ use egui::InnerResponse;
 use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     widget::{
-        canvas::{CanvasState, types::ToolKind},
+        canvas::{types::ToolKind, CanvasState},
         canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             layers::CanvasShapeKind,

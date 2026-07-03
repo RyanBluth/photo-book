@@ -171,6 +171,9 @@ async fn main() -> anyhow::Result<()> {
         "Photobook",
         options,
         Box::new(|_cc| {
+            #[cfg(target_os = "linux")]
+            _cc.egui_ctx.enable_accesskit();
+
             //re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
             let mut app = PhotoBookApp::new();
             #[cfg(target_os = "macos")]

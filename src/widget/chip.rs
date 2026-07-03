@@ -1,6 +1,21 @@
-use egui::{Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, Widget};
+use egui::{
+    text::{LayoutJob, TextWrapping},
+    Rect, Response, Sense, Stroke, StrokeKind, TextFormat, Ui, Vec2, Widget,
+};
 
+use crate::cursor_manager::CursorManager;
+use crate::dep_mut;
 use crate::theme::color;
+
+const CHIP_HEIGHT: f32 = 24.0;
+const CHIP_RADIUS: u8 = 6;
+const CHIP_FONT_SIZE: f32 = 13.0;
+const CHIP_MAX_TEXT_WIDTH: f32 = 180.0;
+const CHIP_MIN_TEXT_WIDTH: f32 = 48.0;
+const CHIP_CLOSE_SIZE: f32 = 13.0;
+const CHIP_CLOSE_GAP: f32 = 5.0;
+const CHIP_CLOSE_HALF_CROSS: f32 = 4.0;
+const CHIP_PADDING: Vec2 = Vec2::new(9.0, 4.0);
 
 #[derive(Clone)]
 pub struct Chip<'a> {
@@ -50,103 +65,114 @@ impl<'a> Chip<'a> {
 impl<'a> Widget for Chip<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
         let visuals = ui.style().visuals.clone();
-
-        let text_galley = ui.painter().layout_no_wrap(
+        let text_color = if self.selected {
+            visuals.text_color()
+        } else {
+            visuals.weak_text_color()
+        };
+        let close_size = if self.closable { CHIP_CLOSE_SIZE } else { 0.0 };
+        let close_gap = if self.closable { CHIP_CLOSE_GAP } else { 0.0 };
+        let max_text_width = (ui.available_width() - CHIP_PADDING.x * 2.0 - close_gap - close_size)
+            .clamp(CHIP_MIN_TEXT_WIDTH, CHIP_MAX_TEXT_WIDTH);
+        let mut layout_job = LayoutJob::single_section(
             self.text.to_string(),
-            egui::FontId::default(),
-            visuals.text_color(),
+            TextFormat {
+                font_id: egui::FontId::proportional(CHIP_FONT_SIZE),
+                color: text_color,
+                ..Default::default()
+            },
         );
+        layout_job.wrap = TextWrapping::truncate_at_width(max_text_width);
+        let text_galley = ui.painter().layout_job(layout_job);
 
-        let close_button_size = if self.closable { 16.0 } else { 0.0 };
-        let close_button_spacing = if self.closable { 4.0 } else { 0.0 };
-
-        let padding = Vec2::new(12.0, 6.0);
-        let total_width =
-            text_galley.size().x + close_button_size + close_button_spacing + padding.x * 2.0;
-        let height = text_galley.size().y.max(close_button_size) + padding.y * 2.0;
-
-        let size = Vec2::new(total_width, height);
+        let total_width = text_galley.size().x + close_size + close_gap + CHIP_PADDING.x * 2.0;
+        let size = Vec2::new(total_width, CHIP_HEIGHT);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+        let close_rect = close_rect(rect);
+        let close_hovered = self.closable
+            && response
+                .hover_pos()
+                .map(|pointer_pos| close_rect.contains(pointer_pos))
+                .unwrap_or(false);
+
+        if response.hovered() {
+            dep_mut!(CursorManager, |cursor_manager| {
+                cursor_manager.set_cursor(egui::CursorIcon::PointingHand);
+            });
+        }
 
         if ui.is_rect_visible(rect) {
             let painter = ui.painter();
 
             let bg_color = if self.selected {
-                visuals.selection.bg_fill
+                color::ACCENT_MUTED
             } else if response.hovered() {
-                visuals.widgets.hovered.bg_fill
+                color::SURFACE_MUTED
             } else {
-                visuals.widgets.inactive.bg_fill
+                color::SURFACE_DARK
             };
 
             let stroke_color = if self.selected {
-                visuals.selection.stroke.color
+                color::BLUE_SOFT
             } else if response.hovered() {
-                visuals.widgets.hovered.weak_bg_fill
+                color::SURFACE_STRONG
             } else {
-                visuals.widgets.inactive.weak_bg_fill
+                color::SURFACE_MUTED
             };
 
-            painter.rect_filled(rect, height / 2.0, bg_color);
+            painter.rect_filled(rect, CHIP_RADIUS, bg_color);
             painter.rect_stroke(
                 rect,
-                height / 2.0,
+                CHIP_RADIUS,
                 Stroke::new(1.0, stroke_color),
                 StrokeKind::Outside,
             );
 
-            let text_color = if self.selected {
-                visuals.selection.stroke.color
-            } else {
-                visuals.text_color()
-            };
-
             let text_pos = egui::pos2(
-                rect.left() + padding.x,
+                rect.left() + CHIP_PADDING.x,
                 rect.center().y - text_galley.size().y / 2.0,
             );
             painter.galley(text_pos, text_galley, text_color);
 
             if self.closable {
-                let close_rect = Rect::from_center_size(
-                    egui::pos2(
-                        rect.right() - padding.x - close_button_size / 2.0,
-                        rect.center().y,
-                    ),
-                    Vec2::splat(close_button_size),
-                );
-
-                let close_hovered =
-                    close_rect.contains(response.interact_pointer_pos().unwrap_or_default());
-                let close_bg = if close_hovered {
-                    color::WHITE_OVERLAY
-                } else {
-                    color::TRANSPARENT
-                };
-
-                painter.circle_filled(close_rect.center(), close_button_size / 2.0, close_bg);
+                if close_hovered {
+                    painter.circle_filled(
+                        close_rect.center(),
+                        CHIP_CLOSE_SIZE / 2.0,
+                        color::WHITE_OVERLAY,
+                    );
+                }
 
                 let cross_color = if close_hovered {
-                    color::WHITE
+                    visuals.text_color()
                 } else {
-                    text_color
+                    visuals.weak_text_color()
                 };
-
-                let cross_size = 6.0;
                 let cross_center = close_rect.center();
-                let half_cross = cross_size / 2.0;
 
                 painter.line_segment(
                     [
-                        egui::pos2(cross_center.x - half_cross, cross_center.y - half_cross),
-                        egui::pos2(cross_center.x + half_cross, cross_center.y + half_cross),
+                        egui::pos2(
+                            cross_center.x - CHIP_CLOSE_HALF_CROSS,
+                            cross_center.y - CHIP_CLOSE_HALF_CROSS,
+                        ),
+                        egui::pos2(
+                            cross_center.x + CHIP_CLOSE_HALF_CROSS,
+                            cross_center.y + CHIP_CLOSE_HALF_CROSS,
+                        ),
                     ],
                     Stroke::new(1.5, cross_color),
                 );
                 painter.line_segment(
                     [
-                        egui::pos2(cross_center.x + half_cross, cross_center.y - half_cross),
-                        egui::pos2(cross_center.x - half_cross, cross_center.y + half_cross),
+                        egui::pos2(
+                            cross_center.x + CHIP_CLOSE_HALF_CROSS,
+                            cross_center.y - CHIP_CLOSE_HALF_CROSS,
+                        ),
+                        egui::pos2(
+                            cross_center.x - CHIP_CLOSE_HALF_CROSS,
+                            cross_center.y + CHIP_CLOSE_HALF_CROSS,
+                        ),
                     ],
                     Stroke::new(1.5, cross_color),
                 );
@@ -155,6 +181,16 @@ impl<'a> Widget for Chip<'a> {
 
         response
     }
+}
+
+fn close_rect(rect: Rect) -> Rect {
+    Rect::from_center_size(
+        egui::pos2(
+            rect.right() - CHIP_PADDING.x - CHIP_CLOSE_SIZE / 2.0,
+            rect.center().y,
+        ),
+        Vec2::splat(CHIP_CLOSE_SIZE),
+    )
 }
 
 #[allow(dead_code)]
@@ -187,17 +223,7 @@ pub fn chip_closable(ui: &mut Ui, text: &str) -> ChipResponse {
 
     let close_clicked = if let Some(pointer_pos) = response.interact_pointer_pos() {
         if response.clicked() {
-            let rect = response.rect;
-            let padding = Vec2::new(12.0, 6.0);
-            let close_button_size = 16.0;
-            let close_rect = Rect::from_center_size(
-                egui::pos2(
-                    rect.right() - padding.x - close_button_size / 2.0,
-                    rect.center().y,
-                ),
-                Vec2::splat(close_button_size),
-            );
-            close_rect.contains(pointer_pos)
+            close_rect(response.rect).contains(pointer_pos)
         } else {
             false
         }
@@ -218,17 +244,7 @@ pub fn chip_selectable_closable(ui: &mut Ui, text: &str, selected: bool) -> Chip
 
     let close_clicked = if let Some(pointer_pos) = response.interact_pointer_pos() {
         if response.clicked() {
-            let rect = response.rect;
-            let padding = Vec2::new(12.0, 6.0);
-            let close_button_size = 16.0;
-            let close_rect = Rect::from_center_size(
-                egui::pos2(
-                    rect.right() - padding.x - close_button_size / 2.0,
-                    rect.center().y,
-                ),
-                Vec2::splat(close_button_size),
-            );
-            close_rect.contains(pointer_pos)
+            close_rect(response.rect).contains(pointer_pos)
         } else {
             false
         }

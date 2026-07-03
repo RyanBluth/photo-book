@@ -1,6 +1,7 @@
 pub mod action_bar;
 pub mod album_list;
 pub mod auto_center;
+pub mod autocomplete;
 pub mod book_list;
 pub mod canvas;
 pub mod canvas_info;

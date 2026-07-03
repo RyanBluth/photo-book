@@ -9,7 +9,7 @@ use crate::{
     cursor_manager::CursorManager,
     dep_mut,
     history::HistoricallyEqual,
-    id::{LayerId, next_layer_id},
+    id::{next_layer_id, LayerId},
     model::{self, editable_value::EditableValue},
     photo::Photo,
     photo_manager::PhotoManager,
@@ -572,7 +572,7 @@ impl<'a> Layers<'a> {
                                                     RectPlaceholder::new(
                                                         image_size,
                                                         color::SURFACE_EMPHASIS,
-                                                        0.0
+                                                        0.0,
                                                     ),
                                                 );
                                             }

@@ -2,11 +2,11 @@ use eframe::{
     egui::{self, FontId, Id},
     epaint::{Pos2, Rect, Vec2},
 };
-use indexmap::{IndexMap, indexmap};
+use indexmap::{indexmap, IndexMap};
 
 use crate::{
     dep,
-    id::{LayerId, next_layer_id},
+    id::{next_layer_id, LayerId},
     layout::LayoutNode,
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
