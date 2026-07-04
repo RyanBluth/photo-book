@@ -175,7 +175,6 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             ViewerScenePane::PhotoInfo => {
-                ui.set_max_width(600.0);
                 PhotoInfo::new(
                     SaveOnDropPhoto::new(&mut self.scene_state.photo),
                     &mut self.scene_state.photo_info_state,
