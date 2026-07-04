@@ -10,8 +10,8 @@ use crate::{
     file_tree::{FileTreeNode, FlattenedTreeItem},
     photo_manager::PhotoManager,
     widget::tree_list::{
-        SelectionStyle, TreeList, TreeListRow, TreeListRowResponse, TreeListSelection,
-        INDENT_WIDTH, ROW_HEIGHT,
+        INDENT_WIDTH, ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow, TreeListRowResponse,
+        TreeListSelection,
     },
 };
 

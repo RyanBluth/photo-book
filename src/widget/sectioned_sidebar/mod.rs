@@ -5,8 +5,8 @@ use crate::{
     dep_mut,
     theme::color,
     widget::sectioned_sidebar::section::{
-        section_header_height, CollapsableSection, CollapsableSectionResponse,
-        CollapsableSectionState,
+        CollapsableSection, CollapsableSectionResponse, CollapsableSectionState,
+        section_header_height,
     },
 };
 

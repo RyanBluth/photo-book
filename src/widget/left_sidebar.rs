@@ -9,7 +9,7 @@ use crate::{
         book_list::{BookList, BookListEntry, BookListResponse, BookListState},
         file_tree::{FileTree, FileTreeResponse, FileTreeState},
         sectioned_sidebar::{
-            section::CollapsableSectionState, SectionedSidebarBuilder, MIN_EXPANDED_SECTION_HEIGHT,
+            MIN_EXPANDED_SECTION_HEIGHT, SectionedSidebarBuilder, section::CollapsableSectionState,
         },
     },
 };

@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    containers::menu::MenuConfig, Align, FontId, Frame, Image, Layout, Margin, MenuBar,
-    PopupCloseBehavior, Rect, RichText, Slider, Ui, UiBuilder,
+    Align, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, RichText,
+    Slider, Ui, UiBuilder, containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;

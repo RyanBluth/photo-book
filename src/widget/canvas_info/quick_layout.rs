@@ -2,7 +2,7 @@ use eframe::egui::{self, Sense, Slider, Vec2};
 use egui_extras::Column;
 
 use crate::{
-    layout::{apply_layout_node, template, LayoutItem, LayoutNode},
+    layout::{LayoutItem, LayoutNode, apply_layout_node, template},
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{

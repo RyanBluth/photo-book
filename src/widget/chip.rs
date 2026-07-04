@@ -1,6 +1,6 @@
 use egui::{
-    text::{LayoutJob, TextWrapping},
     Rect, Response, Sense, Stroke, StrokeKind, TextFormat, Ui, Vec2, Widget,
+    text::{LayoutJob, TextWrapping},
 };
 
 use crate::cursor_manager::CursorManager;

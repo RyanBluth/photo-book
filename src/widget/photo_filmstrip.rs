@@ -1,8 +1,8 @@
 use std::{ops::Range, path::PathBuf};
 
 use egui::{
-    load::SizedTexture, style::ScrollAnimation, Align, CursorIcon, Image, Pos2, Rect, Response,
-    ScrollArea, Sense, Spinner, Stroke, StrokeKind, Ui, UiBuilder, Vec2,
+    Align, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind,
+    Ui, UiBuilder, Vec2, load::SizedTexture, style::ScrollAnimation,
 };
 
 use crate::{
@@ -81,8 +81,8 @@ impl<'a> PhotoFilmstrip<'a> {
             Pos2::new(bar_rect.left(), bar_rect.bottom() - RESIZE_HANDLE_HEIGHT),
             bar_rect.right_bottom(),
         );
-        let content_rect: Rect = Rect::from_min_max(bar_rect.min, handle_rect.right_top())
-            .shrink2(Vec2::new(0.0, CELL_SPACING));
+        let content_rect: Rect =
+            Rect::from_min_max(bar_rect.min, handle_rect.right_top());
         let cell_height = content_rect.height().max(1.0);
         let cell_width = cell_height * CELL_ASPECT_RATIO;
 
