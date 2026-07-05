@@ -15,7 +15,7 @@ use crate::{
 
 use super::{NavigationRequest, Navigator, Scene, ScenePopResponse, SceneResponse};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ViewerSceneState {
     photo: Photo,
     viewer_state: ImageViewerState,
@@ -42,7 +42,7 @@ pub enum ViewerScenePane {
     PhotoInfo,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ViewerScene {
     state: ViewerSceneState,
     tree: egui_tiles::Tree<ViewerScenePane>,
@@ -92,11 +92,11 @@ impl Scene for ViewerScene {
 
         let filmstrip_response =
             PhotoFilmstrip::new(&self.state.photo, &mut self.state.photo_filmstrip_state).show(ui);
-        if let Some(photo) = filmstrip_response.selected_photo {
-            if photo.path != self.state.photo.path {
-                self.state.photo = photo;
-                self.state.viewer_state = ImageViewerState::default();
-            }
+        if let Some(photo) = filmstrip_response.selected_photo
+            && photo.path != self.state.photo.path
+        {
+            self.state.photo = photo;
+            self.state.viewer_state = ImageViewerState::default();
         }
 
         self.tree.ui(
@@ -175,7 +175,6 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             ViewerScenePane::PhotoInfo => {
-                ui.set_max_width(600.0);
                 PhotoInfo::new(
                     SaveOnDropPhoto::new(&mut self.scene_state.photo),
                     &mut self.scene_state.photo_info_state,

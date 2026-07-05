@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    Align, Color32, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, RichText, Slider, Ui, UiBuilder, containers::menu::MenuConfig
+    Align, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, RichText,
+    Slider, Ui, UiBuilder, containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
@@ -67,6 +68,9 @@ impl<'a> ImageGallery<'a> {
         });
 
         let grouped_photos = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
+        let gallery_background_rect = ui.available_rect_before_wrap();
+        ui.painter()
+            .rect_filled(gallery_background_rect, 0.0, color::SURFACE_XX_DARK);
 
         if has_photos {
             ui.vertical(|ui| {
@@ -201,7 +205,7 @@ impl<'a> ImageGallery<'a> {
                                     ui.vertical(|ui| {
                                         ui.label(
                                             RichText::new(metadata.section.clone())
-                                                .font(FontId::proportional(16.0))
+                                                .font(FontId::proportional(16.0)),
                                         );
                                     });
                                 });
@@ -213,19 +217,16 @@ impl<'a> ImageGallery<'a> {
 
                                     row.col(|ui: &mut Ui| {
                                         let photo = &group[offest + i];
-                                        let image_response =
-                                            dep_mut!(PhotoManager, |photo_manager| {
-                                                let image = GalleryImage::new(
-                                                    photo.clone(),
-                                                    photo_manager
-                                                        .thumbnail_texture_for(photo, ui.ctx()),
-                                                    selection_snapshot
-                                                        .selected_paths
-                                                        .contains(&photo.path),
-                                                );
-
-                                                ui.add(image)
-                                            });
+                                        let texture = dep_mut!(PhotoManager, |photo_manager| {
+                                            photo_manager
+                                                .unadjusted_thumbnail_texture_for(photo, ui.ctx())
+                                        });
+                                        let image = GalleryImage::new(
+                                            photo.clone(),
+                                            texture,
+                                            selection_snapshot.selected_paths.contains(&photo.path),
+                                        );
+                                        let image_response = ui.add(image);
 
                                         if image_response.clicked() {
                                             let modifiers = ui.input(|input| SelectionModifiers {
@@ -271,6 +272,8 @@ impl<'a> ImageGallery<'a> {
 
                 ui.advance_cursor_after_rect(gallery_rect);
             });
+        } else {
+            ui.advance_cursor_after_rect(gallery_background_rect);
         }
 
         ImageGalleryResponse {
@@ -299,7 +302,7 @@ fn add_filter_menu(ui: &mut Ui) {
     let get_current_filter = || dep!(PhotoManager, |pm| pm.get_current_filter().clone());
 
     ui.painter()
-        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
+        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE_X_DARK);
 
     Frame::NONE
         .inner_margin(Margin::same(BAR_INNER_PADDING))
@@ -456,7 +459,7 @@ fn add_filter_menu(ui: &mut Ui) {
 
 fn add_scale_controls(ui: &mut Ui, scale: &mut f32) {
     ui.painter()
-        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE);
+        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE_XX_DARK);
 
     Frame::NONE
         .inner_margin(Margin::same(BAR_INNER_PADDING))

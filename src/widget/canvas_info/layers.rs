@@ -564,7 +564,7 @@ impl<'a> Layers<'a> {
                                                     RectPlaceholder::new(
                                                         image_size,
                                                         color::SURFACE_EMPHASIS,
-                                                        0.0
+                                                        0.0,
                                                     ),
                                                 );
                                             }

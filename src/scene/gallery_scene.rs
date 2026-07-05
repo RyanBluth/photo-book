@@ -17,7 +17,7 @@ use super::{
     NavigationRequest, Navigator, Scene, SceneResponse, SceneTransition, viewer_scene::ViewerScene,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GallerySceneState {
     pub image_gallery_state: ImageGalleryState,
     pub photo_info_state: PhotoInfoState,
@@ -38,7 +38,7 @@ pub enum GalleryScenePane {
     PhotoInfo,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct GalleryScene {
     pub state: GallerySceneState,
     tree: Tree<GalleryScenePane>,

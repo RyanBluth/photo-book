@@ -1,3 +1,5 @@
+use std::fmt;
+
 use eframe::{
     egui::{self, Image, Key, Response, Sense, Widget},
     epaint::{Pos2, Rect, Vec2},
@@ -5,16 +7,31 @@ use eframe::{
 use egui::CursorIcon;
 
 use crate::{
-    cursor_manager::CursorManager, dep_mut, photo::{
+    cursor_manager::CursorManager,
+    dep, dep_mut,
+    gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
+    photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
-    }, photo_manager::PhotoManager, theme::color
+    },
+    photo_manager::PhotoManager,
+    theme::color,
 };
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct ImageViewerState {
     pub scale: f32,
     pub offset: Vec2,
+}
+
+impl fmt::Debug for ImageViewerState {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ImageViewerState")
+            .field("scale", &self.scale)
+            .field("offset", &self.offset)
+            .finish()
+    }
 }
 
 impl Default for ImageViewerState {
@@ -86,7 +103,9 @@ impl<'a> Widget for ImageViewer<'a> {
 
         ui.painter().rect_filled(rect, 0.0, color::BLACK);
 
-        response.request_focus();
+        if response.clicked() || response.drag_started() {
+            response.request_focus();
+        }
 
         let mut image_rect = rect;
 
@@ -161,7 +180,9 @@ impl<'a> Widget for ImageViewer<'a> {
             None
         });
 
-        if let Some((scroll_delta, mouse_pos)) = mouse_input {
+        if let Some((scroll_delta, mouse_pos)) = mouse_input
+            && rect.contains(mouse_pos)
+        {
             let rel_mouse_pos_before = image_rect.center() - mouse_pos;
 
             let scale_delta = if scroll_delta > 0.0 { 1.1 } else { 0.9 };
@@ -194,7 +215,9 @@ impl<'a> Widget for ImageViewer<'a> {
         if can_drag {
             dep_mut!(CursorManager, |cursor_manager| {
                 ui.input(|input| {
-                    if let Some(pointer_pos) = input.pointer.latest_pos() && rect.contains(pointer_pos) {
+                    if let Some(pointer_pos) = input.pointer.latest_pos()
+                        && rect.contains(pointer_pos)
+                    {
                         if input.pointer.primary_down() {
                             cursor_manager.set_cursor(CursorIcon::Grabbing);
                         } else {
@@ -251,6 +274,19 @@ impl<'a> Widget for ImageViewer<'a> {
         }
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
+
+        let adjustments = self.photo.adjustments();
+        if !adjustments.is_identity()
+            && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer.try_paint(
+                ui,
+                self.photo,
+                rect,
+                image_rect,
+                &adjustments,
+            ))
+        {
+            return response;
+        }
 
         match dep_mut!(PhotoManager, |photo_manager| photo_manager
             .texture_for(self.photo, ui.ctx()))

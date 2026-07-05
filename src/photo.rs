@@ -11,7 +11,10 @@ use std::{
 };
 use tokio::fs::File as TokioFile;
 
-use crate::{dep, dep_mut, dirs::Dirs, photo_manager::PhotoManager, utils::ExifDateTimeExt};
+use crate::{
+    dep, dep_mut, dirs::Dirs, model::photo_adjustments::PhotoAdjustments,
+    photo_manager::PhotoManager, utils::ExifDateTimeExt,
+};
 
 use eframe::{
     emath::Rot2,
@@ -531,7 +534,7 @@ impl Photo {
             path,
             metadata,
             thumbnail_hash,
-            last_modified
+            last_modified,
         })
     }
 
@@ -605,6 +608,15 @@ impl Photo {
 
     pub fn set_rating(&self, rating: PhotoRating) {
         dep_mut!(PhotoManager, |pm| pm.set_photo_rating(&self.path, rating));
+    }
+
+    pub fn adjustments(&self) -> PhotoAdjustments {
+        dep!(PhotoManager, |pm| pm.get_photo_adjustments(&self.path))
+    }
+
+    pub fn set_adjustments(&self, adjustments: PhotoAdjustments) {
+        dep_mut!(PhotoManager, |pm| pm
+            .set_photo_adjustments(&self.path, adjustments));
     }
 
     pub fn tags(&self) -> HashSet<String> {

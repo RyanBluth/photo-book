@@ -1,11 +1,14 @@
 use eframe::{
-    egui::{load::SizedTexture, Image, Response, Sense, Ui, Widget},
+    egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
     epaint::Vec2,
 };
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
-use crate::{photo::Photo, theme::color, widget::placeholder::RectPlaceholder};
+use crate::{
+    dep, dep_mut, gpu_photo_adjustment::GpuPhotoAdjustmentRenderer, photo::Photo,
+    photo_manager::PhotoManager, theme::color, widget::placeholder::RectPlaceholder,
+};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -54,19 +57,50 @@ impl Widget for GalleryImage {
 
                         let image_rect = match self.texture {
                             Ok(Some(texture)) => {
-                                let rect = ui
-                                    .add(
-                                        Image::from_texture(texture)
-                                            .fit_to_exact_size(scaled_image_size),
-                                    )
-                                    .rect;
+                                let adjustments = self.photo.adjustments();
+                                let (image_rect, _) =
+                                    ui.allocate_exact_size(scaled_image_size, Sense::hover());
+                                let gpu_painted = !adjustments.is_identity()
+                                    && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer
+                                        .try_paint_thumbnail(
+                                            ui,
+                                            &self.photo,
+                                            rect,
+                                            image_rect,
+                                            &adjustments,
+                                        ));
+
+                                if !gpu_painted {
+                                    let fallback_texture = if adjustments.is_identity() {
+                                        Some(texture)
+                                    } else {
+                                        dep_mut!(PhotoManager, |photo_manager| {
+                                            photo_manager
+                                                .thumbnail_texture_for(&self.photo, ui.ctx())
+                                        })
+                                        .ok()
+                                        .flatten()
+                                        .or(Some(texture))
+                                    };
+
+                                    if let Some(texture) = fallback_texture {
+                                        Image::from_texture(texture).paint_at(ui, image_rect);
+                                    } else {
+                                        ui.painter().rect_filled(
+                                            image_rect,
+                                            4.0,
+                                            color::SURFACE_MUTED,
+                                        );
+                                    }
+                                };
+
                                 ui.painter().rect_stroke(
-                                    rect,
+                                    image_rect,
                                     5.0,
                                     Stroke::new(5.0, color::SURFACE_X_DARK),
                                     StrokeKind::Outside,
                                 );
-                                rect
+                                image_rect
                             }
                             Ok(None) => {
                                 let response = RectPlaceholder::new(
