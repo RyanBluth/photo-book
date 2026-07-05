@@ -20,7 +20,7 @@ impl<'a> LogViewer<'a> {
         }
     }
 
-    pub fn id_salt(mut self, id_salt: impl std::hash::Hash) -> Self {
+    pub fn id_salt(mut self, id_salt: impl std::hash::Hash + std::fmt::Debug) -> Self {
         self.id_salt = egui::Id::new(id_salt);
         self
     }

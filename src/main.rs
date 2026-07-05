@@ -15,10 +15,9 @@ use config::Config;
 use cursor_manager::CursorManager;
 use eframe::{
     Frame,
-    egui::{self, Context, Ui, ViewportBuilder},
+    egui::{self, Ui, ViewportBuilder},
 };
 
-use egui::Color32;
 use font_manager::FontManager;
 
 use dirs::Dirs;
@@ -30,7 +29,6 @@ use tokio::runtime;
 
 use flexi_logger::{Logger, WriteMode};
 use string_log::StringLogWriter;
-use wgpu::Color;
 
 use crate::deferred_work_manager::DeferredWorkManager;
 
@@ -117,7 +115,6 @@ async fn main() -> anyhow::Result<()> {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
             .with_inner_size((3000.0, 2000.0)),
-        hardware_acceleration: eframe::HardwareAcceleration::Required,
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
             wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(
@@ -290,9 +287,11 @@ impl PhotoBookApp {
 }
 
 impl eframe::App for PhotoBookApp {
-    fn update(&mut self, ctx: &Context, _frame: &mut Frame) {
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut Frame) {
+        let ctx = ui.ctx().clone();
+
         if !self.loaded_initial_scene {
-            egui_extras::install_image_loaders(ctx);
+            egui_extras::install_image_loaders(&ctx);
 
             ctx.input_mut(|input| {
                 input.max_texture_side = Self::get_max_texture_size();
@@ -310,7 +309,7 @@ impl eframe::App for PhotoBookApp {
             for command in native_mac_menu::drain_commands() {
                 self.scene_manager
                     .root_scene
-                    .handle_menu_command(command, ctx);
+                    .handle_menu_command(command, &ctx);
             }
         }
 
@@ -318,19 +317,15 @@ impl eframe::App for PhotoBookApp {
             self.loaded_fonts = true;
             // Just load all fonts at start up. Maybe there's a better time to do this?
             dep_mut!(FontManager, |font_manager| {
-                font_manager.load_fonts(ctx);
+                font_manager.load_fonts(&ctx);
             });
         }
 
         dep_mut!(CursorManager, |cursor_manager| {
-            cursor_manager.begin_frame(ctx);
+            cursor_manager.begin_frame(&ctx);
         });
 
-        // TODO: egui deprecates show() in favor of show_inside(), but show_inside() is for nested UIs.
-        // This is a top-level panel, so show() with ctx is still the correct approach.
-        // Silencing this warning until the egui API is updated or clarified.
-        #[allow(deprecated)]
-        egui::CentralPanel::no_frame().show(ctx, |ui| {
+        egui::CentralPanel::no_frame().show(ui, |ui| {
             self.scene_manager.ui(ui);
 
             dep_mut!(ModalManager, |modal_manager| {
@@ -343,7 +338,7 @@ impl eframe::App for PhotoBookApp {
         });
 
         dep_mut!(CursorManager, |cursor_manager| {
-            cursor_manager.end_frame(ctx);
+            cursor_manager.end_frame(&ctx);
         });
 
         // Check for pending operations from modals
@@ -357,6 +352,4 @@ impl eframe::App for PhotoBookApp {
             let _ = auto_save_manager.auto_save_if_needed(&self.scene_manager.root_scene);
         });
     }
-
-    fn ui(&mut self, _ui: &mut Ui, _frame: &mut Frame) {}
 }

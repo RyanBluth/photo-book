@@ -39,23 +39,11 @@ impl CropScene {
         let padded_available_rect: Rect =
             rect.shrink2(Vec2::new(rect.width() * 0.1, rect.height() * 0.1));
 
-        let mut photo_rect = padded_available_rect
-            .with_aspect_ratio(photo.metadata.width() as f32 / photo.metadata.height() as f32);
-
-        photo_rect = photo_rect.fit_and_center_within(padded_available_rect);
-
-        let rotation = photo.metadata.rotation().radians();
-
-        // First rotate the photo_rect
-        let rotated_photo_rect = photo_rect.rotate_bb_around_center(rotation);
-
-        // Scale down the rotated rect to fit within padded area
-        let scale_factor = (padded_available_rect.width() / rotated_photo_rect.width())
-            .min(padded_available_rect.height() / rotated_photo_rect.height());
-
-        if scale_factor < 1.0 {
-            photo_rect = photo_rect.scale_from_center(scale_factor);
-        }
+        let photo_rect = padded_available_rect
+            .with_aspect_ratio(
+                photo.metadata.rotated_width() as f32 / photo.metadata.rotated_height() as f32,
+            )
+            .fit_and_center_within(padded_available_rect);
 
         // Calculate crop rect based on the adjusted photo_rect
         let crop_origin = Pos2::new(
@@ -70,12 +58,6 @@ impl CropScene {
                 crop_origin.y + photo_rect.height() * initial_crop.height(),
             ),
         );
-
-        scaled_crop_rect = scaled_crop_rect
-            .to_world_space(photo_rect)
-            .rotate_bb_around_point(rotation, photo_rect.center());
-
-        photo_rect = photo_rect.rotate_bb_around_center(rotation);
 
         scaled_crop_rect = scaled_crop_rect.to_local_space(photo_rect);
 

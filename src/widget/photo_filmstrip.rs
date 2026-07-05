@@ -268,51 +268,37 @@ fn paint_thumbnail(
     bounds: Rect,
     thumbnail: anyhow::Result<Option<SizedTexture>>,
 ) -> Rect {
-    let image_size = fitted_unrotated_image_size(photo, bounds.size());
+    let image_size = fitted_image_size(photo, bounds.size());
     let image_rect = Rect::from_center_size(bounds.center(), image_size);
-    let placeholder_rect =
-        Rect::from_center_size(bounds.center(), rotated_bounding_size(photo, image_size));
 
     match thumbnail {
         Ok(Some(texture)) => {
-            Image::from_texture(texture)
-                .rotate(photo.metadata.rotation().radians(), Vec2::splat(0.5))
-                .paint_at(ui, image_rect);
+            Image::from_texture(texture).paint_at(ui, image_rect);
         }
         Ok(None) => {
             ui.painter()
-                .rect_filled(placeholder_rect, 2.0, color::SURFACE_MUTED);
-            ui.put(placeholder_rect, Spinner::new());
+                .rect_filled(image_rect, 2.0, color::SURFACE_MUTED);
+            ui.put(image_rect, Spinner::new());
             ui.ctx().request_repaint();
         }
         Err(_) => {
-            ui.painter()
-                .rect_filled(placeholder_rect, 2.0, color::ERROR);
+            ui.painter().rect_filled(image_rect, 2.0, color::ERROR);
         }
     }
 
-    placeholder_rect
+    image_rect
 }
 
-fn fitted_unrotated_image_size(photo: &Photo, available_size: Vec2) -> Vec2 {
-    let original_size = Vec2::new(
-        photo.metadata.width() as f32,
-        photo.metadata.height() as f32,
+fn fitted_image_size(photo: &Photo, available_size: Vec2) -> Vec2 {
+    let image_size = Vec2::new(
+        photo.metadata.rotated_width() as f32,
+        photo.metadata.rotated_height() as f32,
     );
-    if original_size.x <= 0.0 || original_size.y <= 0.0 {
+    if image_size.x <= 0.0 || image_size.y <= 0.0 {
         return available_size;
     }
 
-    let rotated_size = rotated_bounding_size(photo, original_size);
-    let scale = (available_size.x / rotated_size.x).min(available_size.y / rotated_size.y);
+    let scale = (available_size.x / image_size.x).min(available_size.y / image_size.y);
 
-    original_size * scale
-}
-
-fn rotated_bounding_size(photo: &Photo, size: Vec2) -> Vec2 {
-    if photo.metadata.does_rotation_alter_dimensions() {
-        Vec2::new(size.y, size.x)
-    } else {
-        size
-    }
+    image_size * scale
 }

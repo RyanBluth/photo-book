@@ -80,7 +80,7 @@ impl<'a> Pages<'a> {
             egui_extras::TableBuilder::new(ui)
                 .id_salt("pages_table")
                 .min_scrolled_height(table_size.y)
-                .drag_to_scroll(false)
+                .drag_to_scroll(egui::scroll_area::DragScroll::Never)
                 .auto_shrink(false)
                 .columns(Column::exact(column_width), num_columns)
                 .column(Column::exact(spacer_width))

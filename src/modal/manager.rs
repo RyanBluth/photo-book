@@ -187,9 +187,7 @@ impl ModalManager {
     fn show_modal(&mut self, ui: &mut egui::Ui, modal_id: ModalId) {
         if let Some(guard) = self.modals.get(&modal_id) {
             let mut modal = guard.lock().unwrap();
-            let viewport_rect = ui
-                .ctx()
-                .viewport(|viewport| viewport.this_pass.available_rect);
+            let viewport_rect = ui.ctx().viewport_rect();
 
             ui.painter().rect_filled(viewport_rect, 0.0, color::OVERLAY);
 

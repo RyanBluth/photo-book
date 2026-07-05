@@ -1,7 +1,6 @@
 use eframe::{
     egui::{self, Image, Key, Response, Sense, Widget},
-    emath::Rot2,
-    epaint::{Mesh, Pos2, Rect, Shape, Vec2},
+    epaint::{Pos2, Rect, Vec2},
 };
 use egui::CursorIcon;
 
@@ -9,7 +8,7 @@ use crate::{
     cursor_manager::CursorManager, dep_mut, photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
-    }, photo_manager::PhotoManager, theme::color, utils::RectExt
+    }, photo_manager::PhotoManager, theme::color
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -253,48 +252,25 @@ impl<'a> Widget for ImageViewer<'a> {
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
-        // If the image is rotated then swap the dimensions because we want egui to rotate the image when drawing
-        if self.photo.metadata.width() != self.photo.metadata.rotated_width() {
-            image_rect = Rect::from_center_size(
-                image_rect.center(),
-                Vec2::new(image_rect.height(), image_rect.width()),
-            );
-        }
-
         match dep_mut!(PhotoManager, |photo_manager| photo_manager
             .texture_for(self.photo, ui.ctx()))
         {
             Ok(Some(texture)) => {
-                let uv = Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 });
-
-                let painter = ui.painter().with_clip_rect(rect);
-                let mut mesh = Mesh::with_texture(texture.id);
-                mesh.add_rect_with_uv(image_rect, uv, color::WHITE);
-                mesh.rotate(
-                    Rot2::from_angle(self.photo.metadata.rotation().radians()),
-                    image_rect.min + Vec2::splat(0.5) * image_rect.size(),
-                );
-                painter.add(Shape::mesh(mesh));
+                Image::from_texture(texture).paint_at(ui, image_rect);
             }
             Ok(None) => match dep_mut!(PhotoManager, |photo_manager| {
                 photo_manager.thumbnail_texture_for(self.photo, ui.ctx())
             }) {
                 Ok(Some(texture)) => {
-                    Image::from_texture(texture)
-                        .rotate(self.photo.metadata.rotation().radians(), Vec2::splat(0.5))
-                        .paint_at(ui, image_rect);
+                    Image::from_texture(texture).paint_at(ui, image_rect);
 
                     // TODO: This is a workaround to redraw until the full image is loaded in case the user isn't moving the mouse to trigger a repaint
                     // Is there a better way to do this?
                     ui.ctx().request_repaint();
                 }
                 Ok(None) | Err(_) => {
-                    ui.painter().rect_filled(
-                        image_rect
-                            .rotate_bb_around_center(self.photo.metadata.rotation().radians()),
-                        0.0,
-                        color::SURFACE_MUTED,
-                    );
+                    ui.painter()
+                        .rect_filled(image_rect, 0.0, color::SURFACE_MUTED);
                 }
             },
             Err(error) => {

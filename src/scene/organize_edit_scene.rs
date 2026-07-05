@@ -742,7 +742,7 @@ impl OrganizeEditScene {
             .resizable(true)
             .default_size(300.0)
             .size_range(240.0..=480.0)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 sidebar_response = Some(LeftSidebar::new(&mut self.left_sidebar_state).show(
                     ui,
                     scroll_to_photo_path.as_ref(),
@@ -757,7 +757,7 @@ impl OrganizeEditScene {
                 fill: color::SURFACE_X_DARK,
                 ..Default::default()
             })
-            .show_inside(ui, |ui| self.organize.write().unwrap().ui(ui))
+            .show(ui, |ui| self.organize.write().unwrap().ui(ui))
             .inner;
 
         let (pending_response, workspace_action) = match sidebar_response {
@@ -892,7 +892,7 @@ impl Scene for OrganizeEditScene {
         let status_bar_response = egui::Panel::bottom("root_status_bar")
             .exact_size(StatusBar::height())
             .frame(frame)
-            .show_inside(ui, |ui| StatusBar::new().show(ui))
+            .show(ui, |ui| StatusBar::new().show(ui))
             .inner;
 
         if status_bar_response.right_sidebar_toggled {
@@ -905,7 +905,7 @@ impl Scene for OrganizeEditScene {
                 .default_size(220.0)
                 .size_range(120.0..=500.0)
                 .frame(frame)
-                .show_inside(ui, |ui| {
+                .show(ui, |ui| {
                     dep!(StringLog, |log| {
                         LogViewer::new(&*log)
                             .id_salt("root_log_viewer_scroll")
@@ -916,7 +916,7 @@ impl Scene for OrganizeEditScene {
 
         egui::CentralPanel::default()
             .frame(frame)
-            .show_inside(ui, |ui| {
+            .show(ui, |ui| {
                 #[cfg(not(target_os = "macos"))]
                 {
                     ui.painter().rect_filled(

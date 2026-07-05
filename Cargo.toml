@@ -11,9 +11,9 @@ snapshot = []
 
 [dependencies]
 # re_ui = "0.23.1"
-egui = { version = "0.34.3" }
-eframe = { version = "0.34.3", features = ["glow", "wgpu"] }
-egui_extras = { version = "0.34.3", features = ["default", "all_loaders"] }
+egui = { version = "0.35.0" }
+eframe = { version = "0.35.0", features = ["glow", "wgpu"] }
+egui_extras = { version = "0.35.0", features = ["default", "all_loaders"] }
 native-dialog = "0.9.7"
 env_logger = "0.11.10"
 image = { version = "0.25.10", features = ["jpeg", "png"] }
@@ -32,7 +32,7 @@ strum_macros = "0.28.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 indexmap = { version = "2.14.0", features = ["serde"] }
 font-kit = "0.14.3"
-egui_tiles = "0.15.0"
+egui_tiles = "0.16.0"
 ab_glyph = "0.2.32"
 rand = "0.10.1"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }
@@ -60,11 +60,18 @@ uuid = { version = "1.23", features = ["v4"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSEvent", "NSMenu", "NSMenuItem", "NSResponder", "NSWindow"] }
+objc2-app-kit = { version = "0.3.2", features = [
+    "NSApplication",
+    "NSEvent",
+    "NSMenu",
+    "NSMenuItem",
+    "NSResponder",
+    "NSWindow",
+] }
 objc2-foundation = { version = "0.3.2", features = ["NSObject", "NSString"] }
 
 [dev-dependencies]
-egui_kittest = { version = "0.34.3", features = ["wgpu", "snapshot"] }
+egui_kittest = { version = "0.35.0", features = ["wgpu", "snapshot"] }
 
 [profile.dev.package."*"]
 opt-level = 2

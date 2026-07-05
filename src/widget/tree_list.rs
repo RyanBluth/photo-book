@@ -1,4 +1,4 @@
-use std::{hash::Hash, path::PathBuf};
+use std::{fmt::Debug, hash::Hash, path::PathBuf};
 
 use egui::{
     Color32, Image, ImageSource, Key, Rect, Response, RichText, Sense, Ui, UiBuilder, Vec2,
@@ -217,7 +217,7 @@ impl TreeListSelection {
 
 impl<Id> TreeListRow<Id>
 where
-    Id: Hash,
+    Id: Hash + Debug,
 {
     fn draw(&self, row_ui: &mut TreeListRowUi<'_>) -> HeaderRowResponse {
         match &self.kind {
@@ -298,7 +298,7 @@ impl<'a> TreeList<'a> {
         }
     }
 
-    pub fn id_salt(mut self, id_salt: impl Hash) -> Self {
+    pub fn id_salt(mut self, id_salt: impl Hash + Debug) -> Self {
         self.id_salt = egui::Id::new(id_salt);
         self
     }
@@ -396,7 +396,7 @@ impl TreeListRowUi<'_> {
 
     pub fn add<Id>(&mut self, row: TreeListRow<Id>) -> TreeListRowResponse<Id>
     where
-        Id: Hash,
+        Id: Hash + Debug,
     {
         let selection_path = row.selection_path().cloned();
         let row_response = row.draw(self);
@@ -415,7 +415,7 @@ impl TreeListRowUi<'_> {
         ordered_paths: &[PathBuf],
     ) -> TreeListRowResponse<Id>
     where
-        Id: Hash,
+        Id: Hash + Debug,
     {
         let response = self.add(selection.apply_to_row(row));
         selection.handle_row_response(self.ui, ordered_paths, &response);
@@ -451,7 +451,7 @@ impl TreeListRowUi<'_> {
         ui.add_space(depth as f32 * INDENT_WIDTH);
     }
 
-    fn disclosure_button(ui: &mut Ui, id_salt: impl Hash, is_expanded: bool) -> Response {
+    fn disclosure_button(ui: &mut Ui, id_salt: impl Hash + Debug, is_expanded: bool) -> Response {
         let id = ui.make_persistent_id(id_salt);
         let openness = ui.ctx().animate_bool(id, is_expanded);
         let (_, response) = ui.allocate_exact_size(Vec2::splat(DISCLOSURE_SIZE), Sense::click());

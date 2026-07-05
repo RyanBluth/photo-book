@@ -555,14 +555,6 @@ impl<'a> Layers<'a> {
                                         match texture_id {
                                             Ok(Some(texture_id)) => {
                                                 let image = Image::from_texture(texture_id)
-                                                    .rotate(
-                                                        canvas_photo
-                                                            .photo
-                                                            .metadata
-                                                            .rotation()
-                                                            .radians(),
-                                                        Vec2::splat(0.5),
-                                                    )
                                                     .fit_to_exact_size(image_size);
                                                 ui.add_sized(Vec2::new(70.0, 50.0), image);
                                             }

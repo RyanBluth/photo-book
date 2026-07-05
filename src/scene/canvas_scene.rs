@@ -239,14 +239,11 @@ impl Scene for CanvasScene {
                 if let LayerContent::Photo(photo) = &mut layer.content {
                     photo.crop = crop;
 
-                    let rotated_crop =
-                        crop.rotate_bb_around_center(photo.photo.metadata.rotation().radians());
-
                     let photo_rect: Rect = Rect::from_center_size(
                         layer.transform_state.rect.center(),
                         Vec2::new(
-                            photo.photo.metadata.rotated_width() as f32 * rotated_crop.size().x,
-                            photo.photo.metadata.rotated_height() as f32 * rotated_crop.size().y,
+                            photo.photo.metadata.rotated_width() as f32 * crop.size().x,
+                            photo.photo.metadata.rotated_height() as f32 * crop.size().y,
                         ),
                     );
 

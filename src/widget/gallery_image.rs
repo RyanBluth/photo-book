@@ -5,7 +5,7 @@ use eframe::{
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
-use crate::{photo::Photo, theme::color, utils::RectExt, widget::placeholder::RectPlaceholder};
+use crate::{photo::Photo, theme::color, widget::placeholder::RectPlaceholder};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -33,18 +33,7 @@ impl Widget for GalleryImage {
             format!("GalleryImage_{}", self.photo.path.to_string_lossy()),
             |ui| {
                 let size = ui.available_size();
-                let image_size = match self.photo.max_dimension() {
-                    crate::photo::MaxPhotoDimension::Width => Vec2::new(
-                        size.x,
-                        self.photo.metadata.height() as f32 / self.photo.metadata.width() as f32
-                            * size.x,
-                    ),
-                    crate::photo::MaxPhotoDimension::Height => Vec2::new(
-                        self.photo.metadata.width() as f32 / self.photo.metadata.height() as f32
-                            * size.y,
-                        size.y,
-                    ),
-                };
+                let image_size = fitted_image_size(&self.photo, size);
 
                 let (rect, response) = ui.allocate_exact_size(size, Sense::click());
 
@@ -57,80 +46,54 @@ impl Widget for GalleryImage {
                         let height_scale = available_size.y / image_size.y;
                         let scale: f32 = width_scale.min(height_scale);
                         let scaled_image_size: Vec2 = image_size * scale;
-                        let rotated_image_size = {
-                            let image_size = if self.photo.metadata.does_rotation_alter_dimensions()
-                            {
-                                image_size.rot90().abs()
-                            } else {
-                                image_size
-                            };
 
-                            if image_size.x < 0.0
-                                || image_size.y < 0.0
-                                || image_size.x.is_nan()
-                                || image_size.y.is_nan()
-                            {
-                                available_size - Vec2::splat(20.0)
-                            } else {
-                                image_size
-                            }
-                        };
-
-                        let verical_spacing = if matches!(self.texture, Ok(Some(_))) {
-                            (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0)
-                        } else {
-                            (0.0 as f32).max((available_size.y - rotated_image_size.y) / 2.0)
-                        };
+                        let verical_spacing =
+                            (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0);
 
                         ui.add_space(verical_spacing);
 
-                        let (image_rect, image_rotation) = match self.texture {
+                        let image_rect = match self.texture {
                             Ok(Some(texture)) => {
-                                let rotation = self.photo.metadata.rotation();
-                                let rotation = rotation.radians();
                                 let rect = ui
                                     .add(
                                         Image::from_texture(texture)
-                                            .rotate(rotation, Vec2::splat(0.5))
                                             .fit_to_exact_size(scaled_image_size),
                                     )
                                     .rect;
                                 ui.painter().rect_stroke(
-                                    rect.rotate_bb_around_center(rotation),
+                                    rect,
                                     5.0,
                                     Stroke::new(5.0, color::SURFACE_X_DARK),
                                     StrokeKind::Outside,
                                 );
-                                (rect, rotation)
+                                rect
                             }
                             Ok(None) => {
                                 let response = RectPlaceholder::new(
-                                    rotated_image_size,
+                                    scaled_image_size,
                                     color::SURFACE_MUTED,
                                     4.0,
                                 )
                                 .ui(ui);
 
                                 ui.put(response.rect, Spinner::new());
-                                (response.rect, 0.0)
+                                response.rect
                             }
                             Err(err) => {
                                 // Show themed error placeholder for now.
                                 // TODO: Show error message or something
                                 let rect =
-                                    RectPlaceholder::new(rotated_image_size, color::ERROR, 4.0)
+                                    RectPlaceholder::new(scaled_image_size, color::ERROR, 4.0)
                                         .ui(ui)
                                         .rect;
                                 error!("Failed to load image: {:?}. {:?}", self.photo.path, err);
-                                (rect, 0.0)
+                                rect
                             }
                         };
 
                         if self.selected {
                             ui.painter().rect_stroke(
-                                image_rect
-                                    .expand(3.0)
-                                    .rotate_bb_around_center(image_rotation),
+                                image_rect.expand(3.0),
                                 6.0,
                                 Stroke::new(3.0, color::ACCENT),
                                 StrokeKind::Inside,
@@ -145,4 +108,18 @@ impl Widget for GalleryImage {
 
         response.inner
     }
+}
+
+fn fitted_image_size(photo: &Photo, available_size: Vec2) -> Vec2 {
+    let image_size = Vec2::new(
+        photo.metadata.rotated_width() as f32,
+        photo.metadata.rotated_height() as f32,
+    );
+    if image_size.x <= 0.0 || image_size.y <= 0.0 || image_size.x.is_nan() || image_size.y.is_nan()
+    {
+        return available_size - Vec2::splat(20.0);
+    }
+
+    let scale = (available_size.x / image_size.x).min(available_size.y / image_size.y);
+    image_size * scale
 }

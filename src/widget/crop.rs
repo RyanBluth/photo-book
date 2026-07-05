@@ -1,5 +1,4 @@
 use eframe::egui::{self, Pos2, Rect, Ui, Vec2};
-use eframe::emath::Rot2;
 use eframe::epaint::{Mesh, Shape};
 use egui::UiBuilder;
 
@@ -50,32 +49,10 @@ impl<'a> Crop<'a> {
         let painter: &egui::Painter = ui.painter();
         let mut mesh: Mesh = Mesh::with_texture(texture.id);
 
-        let mesh_rect = if self.crop_state.photo.metadata.width()
-            != self.crop_state.photo.metadata.rotated_width()
-        {
-            Rect::from_center_size(
-                self.crop_state.photo_rect.center(),
-                Vec2::new(
-                    self.crop_state.photo_rect.height(),
-                    self.crop_state.photo_rect.width(),
-                ),
-            )
-        } else {
-            self.crop_state.photo_rect
-        };
-
         mesh.add_rect_with_uv(
-            mesh_rect,
+            self.crop_state.photo_rect,
             Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
             color::WHITE,
-        );
-
-        let mesh_center: Pos2 =
-            self.crop_state.photo_rect.min + Vec2::splat(0.5) * self.crop_state.photo_rect.size();
-
-        mesh.rotate(
-            Rot2::from_angle(self.crop_state.photo.metadata.rotation().radians()),
-            mesh_center,
         );
 
         painter.add(Shape::mesh(mesh.clone()));
@@ -147,30 +124,21 @@ impl<'a> Crop<'a> {
                         .rect
                         .to_world_space(self.crop_state.photo_rect);
 
-                    let intersection = world_transform_rect
-                        .intersect(self.crop_state.photo_rect)
-                        .rotate_bb_around_point(
-                            -self.crop_state.photo.metadata.rotation().radians(),
-                            self.crop_state.photo_rect.center(),
-                        );
+                    let intersection = world_transform_rect.intersect(self.crop_state.photo_rect);
 
-                    let unrotated_photo_rect = self.crop_state.photo_rect.rotate_bb_around_center(
-                        -self.crop_state.photo.metadata.rotation().radians(),
-                    );
-
-                    let unrotated_normalized_intersection = Rect::from_min_size(
+                    let normalized_intersection = Rect::from_min_size(
                         Pos2::new(
-                            (intersection.min - unrotated_photo_rect.min).x
-                                / unrotated_photo_rect.size().x,
-                            (intersection.min - unrotated_photo_rect.min).y
-                                / unrotated_photo_rect.size().y,
+                            (intersection.min - self.crop_state.photo_rect.min).x
+                                / self.crop_state.photo_rect.size().x,
+                            (intersection.min - self.crop_state.photo_rect.min).y
+                                / self.crop_state.photo_rect.size().y,
                         ),
                         Vec2::new(
-                            intersection.size().x / unrotated_photo_rect.size().x,
-                            intersection.size().y / unrotated_photo_rect.size().y,
+                            intersection.size().x / self.crop_state.photo_rect.size().x,
+                            intersection.size().y / self.crop_state.photo_rect.size().y,
                         ),
                     );
-                    CropResponse::Apply(unrotated_normalized_intersection)
+                    CropResponse::Apply(normalized_intersection)
                 }
                 CropActionBarResponse::Cancel => CropResponse::Exit,
             },

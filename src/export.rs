@@ -253,11 +253,11 @@ impl Exporter {
             ..Default::default()
         };
 
-        backend.paint_when_ready(
+        backend.paint_when_ready_ui(
             surface.canvas(),
             input.clone(),
-            |ctx: &egui::Context| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+            |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
                     canvas.show_preview(ui, Rect::from_min_max(Pos2::ZERO, size.to_pos2()));
                 });
             },

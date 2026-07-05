@@ -489,6 +489,8 @@ impl PhotoMetadata {
 
 pub type PhotoRating = Option<u8>;
 
+const THUMBNAIL_CACHE_VERSION: &str = "oriented-v1";
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Photo {
     pub path: PathBuf,
@@ -500,7 +502,7 @@ pub struct Photo {
 impl Photo {
     pub fn new(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path(&path)?;
-        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
         let last_modified = Self::last_modified(&path);
         Ok(Self {
             path,
@@ -511,7 +513,7 @@ impl Photo {
     }
 
     pub fn with_metadata(path: PathBuf, metadata: PhotoMetadata) -> Self {
-        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
         let last_modified = Self::last_modified(&path);
         Self {
             path,
@@ -523,7 +525,7 @@ impl Photo {
 
     pub async fn new_async(path: PathBuf) -> Result<Self, PhotoError> {
         let metadata = PhotoMetadata::from_path_async(&path).await?;
-        let thumbnail_hash = hash64(&path.to_string_lossy()).to_string();
+        let thumbnail_hash = Self::thumbnail_hash_for_path(&path);
         let last_modified = Self::last_modified(&path);
         Ok(Self {
             path,
@@ -531,6 +533,15 @@ impl Photo {
             thumbnail_hash,
             last_modified
         })
+    }
+
+    pub(crate) fn thumbnail_hash_for_path(path: &PathBuf) -> String {
+        hash64(&format!(
+            "{}:{}",
+            THUMBNAIL_CACHE_VERSION,
+            path.to_string_lossy()
+        ))
+        .to_string()
     }
 
     pub fn file_name(&self) -> &str {

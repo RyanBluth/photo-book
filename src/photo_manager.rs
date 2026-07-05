@@ -9,7 +9,6 @@ use glob::MatchOptions;
 use chrono::{DateTime, Utc};
 use eframe::egui::{Context, load::SizedTexture};
 use egui::emath::OrderedFloat;
-use fxhash::hash64;
 use image::{
     ExtendedColorType,
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
@@ -707,7 +706,7 @@ impl PhotoManager {
                 || extension.to_ascii_lowercase() == "jpeg"
             {
                 // TODO: incorporate the last modified date of the photo into the hash
-                let hash = hash64(&photo_path.to_string_lossy()).to_string();
+                let hash = Photo::thumbnail_hash_for_path(photo_path);
 
                 let mut thumbnail_path = thumbnail_dir.join(&hash);
                 thumbnail_path.set_extension(extension);
@@ -725,9 +724,14 @@ impl PhotoManager {
 
                 let file_bytes = tokio::fs::read(photo_path).await?;
                 let img = spawn_blocking(move || {
-                    image::ImageReader::new(std::io::Cursor::new(file_bytes))
-                        .with_guessed_format()?
-                        .decode()
+                    let format = image::guess_format(&file_bytes)?;
+                    let reader =
+                        image::ImageReader::with_format(std::io::Cursor::new(file_bytes), format);
+                    let mut decoder = reader.into_decoder()?;
+                    let orientation = image::ImageDecoder::orientation(&mut decoder)?;
+                    let mut image = image::DynamicImage::from_decoder(decoder)?;
+                    image.apply_orientation(orientation);
+                    std::result::Result::<_, image::ImageError>::Ok(image)
                 })
                 .await??;
 
