@@ -1,13 +1,14 @@
 use std::{
     collections::{HashMap, HashSet},
     io::BufWriter,
-    path::PathBuf,
+    path::{Path, PathBuf},
+    time::UNIX_EPOCH,
 };
 
 use glob::MatchOptions;
 
 use chrono::{DateTime, Utc};
-use eframe::egui::{Context, load::SizedTexture};
+use eframe::egui::{ColorImage, Context, TextureHandle, TextureOptions, load::SizedTexture};
 use egui::emath::OrderedFloat;
 use fxhash::hash64;
 use image::{
@@ -16,6 +17,8 @@ use image::{
 };
 use indexmap::IndexMap;
 use log::{error, info};
+use tokio::sync::oneshot;
+use tokio::sync::oneshot::error::TryRecvError;
 use tokio::task::spawn_blocking;
 use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
@@ -25,17 +28,16 @@ use crate::{
     dirs::Dirs,
     model::{
         album::{Album, AlbumId},
+        photo_adjustments::PhotoAdjustments,
         photo_grouping::PhotoGrouping,
     },
     photo::{Photo, PhotoRating},
     photo_database::{PhotoDatabase, PhotoQuery, PhotoQueryResult, PhotoSortCriteria},
 };
 
-use anyhow::{Ok, anyhow};
+use anyhow::anyhow;
 use fr::CpuExtensions;
 use image::ImageEncoder;
-
-use core::result::Result;
 
 use fast_image_resize::{self as fr, ResizeOptions};
 
@@ -46,6 +48,7 @@ const FULL_RES_PRELOAD_COUNT: usize = 4;
 const FULL_RES_PRELOAD_START_BUDGET: usize = 4;
 const FULL_RES_PRELOAD_READY_BUDGET: usize = 2;
 const FULL_RES_CACHE_CAPACITY: usize = 20;
+const ADJUSTED_THUMBNAIL_CACHE_CAPACITY: usize = 512;
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -72,12 +75,17 @@ pub struct PhotoMetadata {
     pub grouped_index: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct ContextCache {
     texture_cache: HashMap<String, SizedTexture>,
+    adjusted_texture_cache: HashMap<String, TextureHandle>,
     pending_textures: HashSet<String>,
+    pending_adjusted_textures:
+        HashMap<String, oneshot::Receiver<std::result::Result<AdjustedTextureImage, String>>>,
     full_res_accesses: HashMap<String, u64>,
     full_res_access_counter: u64,
+    adjusted_thumbnail_accesses: HashMap<String, u64>,
+    adjusted_thumbnail_access_counter: u64,
 }
 
 #[derive(Debug)]
@@ -175,7 +183,7 @@ impl PhotoManager {
 
             for photo_path in pending_photos {
                 match Photo::new_async(photo_path.clone()).await {
-                    Result::Ok(photo) => {
+                    Ok(photo) => {
                         dep_mut!(PhotoManager, |photo_manager| {
                             photo_manager.photo_database.add_photo(photo);
                         });
@@ -201,8 +209,6 @@ impl PhotoManager {
             });
 
             let _ = Self::gen_thumbnails(photo_paths);
-
-            Ok(())
         });
 
         Ok(())
@@ -286,15 +292,82 @@ impl PhotoManager {
         // PhotoDatabase handles invalidation of query cache automatically
     }
 
+    fn thumbnail_exists(&mut self, photo: &Photo) -> bool {
+        if self
+            .thumbnail_existence_cache
+            .contains(&photo.thumbnail_hash)
+        {
+            return true;
+        }
+
+        let Ok(thumbnail_path) = photo.thumbnail_path() else {
+            return false;
+        };
+
+        if thumbnail_path.exists() {
+            self.thumbnail_existence_cache
+                .insert(photo.thumbnail_hash.clone());
+            true
+        } else {
+            false
+        }
+    }
+
+    fn mark_thumbnail_available(&mut self, thumbnail_hash: String, thumbnail_path: &Path) {
+        self.thumbnail_existence_cache.insert(thumbnail_hash);
+        self.invalidate_thumbnail_textures(thumbnail_path);
+    }
+
+    fn invalidate_thumbnail_textures(&mut self, thumbnail_path: &Path) {
+        let thumbnail_uri = format!("file://{}", thumbnail_path.display());
+        let adjusted_prefix = format!("adjusted_thumbnail:{}:", thumbnail_uri);
+
+        for (ctx, cache) in &mut self.caches {
+            cache.texture_cache.remove(&thumbnail_uri);
+            cache.pending_textures.remove(&thumbnail_uri);
+            ctx.forget_image(&thumbnail_uri);
+
+            cache
+                .adjusted_texture_cache
+                .retain(|cache_key, _| !cache_key.starts_with(&adjusted_prefix));
+            cache
+                .adjusted_thumbnail_accesses
+                .retain(|cache_key, _| !cache_key.starts_with(&adjusted_prefix));
+            cache
+                .pending_adjusted_textures
+                .retain(|cache_key, _| !cache_key.starts_with(&adjusted_prefix));
+        }
+    }
+
     pub fn thumbnail_texture_for(
         &mut self,
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self
-            .thumbnail_existence_cache
-            .contains(&photo.thumbnail_hash)
-        {
+        if !self.thumbnail_exists(photo) {
+            return Ok(None);
+        }
+
+        let adjustments = self.get_photo_adjustments(&photo.path);
+        let cache = self.get_cache_mut(ctx);
+        if adjustments.is_identity() {
+            Self::load_texture(
+                &photo.thumbnail_uri(),
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            )
+        } else {
+            Self::load_adjusted_thumbnail_texture(photo, &adjustments, ctx, cache)
+        }
+    }
+
+    pub fn unadjusted_thumbnail_texture_for(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        if !self.thumbnail_exists(photo) {
             return Ok(None);
         }
 
@@ -316,19 +389,7 @@ impl PhotoManager {
         match self.photo_database.get_photo_by_index(at) {
             Some(photo) => {
                 let photo = photo.clone();
-                if !self
-                    .thumbnail_existence_cache
-                    .contains(&photo.thumbnail_hash)
-                {
-                    return Ok(None);
-                }
-                let cache = self.get_cache_mut(ctx);
-                Self::load_texture(
-                    &photo.thumbnail_uri(),
-                    ctx,
-                    &mut cache.texture_cache,
-                    &mut cache.pending_textures,
-                )
+                self.thumbnail_texture_for(&photo, ctx)
             }
             _ => Ok(None),
         }
@@ -340,10 +401,20 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
+        let adjustments = self.get_photo_adjustments(&photo.path);
         let cache = self.get_cache_mut(ctx);
-        let result = Self::load_full_res_texture(&uri, ctx, cache);
+        let protected_uri = if adjustments.is_identity() {
+            uri.clone()
+        } else {
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+        };
+        let result = if adjustments.is_identity() {
+            Self::load_full_res_texture(&uri, ctx, cache)
+        } else {
+            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+        };
 
-        Self::evict_full_res_textures(ctx, cache, &uri);
+        Self::evict_full_res_textures(ctx, cache, &protected_uri);
 
         result
     }
@@ -354,10 +425,20 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
+        let adjustments = self.get_photo_adjustments(&photo.path);
         let cache = self.get_cache_mut(ctx);
-        let result = Self::load_full_res_texture_blocking(&uri, ctx, cache);
+        let protected_uri = if adjustments.is_identity() {
+            uri.clone()
+        } else {
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+        };
+        let result = if adjustments.is_identity() {
+            Self::load_full_res_texture_blocking(&uri, ctx, cache)
+        } else {
+            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+        };
 
-        Self::evict_full_res_textures(ctx, cache, &uri);
+        Self::evict_full_res_textures(ctx, cache, &protected_uri);
 
         result
     }
@@ -368,14 +449,32 @@ impl PhotoManager {
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
-        let thumbnail_uri = photo.thumbnail_uri();
+        let adjustments = self.get_photo_adjustments(&photo.path);
+        let thumbnail_exists = self.thumbnail_exists(photo);
         let cache = self.get_cache_mut(ctx);
-        let result = match Self::load_full_res_texture(&uri, ctx, cache) {
-            Result::Ok(Some(tex)) => Ok(Some(tex)),
-            _ => Ok(cache.texture_cache.get(&thumbnail_uri).copied()),
+        let protected_uri = if adjustments.is_identity() {
+            uri.clone()
+        } else {
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+        };
+        let full_res_result = if adjustments.is_identity() {
+            Self::load_full_res_texture(&uri, ctx, cache)
+        } else {
+            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+        };
+        let result = match full_res_result {
+            Ok(Some(tex)) => Ok(Some(tex)),
+            _ if !thumbnail_exists => Ok(None),
+            _ if adjustments.is_identity() => Self::load_texture(
+                &photo.thumbnail_uri(),
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            ),
+            _ => Self::load_adjusted_thumbnail_texture(photo, &adjustments, ctx, cache),
         };
 
-        Self::evict_full_res_textures(ctx, cache, &uri);
+        Self::evict_full_res_textures(ctx, cache, &protected_uri);
 
         result
     }
@@ -434,11 +533,11 @@ impl PhotoManager {
 
             ready_polls += 1;
             match Self::load_full_res_texture(uri, ctx, cache) {
-                Result::Ok(Some(_)) => {
+                Ok(Some(_)) => {
                     made_progress = true;
                 }
-                Result::Ok(None) => {}
-                Result::Err(error) => {
+                Ok(None) => {}
+                Err(error) => {
                     first_error.get_or_insert(error);
                 }
             }
@@ -456,11 +555,11 @@ impl PhotoManager {
 
             preload_attempts += 1;
             match Self::load_full_res_texture(uri, ctx, cache) {
-                Result::Ok(Some(_)) => {
+                Ok(Some(_)) => {
                     made_progress = true;
                 }
-                Result::Ok(None) => {}
-                Result::Err(error) => {
+                Ok(None) => {}
+                Err(error) => {
                     first_error.get_or_insert(error);
                 }
             }
@@ -564,11 +663,170 @@ impl PhotoManager {
         result
     }
 
+    fn load_adjusted_full_res_texture(
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        let uri = photo.uri();
+        let source_version = path_version_key(&photo.path);
+        let cache_key = adjusted_texture_cache_key(&uri, &source_version, adjustments);
+        Self::touch_full_res_texture(cache, &cache_key);
+
+        let result = Self::load_adjusted_texture(
+            photo.path.clone(),
+            cache_key.clone(),
+            adjustments,
+            ctx.input(|input| input.max_texture_side as u32),
+            !ctx.input(|input| input.pointer.primary_down()),
+            ctx,
+            cache,
+        );
+
+        if result.is_err() {
+            cache.full_res_accesses.remove(&cache_key);
+        }
+
+        result
+    }
+
+    fn load_adjusted_thumbnail_texture(
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        let thumbnail_uri = photo.thumbnail_uri();
+        let thumbnail_path = photo.thumbnail_path()?;
+        let source_version = path_version_key(&thumbnail_path);
+        let cache_key = adjusted_thumbnail_cache_key(&thumbnail_uri, &source_version, adjustments);
+        Self::touch_adjusted_thumbnail_texture(cache, &cache_key);
+
+        let result = Self::load_adjusted_texture(
+            thumbnail_path,
+            cache_key.clone(),
+            adjustments,
+            0,
+            true,
+            ctx,
+            cache,
+        );
+
+        if matches!(result, Ok(Some(_))) {
+            Self::evict_adjusted_thumbnail_textures(ctx, cache, &cache_key);
+        }
+
+        if result.is_err() {
+            cache.adjusted_thumbnail_accesses.remove(&cache_key);
+        }
+
+        result
+    }
+
+    fn load_adjusted_texture(
+        source_path: PathBuf,
+        cache_key: String,
+        adjustments: &PhotoAdjustments,
+        max_texture_side: u32,
+        allow_start: bool,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        if let Some(texture) = cache.adjusted_texture_cache.get(&cache_key) {
+            return Ok(Some(SizedTexture::from_handle(texture)));
+        }
+
+        if let Some(result) = Self::poll_adjusted_texture(cache, &cache_key) {
+            let image = result.map_err(anyhow::Error::msg)?;
+            let color_image = ColorImage::from_rgba_unmultiplied(image.size, &image.rgba);
+            let texture =
+                ctx.load_texture(cache_key.clone(), color_image, TextureOptions::default());
+            let sized_texture = SizedTexture::from_handle(&texture);
+            cache.adjusted_texture_cache.insert(cache_key, texture);
+            return Ok(Some(sized_texture));
+        }
+
+        if cache.pending_adjusted_textures.contains_key(&cache_key) {
+            ctx.request_repaint();
+            return Ok(None);
+        }
+
+        if !allow_start {
+            return Ok(None);
+        }
+
+        let (sender, receiver) = oneshot::channel();
+        Self::spawn_adjusted_texture_job(
+            source_path,
+            adjustments.clone(),
+            max_texture_side,
+            sender,
+        );
+        cache.pending_adjusted_textures.insert(cache_key, receiver);
+        ctx.request_repaint();
+
+        Ok(None)
+    }
+
+    fn poll_adjusted_texture(
+        cache: &mut ContextCache,
+        cache_key: &str,
+    ) -> Option<std::result::Result<AdjustedTextureImage, String>> {
+        let result = match cache.pending_adjusted_textures.get_mut(cache_key) {
+            Some(receiver) => match receiver.try_recv() {
+                Ok(result) => Some(result),
+                Err(TryRecvError::Empty) => None,
+                Err(TryRecvError::Closed) => {
+                    Some(Err("adjusted texture worker stopped".to_owned()))
+                }
+            },
+            None => None,
+        };
+
+        if result.is_some() {
+            cache.pending_adjusted_textures.remove(cache_key);
+        }
+
+        result
+    }
+
+    fn spawn_adjusted_texture_job(
+        source_path: PathBuf,
+        adjustments: PhotoAdjustments,
+        max_texture_side: u32,
+        sender: oneshot::Sender<std::result::Result<AdjustedTextureImage, String>>,
+    ) {
+        let load = move || adjusted_texture_image(source_path, adjustments, max_texture_side);
+
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let result = spawn_blocking(load)
+                    .await
+                    .map_err(|error| error.to_string())
+                    .and_then(|result| result);
+                let _ = sender.send(result);
+            });
+        } else {
+            std::thread::spawn(move || {
+                let _ = sender.send(load());
+            });
+        }
+    }
+
     fn touch_full_res_texture(cache: &mut ContextCache, uri: &str) {
         cache.full_res_access_counter = cache.full_res_access_counter.saturating_add(1);
         cache
             .full_res_accesses
             .insert(uri.to_string(), cache.full_res_access_counter);
+    }
+
+    fn touch_adjusted_thumbnail_texture(cache: &mut ContextCache, uri: &str) {
+        cache.adjusted_thumbnail_access_counter =
+            cache.adjusted_thumbnail_access_counter.saturating_add(1);
+        cache
+            .adjusted_thumbnail_accesses
+            .insert(uri.to_string(), cache.adjusted_thumbnail_access_counter);
     }
 
     fn evict_full_res_textures(ctx: &Context, cache: &mut ContextCache, protected_uri: &str) {
@@ -586,7 +844,33 @@ impl PhotoManager {
 
             cache.full_res_accesses.remove(&uri);
             cache.texture_cache.remove(&uri);
+            cache.adjusted_texture_cache.remove(&uri);
             cache.pending_textures.remove(&uri);
+            cache.pending_adjusted_textures.remove(&uri);
+            ctx.forget_image(&uri);
+        }
+    }
+
+    fn evict_adjusted_thumbnail_textures(
+        ctx: &Context,
+        cache: &mut ContextCache,
+        protected_uri: &str,
+    ) {
+        let cache_capacity = ADJUSTED_THUMBNAIL_CACHE_CAPACITY.max(1);
+        while cache.adjusted_thumbnail_accesses.len() > cache_capacity {
+            let Some(uri) = cache
+                .adjusted_thumbnail_accesses
+                .iter()
+                .filter(|(uri, _)| uri.as_str() != protected_uri)
+                .min_by_key(|(_, last_access)| *last_access)
+                .map(|(uri, _)| uri.clone())
+            else {
+                break;
+            };
+
+            cache.adjusted_thumbnail_accesses.remove(&uri);
+            cache.adjusted_texture_cache.remove(&uri);
+            cache.pending_adjusted_textures.remove(&uri);
             ctx.forget_image(&uri);
         }
     }
@@ -610,16 +894,16 @@ impl PhotoManager {
                 );
 
                 match texture {
-                    Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
+                    Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
                         pending_textures.insert(uri.to_string());
                         Ok(None)
                     }
-                    Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                    Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
                         pending_textures.remove(uri);
                         texture_cache.insert(uri.to_string(), texture);
                         Ok(Some(texture))
                     }
-                    Result::Err(err) => {
+                    Err(err) => {
                         pending_textures.remove(uri);
                         error!("Failed to load texture {:?}", err);
                         Err(anyhow!(err))
@@ -648,16 +932,16 @@ impl PhotoManager {
                 );
 
                 match texture {
-                    Result::Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
+                    Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
                         pending_textures.insert(uri.to_string());
                         Ok(None)
                     }
-                    Result::Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
+                    Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
                         pending_textures.remove(uri);
                         texture_cache.insert(uri.to_string(), texture);
                         Ok(Some(texture))
                     }
-                    Result::Err(err) => {
+                    Err(err) => {
                         pending_textures.remove(uri);
                         Err(anyhow!(err))
                     }
@@ -715,7 +999,7 @@ impl PhotoManager {
                 if thumbnail_path.exists() {
                     // info!("Thumbnail already exists for: {:?}", &photo_path);
                     dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.thumbnail_existence_cache.insert(hash);
+                        photo_manager.mark_thumbnail_available(hash, &thumbnail_path);
                     });
 
                     return Ok(());
@@ -813,7 +1097,7 @@ impl PhotoManager {
                         alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
                     }
 
-                    Ok(dst_image)
+                    Ok::<_, anyhow::Error>(dst_image)
                 })
                 .await??;
 
@@ -870,7 +1154,7 @@ impl PhotoManager {
                 info!("Thumbnail generated: {:?}", &thumbnail_path);
 
                 dep_mut!(PhotoManager, |photo_manager| {
-                    photo_manager.thumbnail_existence_cache.insert(hash);
+                    photo_manager.mark_thumbnail_available(hash, &thumbnail_path);
                 });
 
                 //ctx.request_repaint();
@@ -891,6 +1175,14 @@ impl PhotoManager {
     pub fn set_photo_rating(&mut self, path: &PathBuf, rating: PhotoRating) {
         self.photo_database.set_photo_rating(path, rating);
         // PhotoDatabase handles invalidation of query cache automatically
+    }
+
+    pub fn get_photo_adjustments(&self, path: &PathBuf) -> PhotoAdjustments {
+        self.photo_database.get_photo_adjustments(path)
+    }
+
+    pub fn set_photo_adjustments(&mut self, path: &PathBuf, adjustments: PhotoAdjustments) {
+        self.photo_database.set_photo_adjustments(path, adjustments);
     }
 
     pub fn get_photo_tags(&self, path: &PathBuf) -> HashSet<String> {
@@ -958,4 +1250,101 @@ impl PhotoManager {
     pub fn delete_album(&mut self, album_id: &AlbumId) {
         self.photo_database.delete_album(album_id);
     }
+}
+
+impl std::fmt::Debug for ContextCache {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ContextCache")
+            .field("texture_cache", &self.texture_cache)
+            .field(
+                "adjusted_texture_cache_len",
+                &self.adjusted_texture_cache.len(),
+            )
+            .field("pending_textures", &self.pending_textures)
+            .field(
+                "pending_adjusted_textures_len",
+                &self.pending_adjusted_textures.len(),
+            )
+            .field("full_res_accesses", &self.full_res_accesses)
+            .field("full_res_access_counter", &self.full_res_access_counter)
+            .field(
+                "adjusted_thumbnail_accesses",
+                &self.adjusted_thumbnail_accesses,
+            )
+            .field(
+                "adjusted_thumbnail_access_counter",
+                &self.adjusted_thumbnail_access_counter,
+            )
+            .finish()
+    }
+}
+
+struct AdjustedTextureImage {
+    size: [usize; 2],
+    rgba: Vec<u8>,
+}
+
+fn adjusted_texture_cache_key(
+    uri: &str,
+    source_version: &str,
+    adjustments: &PhotoAdjustments,
+) -> String {
+    format!(
+        "adjusted:{}:{}:{}",
+        uri,
+        source_version,
+        hash64(&adjustments.cache_key())
+    )
+}
+
+fn adjusted_thumbnail_cache_key(
+    uri: &str,
+    source_version: &str,
+    adjustments: &PhotoAdjustments,
+) -> String {
+    format!(
+        "adjusted_thumbnail:{}:{}:{}",
+        uri,
+        source_version,
+        hash64(&adjustments.cache_key())
+    )
+}
+
+fn path_version_key(path: &Path) -> String {
+    let Ok(metadata) = path.metadata() else {
+        return "missing".to_owned();
+    };
+
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+
+    format!("{}:{}", metadata.len(), modified)
+}
+
+fn adjusted_texture_image(
+    source_path: PathBuf,
+    adjustments: PhotoAdjustments,
+    max_texture_side: u32,
+) -> std::result::Result<AdjustedTextureImage, String> {
+    let mut image = image::open(&source_path).map_err(|error| error.to_string())?;
+    if max_texture_side > 0
+        && (image.width() > max_texture_side || image.height() > max_texture_side)
+    {
+        image = image.resize(
+            max_texture_side,
+            max_texture_side,
+            image::imageops::FilterType::Triangle,
+        );
+    }
+
+    let rgba = adjustments.apply_to_image(image);
+    Ok(AdjustedTextureImage {
+        size: [rgba.width() as usize, rgba.height() as usize],
+        rgba: rgba.into_raw(),
+    })
 }

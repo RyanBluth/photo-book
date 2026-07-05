@@ -2,7 +2,13 @@ use parking_lot::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    app_status::AppStatus, auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager, config::Config, cursor_manager::CursorManager, debug::DebugSettings, deferred_work_manager::DeferredWorkManager, export::Exporter, font_manager::FontManager, modal::manager::ModalManager, photo_manager::PhotoManager, project_settings::ProjectSettingsManager, selection_manager::SelectionManager, session::Session, sizing_manager::SizingManager, string_log::StringLog
+    app_status::AppStatus, auto_persisting::AutoPersisting, autosave_manager::AutoSaveManager,
+    config::Config, cursor_manager::CursorManager, debug::DebugSettings,
+    deferred_work_manager::DeferredWorkManager, export::Exporter, font_manager::FontManager,
+    gpu_photo_adjustment::GpuPhotoAdjustmentRenderer, histogram_manager::HistogramManager,
+    modal::manager::ModalManager, photo_manager::PhotoManager,
+    project_settings::ProjectSettingsManager, selection_manager::SelectionManager,
+    session::Session, sizing_manager::SizingManager, string_log::StringLog,
 };
 
 macro_rules! singleton {
@@ -136,6 +142,14 @@ singleton!(
 singleton!(SIZING_MANAGER, SizingManager, SizingManager::new());
 
 singleton!(APP_STATUS, AppStatus, AppStatus::new());
+
+singleton!(
+    GPU_PHOTO_ADJUSTMENT_RENDERER,
+    GpuPhotoAdjustmentRenderer,
+    GpuPhotoAdjustmentRenderer::new()
+);
+
+singleton!(HISTOGRAM_MANAGER, HistogramManager, HistogramManager::new());
 
 #[allow(unused_imports)]
 use backtrace::Backtrace;

@@ -19,6 +19,7 @@ pub mod color {
     pub const SURFACE_MUTED: Color32 = Color32::from_gray(50);
     pub const SURFACE_STRONG: Color32 = Color32::from_gray(100);
     pub const SURFACE_EMPHASIS: Color32 = Color32::from_gray(150);
+    pub const CONTROL_TEXT: Color32 = Color32::from_gray(185);
 
     pub const OVERLAY: Color32 = Color32::from_black_alpha(128);
     pub const WHITE_OVERLAY: Color32 = Color32::from_rgba_unmultiplied_const(255, 255, 255, 50);

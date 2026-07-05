@@ -14,6 +14,7 @@ use crate::{
     id::next_query_result_id,
     model::{
         album::{Album, AlbumId},
+        photo_adjustments::PhotoAdjustments,
         photo_grouping::PhotoGrouping,
     },
     photo::{Photo, PhotoMetadataField, PhotoMetadataFieldLabel, PhotoRating},
@@ -86,6 +87,7 @@ pub struct PhotoDatabase {
     path_map: BidirectionalHashMap<usize, PathBuf>,
     photo_ratings: HashMap<PathBuf, PhotoRating>,
     photo_tags: HashMap<PathBuf, HashSet<String>>,
+    photo_adjustments: HashMap<PathBuf, PhotoAdjustments>,
     query_cache: HashMap<PhotoQuery, PhotoQueryResult>,
     pub file_collection: FileTreeCollection,
     albums: HashMap<AlbumId, Album>,
@@ -99,6 +101,7 @@ impl PhotoDatabase {
             path_map: BidirectionalHashMap::new(),
             photo_ratings: HashMap::new(),
             photo_tags: HashMap::new(),
+            photo_adjustments: HashMap::new(),
             query_cache: HashMap::new(),
             file_collection: FileTreeCollection::new(),
             albums: HashMap::new(),
@@ -115,6 +118,7 @@ impl PhotoDatabase {
         self.path_map.clear();
         self.photo_ratings.clear();
         self.photo_tags.clear();
+        self.photo_adjustments.clear();
         self.query_cache.clear();
         self.file_collection = FileTreeCollection::new();
         self.albums.clear();
@@ -173,6 +177,7 @@ impl PhotoDatabase {
         }
         self.photo_ratings.remove(path);
         self.photo_tags.remove(path);
+        self.photo_adjustments.remove(path);
         self.file_collection.remove(path);
         self.is_sorted = false;
         self.albums.values_mut().for_each(|album| {
@@ -320,6 +325,27 @@ impl PhotoDatabase {
         }
         self.photo_ratings.insert(path.clone(), rating);
         self.invalidate_query_cache();
+    }
+
+    pub fn get_photo_adjustments(&self, path: &PathBuf) -> PhotoAdjustments {
+        self.photo_adjustments
+            .get(path)
+            .map(PhotoAdjustments::canonicalized)
+            .unwrap_or_default()
+    }
+
+    pub fn set_photo_adjustments(&mut self, path: &PathBuf, adjustments: PhotoAdjustments) {
+        let adjustments = adjustments.canonicalized();
+        if adjustments.is_identity() {
+            self.photo_adjustments.remove(path);
+            return;
+        }
+
+        if self.photo_adjustments.get(path) == Some(&adjustments) {
+            return;
+        }
+
+        self.photo_adjustments.insert(path.clone(), adjustments);
     }
 
     pub fn get_photo_tags(&self, path: &PathBuf) -> HashSet<String> {

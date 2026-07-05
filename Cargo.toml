@@ -10,7 +10,7 @@ wgpu = []
 snapshot = []
 
 [dependencies]
-# re_ui = "0.23.1"
+re_ui = "0.33.1"
 egui = { version = "0.34.3" }
 eframe = { version = "0.34.3", features = ["glow", "wgpu"] }
 egui_extras = { version = "0.34.3", features = ["default", "all_loaders"] }
@@ -26,6 +26,7 @@ log = "0.4"
 kamadak-exif = "0.6.1"
 imagesize = "0.14.0"
 backtrace = "0.3"
+bytemuck = { version = "1.24.0", features = ["derive"] }
 open = "5.3.5"
 strum = { version = "0.28.0", features = ["derive"] }
 strum_macros = "0.28.0"

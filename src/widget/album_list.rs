@@ -10,7 +10,7 @@ use crate::{
     model::album::AlbumId,
     photo_manager::PhotoManager,
     selection_manager::SelectionModifiers,
-    widget::tree_list::{SelectionStyle, TreeList, TreeListRow, TreeListSelection, ROW_HEIGHT},
+    widget::tree_list::{ROW_HEIGHT, SelectionStyle, TreeList, TreeListRow, TreeListSelection},
 };
 
 const PHOTO_WINDOW_SIZE: usize = 64;

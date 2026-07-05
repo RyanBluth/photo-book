@@ -7,7 +7,8 @@ use egui::{
 
 use crate::{
     cursor_manager::CursorManager,
-    dep_mut,
+    dep, dep_mut,
+    gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
     photo::{self, Photo},
     photo_manager::PhotoManager,
     theme::color,
@@ -20,7 +21,6 @@ const RESIZE_HANDLE_HEIGHT: f32 = 8.0;
 const RESIZE_LINE_HEIGHT: f32 = 2.0;
 const CELL_ASPECT_RATIO: f32 = 184.0 / 148.0;
 const CELL_SPACING: f32 = 12.0;
-const CELL_PADDING: f32 = 12.0;
 const VIRTUALIZED_OVERSCAN_CELLS: usize = 2;
 
 #[derive(Debug, Clone)]
@@ -81,8 +81,7 @@ impl<'a> PhotoFilmstrip<'a> {
             Pos2::new(bar_rect.left(), bar_rect.bottom() - RESIZE_HANDLE_HEIGHT),
             bar_rect.right_bottom(),
         );
-        let content_rect: Rect =
-            Rect::from_min_max(bar_rect.min, handle_rect.right_top());
+        let content_rect: Rect = Rect::from_min_max(bar_rect.min, handle_rect.right_top());
         let cell_height = content_rect.height().max(1.0);
         let cell_width = cell_height * CELL_ASPECT_RATIO;
 
@@ -235,7 +234,7 @@ fn thumbnail_cell(
         Sense::click(),
     );
     let thumbnail = dep_mut!(PhotoManager, |photo_manager| {
-        photo_manager.thumbnail_texture_for(photo, ui.ctx())
+        photo_manager.unadjusted_thumbnail_texture_for(photo, ui.ctx())
     });
 
     let photo_rect = rect
@@ -275,9 +274,35 @@ fn paint_thumbnail(
 
     match thumbnail {
         Ok(Some(texture)) => {
-            Image::from_texture(texture)
-                .rotate(photo.metadata.rotation().radians(), Vec2::splat(0.5))
-                .paint_at(ui, image_rect);
+            let adjustments = photo.adjustments();
+            let gpu_painted = !adjustments.is_identity()
+                && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer
+                    .try_paint_thumbnail(
+                        ui,
+                        photo,
+                        bounds,
+                        image_rect,
+                        &adjustments,
+                    ));
+
+            if !gpu_painted {
+                let fallback_texture = if adjustments.is_identity() {
+                    Some(texture)
+                } else {
+                    dep_mut!(PhotoManager, |photo_manager| {
+                        photo_manager.thumbnail_texture_for(photo, ui.ctx())
+                    })
+                    .ok()
+                    .flatten()
+                    .or(Some(texture))
+                };
+
+                if let Some(texture) = fallback_texture {
+                    Image::from_texture(texture)
+                        .rotate(photo.metadata.rotation().radians(), Vec2::splat(0.5))
+                        .paint_at(ui, image_rect);
+                }
+            }
         }
         Ok(None) => {
             ui.painter()

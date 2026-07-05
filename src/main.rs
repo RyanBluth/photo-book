@@ -34,6 +34,7 @@ use wgpu::Color;
 
 use crate::deferred_work_manager::DeferredWorkManager;
 
+mod app_status;
 mod assets;
 mod auto_persisting;
 mod autosave_manager;
@@ -47,6 +48,8 @@ mod error_sink;
 mod export;
 mod file_tree;
 mod font_manager;
+mod gpu_photo_adjustment;
+mod histogram_manager;
 mod history;
 mod id;
 mod layout;
@@ -68,7 +71,6 @@ mod template;
 mod theme;
 mod utils;
 mod widget;
-mod app_status;
 
 static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 
@@ -170,11 +172,18 @@ async fn main() -> anyhow::Result<()> {
     eframe::run_native(
         "Photobook",
         options,
-        Box::new(|_cc| {
+        Box::new(|cc| {
             #[cfg(target_os = "linux")]
-            _cc.egui_ctx.enable_accesskit();
+            cc.egui_ctx.enable_accesskit();
 
-            //re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
+            // re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
+            dep_mut!(
+                gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
+                |renderer| {
+                    renderer.initialize(cc);
+                }
+            );
+
             let mut app = PhotoBookApp::new();
             #[cfg(target_os = "macos")]
             {

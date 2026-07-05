@@ -10,8 +10,20 @@ use crate::{
     dep, dep_mut,
     id::{LayerId, PageId, next_page_id, set_min_layer_id},
     model::{
-        album::Album as AppAlbum, edit_state::EditablePage, page::Page as AppPage,
-        photo_grouping::PhotoGrouping as AppPhotoGrouping, scale_mode::ScaleMode as AppScaleMode,
+        album::Album as AppAlbum,
+        edit_state::EditablePage,
+        page::Page as AppPage,
+        photo_adjustments::{
+            BlackWhiteAdjustments as AppBlackWhiteAdjustments,
+            ColorAdjustments as AppColorAdjustments, Curve as AppCurve,
+            CurvePoint as AppCurvePoint, CurvesAdjustments as AppCurvesAdjustments,
+            DefinitionAdjustments as AppDefinitionAdjustments, LevelValues as AppLevelValues,
+            LevelsAdjustments as AppLevelsAdjustments, LightAdjustments as AppLightAdjustments,
+            PhotoAdjustments as AppPhotoAdjustments,
+            WhiteBalanceAdjustments as AppWhiteBalanceAdjustments,
+        },
+        photo_grouping::PhotoGrouping as AppPhotoGrouping,
+        scale_mode::ScaleMode as AppScaleMode,
         unit::Unit as AppUnit,
     },
     photo::{
@@ -46,7 +58,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 8;
+pub const PROJECT_VERSION: u32 = 11;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -92,6 +104,7 @@ impl Project {
                     path: photo.path.clone(),
                     rating: photo_manager.get_photo_rating(&photo.path),
                     tags: photo_manager.get_photo_tags(&photo.path).into(),
+                    adjustments: photo_manager.get_photo_adjustments(&photo.path).into(),
                     metadata: photo.metadata.clone().into(),
                     last_modified: photo.last_modified.clone(),
                 })
@@ -186,10 +199,22 @@ impl From<Project> for OrganizeEditScene {
             settings.project_settings = project.project_settings.into();
         });
 
-        let photos_with_metadata: Vec<(PathBuf, AppPhotoRating, HashSet<String>)> = project
+        let photos_with_metadata: Vec<(
+            PathBuf,
+            AppPhotoRating,
+            HashSet<String>,
+            AppPhotoAdjustments,
+        )> = project
             .photos
             .iter()
-            .map(|photo| (photo.path.clone(), photo.rating, photo.tags.clone()))
+            .map(|photo| {
+                (
+                    photo.path.clone(),
+                    photo.rating,
+                    photo.tags.clone(),
+                    photo.adjustments.clone().into(),
+                )
+            })
             .collect();
 
         let photos = project
@@ -208,9 +233,10 @@ impl From<Project> for OrganizeEditScene {
         });
 
         dep_mut!(PhotoManager, |photo_manager| {
-            for (path, rating, tags) in photos_with_metadata {
+            for (path, rating, tags, adjustments) in photos_with_metadata {
                 photo_manager.set_photo_rating(&path, rating);
                 photo_manager.set_photo_tags(&path, tags);
+                photo_manager.set_photo_adjustments(&path, adjustments);
             }
         });
 
@@ -428,8 +454,342 @@ pub struct Photo {
     pub path: PathBuf,
     pub rating: PhotoRating,
     pub tags: HashSet<String>,
+    pub adjustments: PhotoAdjustments,
     pub metadata: PhotoMetadata,
     pub last_modified: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct PhotoAdjustments {
+    pub light: LightAdjustments,
+    pub color: ColorAdjustments,
+    pub black_white: BlackWhiteAdjustments,
+    pub white_balance: WhiteBalanceAdjustments,
+    pub curves: CurvesAdjustments,
+    pub levels: LevelsAdjustments,
+    pub definition: DefinitionAdjustments,
+}
+
+impl From<AppPhotoAdjustments> for PhotoAdjustments {
+    fn from(value: AppPhotoAdjustments) -> Self {
+        Self {
+            light: value.light.into(),
+            color: value.color.into(),
+            black_white: value.black_white.into(),
+            white_balance: value.white_balance.into(),
+            curves: value.curves.into(),
+            levels: value.levels.into(),
+            definition: value.definition.into(),
+        }
+    }
+}
+
+impl From<PhotoAdjustments> for AppPhotoAdjustments {
+    fn from(value: PhotoAdjustments) -> Self {
+        Self {
+            light: value.light.into(),
+            color: value.color.into(),
+            black_white: value.black_white.into(),
+            white_balance: value.white_balance.into(),
+            curves: value.curves.into(),
+            levels: value.levels.into(),
+            definition: value.definition.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct LightAdjustments {
+    pub exposure: f32,
+    pub brilliance: f32,
+    pub highlights: f32,
+    pub shadows: f32,
+    pub contrast: f32,
+    pub brightness: f32,
+    pub black_point: f32,
+}
+
+impl From<AppLightAdjustments> for LightAdjustments {
+    fn from(value: AppLightAdjustments) -> Self {
+        Self {
+            exposure: value.exposure,
+            brilliance: value.brilliance,
+            highlights: value.highlights,
+            shadows: value.shadows,
+            contrast: value.contrast,
+            brightness: value.brightness,
+            black_point: value.black_point,
+        }
+    }
+}
+
+impl From<LightAdjustments> for AppLightAdjustments {
+    fn from(value: LightAdjustments) -> Self {
+        Self {
+            exposure: value.exposure,
+            brilliance: value.brilliance,
+            highlights: value.highlights,
+            shadows: value.shadows,
+            contrast: value.contrast,
+            brightness: value.brightness,
+            black_point: value.black_point,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct ColorAdjustments {
+    pub saturation: f32,
+    pub vibrance: f32,
+    pub cast: f32,
+}
+
+impl From<AppColorAdjustments> for ColorAdjustments {
+    fn from(value: AppColorAdjustments) -> Self {
+        Self {
+            saturation: value.saturation,
+            vibrance: value.vibrance,
+            cast: value.cast,
+        }
+    }
+}
+
+impl From<ColorAdjustments> for AppColorAdjustments {
+    fn from(value: ColorAdjustments) -> Self {
+        Self {
+            saturation: value.saturation,
+            vibrance: value.vibrance,
+            cast: value.cast,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct BlackWhiteAdjustments {
+    pub intensity: f32,
+    pub neutrals: f32,
+    pub tone: f32,
+    pub grain: f32,
+}
+
+impl From<AppBlackWhiteAdjustments> for BlackWhiteAdjustments {
+    fn from(value: AppBlackWhiteAdjustments) -> Self {
+        Self {
+            intensity: value.intensity,
+            neutrals: value.neutrals,
+            tone: value.tone,
+            grain: value.grain,
+        }
+    }
+}
+
+impl From<BlackWhiteAdjustments> for AppBlackWhiteAdjustments {
+    fn from(value: BlackWhiteAdjustments) -> Self {
+        Self {
+            intensity: value.intensity,
+            neutrals: value.neutrals,
+            tone: value.tone,
+            grain: value.grain,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct WhiteBalanceAdjustments {
+    pub temperature: f32,
+    pub tint: f32,
+}
+
+impl From<AppWhiteBalanceAdjustments> for WhiteBalanceAdjustments {
+    fn from(value: AppWhiteBalanceAdjustments) -> Self {
+        Self {
+            temperature: value.temperature,
+            tint: value.tint,
+        }
+    }
+}
+
+impl From<WhiteBalanceAdjustments> for AppWhiteBalanceAdjustments {
+    fn from(value: WhiteBalanceAdjustments) -> Self {
+        Self {
+            temperature: value.temperature,
+            tint: value.tint,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct CurvesAdjustments {
+    pub rgb: Curve,
+    pub red: Curve,
+    pub green: Curve,
+    pub blue: Curve,
+}
+
+impl From<AppCurvesAdjustments> for CurvesAdjustments {
+    fn from(value: AppCurvesAdjustments) -> Self {
+        Self {
+            rgb: value.rgb.into(),
+            red: value.red.into(),
+            green: value.green.into(),
+            blue: value.blue.into(),
+        }
+    }
+}
+
+impl From<CurvesAdjustments> for AppCurvesAdjustments {
+    fn from(value: CurvesAdjustments) -> Self {
+        Self {
+            rgb: value.rgb.into(),
+            red: value.red.into(),
+            green: value.green.into(),
+            blue: value.blue.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct Curve {
+    pub points: Vec<CurvePoint>,
+}
+
+impl Default for Curve {
+    fn default() -> Self {
+        Self {
+            points: vec![CurvePoint { x: 0.0, y: 0.0 }, CurvePoint { x: 1.0, y: 1.0 }],
+        }
+    }
+}
+
+impl From<AppCurve> for Curve {
+    fn from(value: AppCurve) -> Self {
+        Self {
+            points: value.points.into_iter().map(CurvePoint::from).collect(),
+        }
+    }
+}
+
+impl From<Curve> for AppCurve {
+    fn from(value: Curve) -> Self {
+        Self {
+            points: value.points.into_iter().map(AppCurvePoint::from).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct CurvePoint {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl From<AppCurvePoint> for CurvePoint {
+    fn from(value: AppCurvePoint) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+impl From<CurvePoint> for AppCurvePoint {
+    fn from(value: CurvePoint) -> Self {
+        Self {
+            x: value.x,
+            y: value.y,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct LevelValues {
+    pub black: f32,
+    pub mid: f32,
+    pub white: f32,
+}
+
+impl Default for LevelValues {
+    fn default() -> Self {
+        Self {
+            black: 0.0,
+            mid: 0.5,
+            white: 1.0,
+        }
+    }
+}
+
+impl From<AppLevelValues> for LevelValues {
+    fn from(value: AppLevelValues) -> Self {
+        Self {
+            black: value.black,
+            mid: value.mid,
+            white: value.white,
+        }
+    }
+}
+
+impl From<LevelValues> for AppLevelValues {
+    fn from(value: LevelValues) -> Self {
+        Self {
+            black: value.black,
+            mid: value.mid,
+            white: value.white,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct LevelsAdjustments {
+    pub luminance: LevelValues,
+    pub rgb: LevelValues,
+    pub red: LevelValues,
+    pub green: LevelValues,
+    pub blue: LevelValues,
+}
+
+impl From<AppLevelsAdjustments> for LevelsAdjustments {
+    fn from(value: AppLevelsAdjustments) -> Self {
+        Self {
+            luminance: value.luminance.into(),
+            rgb: value.rgb.into(),
+            red: value.red.into(),
+            green: value.green.into(),
+            blue: value.blue.into(),
+        }
+    }
+}
+
+impl From<LevelsAdjustments> for AppLevelsAdjustments {
+    fn from(value: LevelsAdjustments) -> Self {
+        Self {
+            luminance: value.luminance.into(),
+            rgb: value.rgb.into(),
+            red: value.red.into(),
+            green: value.green.into(),
+            blue: value.blue.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct DefinitionAdjustments {
+    pub amount: f32,
+}
+
+impl From<AppDefinitionAdjustments> for DefinitionAdjustments {
+    fn from(value: AppDefinitionAdjustments) -> Self {
+        Self {
+            amount: value.amount,
+        }
+    }
+}
+
+impl From<DefinitionAdjustments> for AppDefinitionAdjustments {
+    fn from(value: DefinitionAdjustments) -> Self {
+        Self {
+            amount: value.amount,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Savefile)]
@@ -793,6 +1153,10 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
                         .get_photo_tags(&canvas_photo.photo.path)
                         .into()
                 }),
+                adjustments: dep!(PhotoManager, |photo_manager| {
+                    photo_manager.get_photo_adjustments(&canvas_photo.photo.path)
+                })
+                .into(),
                 metadata: canvas_photo.photo.metadata.clone().into(),
                 last_modified: canvas_photo.photo.last_modified.clone(),
             },
@@ -803,8 +1167,21 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
 
 impl From<CanvasPhoto> for AppCanvasPhoto {
     fn from(canvas_photo: CanvasPhoto) -> Self {
+        let photo = AppPhoto::with_metadata(
+            canvas_photo.photo.path.clone(),
+            canvas_photo.photo.metadata.clone().into(),
+        );
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.set_photo_rating(&canvas_photo.photo.path, canvas_photo.photo.rating);
+            photo_manager.set_photo_tags(&canvas_photo.photo.path, canvas_photo.photo.tags.clone());
+            photo_manager.set_photo_adjustments(
+                &canvas_photo.photo.path,
+                canvas_photo.photo.adjustments.clone().into(),
+            );
+        });
+
         Self {
-            photo: AppPhoto::new(canvas_photo.photo.path).unwrap(),
+            photo,
             crop: canvas_photo.crop.into(),
         }
     }
@@ -1378,6 +1755,33 @@ mod tests {
         assert_eq!(restored_album.id, "album-1");
         assert_eq!(restored_album.name, "Favorites");
         assert!(restored_album.photos.contains(&photo_path));
+    }
+
+    #[test]
+    fn photo_adjustments_project_conversion_round_trips() {
+        let mut adjustments = AppPhotoAdjustments::default();
+        adjustments.light.exposure = 0.35;
+        adjustments.light.brilliance = -0.2;
+        adjustments.color.saturation = 0.6;
+        adjustments.color.vibrance = 0.15;
+        adjustments.black_white.intensity = 0.45;
+        adjustments.black_white.grain = 0.3;
+        adjustments.white_balance.temperature = -0.25;
+        adjustments.white_balance.tint = 0.1;
+        adjustments.curves.rgb.points = vec![
+            AppCurvePoint { x: 0.0, y: 0.0 },
+            AppCurvePoint { x: 0.4, y: 0.55 },
+            AppCurvePoint { x: 1.0, y: 1.0 },
+        ];
+        adjustments.levels.luminance.black = 0.08;
+        adjustments.levels.luminance.mid = 0.42;
+        adjustments.levels.luminance.white = 0.94;
+        adjustments.definition.amount = 0.7;
+
+        let project_adjustments: PhotoAdjustments = adjustments.clone().into();
+        let restored_adjustments: AppPhotoAdjustments = project_adjustments.into();
+
+        assert_eq!(restored_adjustments, adjustments);
     }
 
     #[test]

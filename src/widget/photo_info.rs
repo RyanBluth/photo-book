@@ -1,8 +1,9 @@
 use chrono::{DateTime, Local, Utc};
-use egui::{Key, Label, RichText, Sense, Ui, Vec2};
+use egui::{Key, Label, Margin, RichText, Sense, Ui, Vec2};
 use std::collections::HashSet;
 
 use crate::cursor_manager::CursorManager;
+use crate::histogram_manager::{HistogramLoadResult, HistogramManager};
 use crate::model::album::AlbumId;
 use crate::model::editable_value::EditableValue;
 use crate::photo::{PhotoMetadataField, PhotoMetadataFieldLabel, Rational, SaveOnDropPhoto};
@@ -13,10 +14,14 @@ use crate::{dep, dep_mut};
 use super::{
     autocomplete::{Autocomplete, AutocompleteState},
     chip_collection::chip_collection,
+    histogram::Histogram,
+    photo_adjustments::{PhotoAdjustmentsEditor, PhotoAdjustmentsState},
     tag_chips::TagChipsState,
 };
 
-#[derive(Debug, Clone)]
+const PHOTO_INFO_ITEM_SPACING: f32 = 14.0;
+
+#[derive(Debug)]
 pub struct PhotoInfoState {
     pub tag_chips_state: TagChipsState,
     pub tag_autocomplete_state: AutocompleteState,
@@ -24,6 +29,7 @@ pub struct PhotoInfoState {
     pub last_photo_tags: HashSet<String>,
     pub selected_albums: HashSet<AlbumId>,
     pub last_photo_albums: HashSet<AlbumId>,
+    pub adjustments_state: PhotoAdjustmentsState,
 }
 
 impl PhotoInfoState {
@@ -35,6 +41,7 @@ impl PhotoInfoState {
             last_photo_tags: HashSet::new(),
             selected_albums: HashSet::new(),
             last_photo_albums: HashSet::new(),
+            adjustments_state: PhotoAdjustmentsState::new(),
         }
     }
 }
@@ -54,25 +61,27 @@ impl<'a> PhotoInfo<'a> {
     pub fn show(&mut self, ui: &mut Ui) {
         ui.allocate_ui(ui.available_size(), |ui: &mut egui::Ui| {
             egui::Frame::NONE
-                .inner_margin(egui::Margin::same(16))
+                .inner_margin(Margin::same(8))
                 .fill(color::TRANSPARENT)
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("photo_info_scroll")
                         .auto_shrink([false, false])
+                        .content_margin(Margin::same(16))
                         .show(ui, |ui| {
                             ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = PHOTO_INFO_ITEM_SPACING;
+
                                 self.show_header(ui);
-                                ui.add_space(16.0);
-
                                 self.show_metadata_card(ui);
-
-                                ui.add_space(14.0);
+                                Self::section_separator(ui);
                                 self.show_rating(ui);
-                                ui.add_space(14.0);
+                                Self::section_separator(ui);
                                 self.show_tags(ui);
-                                ui.add_space(14.0);
+                                Self::section_separator(ui);
                                 self.show_albums_section(ui);
+                                Self::section_separator(ui);
+                                self.show_adjustments(ui);
                             });
                         });
                 });
@@ -89,6 +98,10 @@ impl<'a> PhotoInfo<'a> {
                 self.photo.set_rating(None);
             }
         })
+    }
+
+    fn section_separator(ui: &mut Ui) {
+        ui.separator();
     }
 
     fn show_header(&self, ui: &mut Ui) {
@@ -118,10 +131,10 @@ impl<'a> PhotoInfo<'a> {
                 });
             }
 
-            if path_response.clicked() {
-                if let Some(parent) = self.photo.path.parent() {
-                    open::that_in_background(parent);
-                }
+            if path_response.clicked()
+                && let Some(parent) = self.photo.path.parent()
+            {
+                open::that_in_background(parent);
             }
         });
     }
@@ -165,7 +178,7 @@ impl<'a> PhotoInfo<'a> {
                 let star_size = 21.0;
 
                 for i in 1..=3 {
-                    let is_selected = current_rating.map_or(false, |rating| rating >= i as u8);
+                    let is_selected = current_rating.is_some_and(|rating| rating >= i as u8);
                     let text = if is_selected { "★" } else { "☆" };
                     let response = ui.add(
                         egui::Button::new(RichText::new(text).size(star_size).color(
@@ -212,6 +225,58 @@ impl<'a> PhotoInfo<'a> {
         });
     }
 
+    fn show_histogram(
+        &mut self,
+        ui: &mut Ui,
+        adjustments: &crate::model::photo_adjustments::PhotoAdjustments,
+    ) {
+        let refresh_adjusted = !ui.input(|input| input.pointer.primary_down());
+        let histogram = dep_mut!(HistogramManager, |manager| manager.get(
+            &self.photo.path,
+            adjustments,
+            refresh_adjusted,
+        ));
+
+        match &histogram {
+            HistogramLoadResult::Ready(data) => {
+                ui.add(Histogram::new(data).height(82.0));
+            }
+            HistogramLoadResult::Pending(Some(data)) => {
+                ui.add(Histogram::new(data).height(82.0).loading(true));
+            }
+            HistogramLoadResult::Unavailable(error, Some(data)) => {
+                let _ = error.as_str();
+                ui.add(Histogram::new(data).height(82.0));
+            }
+            HistogramLoadResult::Pending(None) => {
+                ui.add(Histogram::unavailable().height(82.0).loading(true));
+            }
+            HistogramLoadResult::Unavailable(error, None) => {
+                let _ = error.as_str();
+                ui.add(Histogram::unavailable().height(82.0));
+            }
+        }
+    }
+
+    fn show_adjustments(&mut self, ui: &mut Ui) {
+        let mut adjustments = self.photo.adjustments();
+        self.show_histogram(ui, &adjustments);
+        ui.add_space(10.0);
+        let original_adjustments = crate::model::photo_adjustments::PhotoAdjustments::default();
+        let histogram = dep_mut!(HistogramManager, |manager| {
+            manager
+                .get(&self.photo.path, &original_adjustments, true)
+                .ready_data()
+                .cloned()
+        });
+        if PhotoAdjustmentsEditor::new(&mut adjustments, &mut self.state.adjustments_state)
+            .histogram(histogram.as_ref())
+            .show(ui)
+        {
+            self.photo.set_adjustments(adjustments);
+        }
+    }
+
     fn show_tags(&mut self, ui: &mut Ui) {
         ui.label(RichText::new("Tags").small().strong());
         ui.add_space(4.0);
@@ -231,11 +296,11 @@ impl<'a> PhotoInfo<'a> {
             selected_tags.sort();
 
             let chip_response = chip_collection(ui, &selected_tags, None, true, 6.0);
-            if let Some(closed_idx) = chip_response.closed_item() {
-                if let Some(tag) = selected_tags.get(closed_idx) {
-                    self.state.selected_tags.remove(tag);
-                    changed = true;
-                }
+            if let Some(closed_idx) = chip_response.closed_item()
+                && let Some(tag) = selected_tags.get(closed_idx)
+            {
+                self.state.selected_tags.remove(tag);
+                changed = true;
             }
         }
 

@@ -5,7 +5,11 @@ use eframe::{
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
-use crate::{photo::Photo, theme::color, utils::RectExt, widget::placeholder::RectPlaceholder};
+use crate::{
+    dep, dep_mut, gpu_photo_adjustment::GpuPhotoAdjustmentRenderer, photo::Photo,
+    photo_manager::PhotoManager, theme::color, utils::RectExt,
+    widget::placeholder::RectPlaceholder,
+};
 
 pub struct GalleryImage {
     photo: Photo,
@@ -86,22 +90,55 @@ impl Widget for GalleryImage {
 
                         let (image_rect, image_rotation) = match self.texture {
                             Ok(Some(texture)) => {
-                                let rotation = self.photo.metadata.rotation();
-                                let rotation = rotation.radians();
-                                let rect = ui
-                                    .add(
+                                let rotation = self.photo.metadata.rotation().radians();
+                                let adjustments = self.photo.adjustments();
+                                let (image_rect, _) =
+                                    ui.allocate_exact_size(scaled_image_size, Sense::hover());
+                                let gpu_painted = !adjustments.is_identity()
+                                    && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer
+                                        .try_paint_thumbnail(
+                                            ui,
+                                            &self.photo,
+                                            rect,
+                                            image_rect,
+                                            &adjustments,
+                                        ));
+
+                                if !gpu_painted {
+                                    let fallback_texture = if adjustments.is_identity() {
+                                        Some(texture)
+                                    } else {
+                                        dep_mut!(PhotoManager, |photo_manager| {
+                                            photo_manager
+                                                .thumbnail_texture_for(&self.photo, ui.ctx())
+                                        })
+                                        .ok()
+                                        .flatten()
+                                        .or(Some(texture))
+                                    };
+
+                                    if let Some(texture) = fallback_texture {
                                         Image::from_texture(texture)
                                             .rotate(rotation, Vec2::splat(0.5))
-                                            .fit_to_exact_size(scaled_image_size),
-                                    )
-                                    .rect;
+                                            .paint_at(ui, image_rect);
+                                    } else {
+                                        RectPlaceholder::new(
+                                            rotated_image_size,
+                                            color::SURFACE_MUTED,
+                                            4.0,
+                                        )
+                                        .ui(ui);
+                                    }
+                                };
+
+                                let image_bounds = image_rect.rotate_bb_around_center(rotation);
                                 ui.painter().rect_stroke(
-                                    rect.rotate_bb_around_center(rotation),
+                                    image_bounds,
                                     5.0,
                                     Stroke::new(5.0, color::SURFACE_X_DARK),
                                     StrokeKind::Outside,
                                 );
-                                (rect, rotation)
+                                (image_rect, rotation)
                             }
                             Ok(None) => {
                                 let response = RectPlaceholder::new(
@@ -127,10 +164,11 @@ impl Widget for GalleryImage {
                         };
 
                         if self.selected {
+                            let selection_rect = image_rect
+                                .rotate_bb_around_center(image_rotation)
+                                .intersect(rect);
                             ui.painter().rect_stroke(
-                                image_rect
-                                    .expand(3.0)
-                                    .rotate_bb_around_center(image_rotation),
+                                selection_rect.expand(3.0),
                                 6.0,
                                 Stroke::new(3.0, color::ACCENT),
                                 StrokeKind::Inside,
