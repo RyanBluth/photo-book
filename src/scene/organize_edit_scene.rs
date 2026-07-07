@@ -738,23 +738,25 @@ impl OrganizeEditScene {
         let selected_book_id = self.selected_book_id.clone();
         let mut sidebar_response = None;
 
-        egui::Panel::left("collection_gallery_sidebar")
-            .resizable(true)
-            .default_size(300.0)
-            .size_range(240.0..=480.0)
-            .frame(egui::Frame {
-                inner_margin: Margin::ZERO,
-                fill: color::SIDE_PANEL_BACKGROUND,
-                ..Default::default()
-            })
-            .show(ui, |ui| {
-                sidebar_response = Some(LeftSidebar::new(&mut self.left_sidebar_state).show(
-                    ui,
-                    scroll_to_photo_path.as_ref(),
-                    &book_entries,
-                    selected_book_id.as_deref(),
-                ));
-            });
+        if Self::current_project_preferences().left_sidebar_open {
+            egui::Panel::left("collection_gallery_sidebar")
+                .resizable(true)
+                .default_size(300.0)
+                .size_range(240.0..=480.0)
+                .frame(egui::Frame {
+                    inner_margin: Margin::ZERO,
+                    fill: color::SIDE_PANEL_BACKGROUND,
+                    ..Default::default()
+                })
+                .show(ui, |ui| {
+                    sidebar_response = Some(LeftSidebar::new(&mut self.left_sidebar_state).show(
+                        ui,
+                        scroll_to_photo_path.as_ref(),
+                        &book_entries,
+                        selected_book_id.as_deref(),
+                    ));
+                });
+        }
 
         let content_response = egui::CentralPanel::default()
             .frame(egui::Frame {
@@ -814,9 +816,9 @@ impl OrganizeEditScene {
                     {
                         let mut open_scene = open_book.scene.write().unwrap();
                         open_scene.state = state;
-                        open_scene.set_right_sidebar_open(
-                            Self::current_project_preferences().right_sidebar_open,
-                        );
+                        let preferences = Self::current_project_preferences();
+                        open_scene.set_right_sidebar_open(preferences.right_sidebar_open);
+                        open_scene.set_left_sidebar_open(preferences.left_sidebar_open);
                     } else {
                         let edit_scene =
                             Arc::new(RwLock::new(Self::canvas_scene_for_book(&book_id, state)));
@@ -850,11 +852,9 @@ impl OrganizeEditScene {
             .set_right_sidebar_open(preferences.right_sidebar_open);
 
         for open_book in &self.open_books {
-            open_book
-                .scene
-                .write()
-                .unwrap()
-                .set_right_sidebar_open(preferences.right_sidebar_open);
+            let mut scene = open_book.scene.write().unwrap();
+            scene.set_right_sidebar_open(preferences.right_sidebar_open);
+            scene.set_left_sidebar_open(preferences.left_sidebar_open);
         }
 
         for open_viewer in &self.open_photo_viewers {
@@ -873,10 +873,9 @@ impl OrganizeEditScene {
 
     fn apply_project_preferences_to_canvas_scene(&self, scene: &Arc<RwLock<CanvasScene>>) {
         let preferences = Self::current_project_preferences();
-        scene
-            .write()
-            .unwrap()
-            .set_right_sidebar_open(preferences.right_sidebar_open);
+        let mut scene = scene.write().unwrap();
+        scene.set_right_sidebar_open(preferences.right_sidebar_open);
+        scene.set_left_sidebar_open(preferences.left_sidebar_open);
     }
 
     fn current_project_preferences() -> ProjectPreferences {
@@ -900,7 +899,7 @@ impl Scene for OrganizeEditScene {
             .show(ui, |ui| StatusBar::new().show(ui))
             .inner;
 
-        if status_bar_response.right_sidebar_toggled {
+        if status_bar_response.left_sidebar_toggled || status_bar_response.right_sidebar_toggled {
             self.apply_session_project_preferences();
         }
 

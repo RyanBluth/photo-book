@@ -7,6 +7,7 @@ use crate::{app_status::AppStatus, dep, dep_mut, session::Session, theme, utils:
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct StatusBarResponse {
     pub log_viewer_toggled: bool,
+    pub left_sidebar_toggled: bool,
     pub right_sidebar_toggled: bool,
 }
 
@@ -91,6 +92,17 @@ impl StatusBar {
                 response.log_viewer_toggled = true;
             }
 
+            if Self::left_sidebar_button(ui, preferences.left_sidebar_open)
+                .on_hover_text("Toggle left sidebar")
+                .clicked()
+            {
+                dep_mut!(Session, |session| {
+                    session.project_preferences.left_sidebar_open =
+                        !session.project_preferences.left_sidebar_open;
+                });
+                response.left_sidebar_toggled = true;
+            }
+
             if Self::right_sidebar_button(ui, preferences.right_sidebar_open)
                 .on_hover_text("Toggle right sidebar")
                 .clicked()
@@ -108,7 +120,15 @@ impl StatusBar {
         30.0
     }
 
+    pub fn left_sidebar_button(ui: &mut Ui, is_open: bool) -> Response {
+        Self::sidebar_button(ui, is_open, SidebarButtonSide::Left)
+    }
+
     pub fn right_sidebar_button(ui: &mut Ui, is_open: bool) -> Response {
+        Self::sidebar_button(ui, is_open, SidebarButtonSide::Right)
+    }
+
+    fn sidebar_button(ui: &mut Ui, is_open: bool, side: SidebarButtonSide) -> Response {
         let (rect, response) = ui.allocate_exact_size(Vec2::new(24.0, 18.0), Sense::click());
         let fill = if is_open {
             theme::color::ACCENT_MUTED
@@ -131,7 +151,10 @@ impl StatusBar {
         let outline = rect.shrink2(Vec2::new(5.0, 4.0));
         ui.painter()
             .rect_stroke(outline, 1.0, stroke, egui::StrokeKind::Inside);
-        let sidebar_x = outline.right() - 4.0;
+        let sidebar_x = match side {
+            SidebarButtonSide::Left => outline.left() + 4.0,
+            SidebarButtonSide::Right => outline.right() - 4.0,
+        };
         ui.painter().line_segment(
             [
                 egui::pos2(sidebar_x, outline.top()),
@@ -178,4 +201,10 @@ impl StatusBar {
 
         response
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SidebarButtonSide {
+    Left,
+    Right,
 }

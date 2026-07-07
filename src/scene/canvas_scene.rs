@@ -169,6 +169,18 @@ impl CanvasScene {
         self.tree.tiles.set_visible(right_sidebar_tile_id, open);
     }
 
+    pub fn set_left_sidebar_open(&mut self, open: bool) {
+        let Some(gallery_tile_id) = self.tree.tiles.find_pane(&CanvasScenePane::Gallery) else {
+            return;
+        };
+        let left_sidebar_tile_id = self
+            .tree
+            .tiles
+            .parent_of(gallery_tile_id)
+            .unwrap_or(gallery_tile_id);
+        self.tree.tiles.set_visible(left_sidebar_tile_id, open);
+    }
+
     #[allow(dead_code)]
     pub fn with_state(state: CanvasSceneState) -> Self {
         Self::with_state_and_tree_id(state, "canvas_scene_tree")

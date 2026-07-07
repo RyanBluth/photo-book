@@ -266,6 +266,7 @@ impl From<Project> for OrganizeEditScene {
 #[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct ProjectPreferences {
     pub right_sidebar_open: bool,
+    pub left_sidebar_open: bool,
     pub log_viewer_open: bool,
     pub workspace_tabs: ProjectWorkspaceTabs,
 }
@@ -274,6 +275,7 @@ impl Default for ProjectPreferences {
     fn default() -> Self {
         Self {
             right_sidebar_open: true,
+            left_sidebar_open: true,
             log_viewer_open: false,
             workspace_tabs: ProjectWorkspaceTabs::default(),
         }
