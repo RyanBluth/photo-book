@@ -15,6 +15,8 @@ pub mod color {
     pub const SURFACE_XX_DARK: Color32 = Color32::from_gray(15);
     pub const SURFACE_X_DARK: Color32 = Color32::from_gray(22);
     pub const SURFACE_DARK: Color32 = Color32::from_gray(30);
+    pub const SIDE_PANEL_BACKGROUND: Color32 = SURFACE_X_DARK;
+    pub const TOOLBAR_BACKGROUND: Color32 = SURFACE_X_DARK;
     pub const SURFACE: Color32 = Color32::from_gray(40);
     pub const SURFACE_MUTED: Color32 = Color32::from_gray(50);
     pub const SURFACE_STRONG: Color32 = Color32::from_gray(100);

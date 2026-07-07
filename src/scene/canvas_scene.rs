@@ -11,6 +11,7 @@ use crate::{
     id::{LayerId, PageId, next_layer_id, next_page_id},
     model::edit_state::EditablePage,
     scene::crop_scene::CropScene,
+    theme::color,
     utils::{IdExt, RectExt},
     widget::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
@@ -271,7 +272,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
         match pane {
             CanvasScenePane::Gallery => {
                 ui.painter()
-                    .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
                 let response = ImageGallery::show(ui, &mut self.scene_state.gallery_state, None);
 
                 // Handle primary action (double-click)
@@ -357,7 +358,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             }
             CanvasScenePane::Info => {
                 ui.painter()
-                    .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
 
                 if !self.scene_state.has_pages() {
                     ui.centered_and_justified(|ui| {
@@ -384,7 +385,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             }
             CanvasScenePane::Pages => {
                 ui.painter()
-                    .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
 
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
                     PagesResponse::SelectPage => {
@@ -395,7 +396,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
             }
             CanvasScenePane::Templates => {
                 ui.painter()
-                    .rect_filled(ui.max_rect(), 0.0, ui.style().visuals.panel_fill);
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
 
                 match Templates::new(&mut self.scene_state.templates_state).show(ui) {
                     TemplatesResponse::SelectTemplate(template) => {
@@ -413,6 +414,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 }
             }
             CanvasScenePane::QuickLayout => {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
+
                 if !self.scene_state.has_pages() {
                     ui.centered_and_justified(|ui| {
                         ui.heading("No page selected");

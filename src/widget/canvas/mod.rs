@@ -94,11 +94,11 @@ impl<'a> Canvas<'a> {
         );
 
         ui.scope_builder(UiBuilder::new().max_rect(toolbar_rect), |ui| {
-            ui.visuals_mut().widgets.inactive.bg_fill = color::SURFACE_DARK;
+            ui.visuals_mut().widgets.inactive.bg_fill = color::TOOLBAR_BACKGROUND;
             ui.visuals_mut().widgets.hovered.bg_fill = color::SURFACE;
 
             egui::Frame::NONE
-                .fill(color::SURFACE_DARK)
+                .fill(color::TOOLBAR_BACKGROUND)
                 .inner_margin(8.0)
                 .show(ui, |ui| {
                     if let ToolbarResponse::ToolChanged(tool) =

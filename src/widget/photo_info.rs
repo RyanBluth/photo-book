@@ -62,7 +62,7 @@ impl<'a> PhotoInfo<'a> {
         ui.allocate_ui(ui.available_size(), |ui: &mut egui::Ui| {
             egui::Frame::NONE
                 .inner_margin(Margin::same(8))
-                .fill(color::TRANSPARENT)
+                .fill(color::SIDE_PANEL_BACKGROUND)
                 .show(ui, |ui| {
                     egui::ScrollArea::vertical()
                         .id_salt("photo_info_scroll")

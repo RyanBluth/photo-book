@@ -742,6 +742,11 @@ impl OrganizeEditScene {
             .resizable(true)
             .default_size(300.0)
             .size_range(240.0..=480.0)
+            .frame(egui::Frame {
+                inner_margin: Margin::ZERO,
+                fill: color::SIDE_PANEL_BACKGROUND,
+                ..Default::default()
+            })
             .show(ui, |ui| {
                 sidebar_response = Some(LeftSidebar::new(&mut self.left_sidebar_state).show(
                     ui,

@@ -301,8 +301,11 @@ fn add_child_ui(
 fn add_filter_menu(ui: &mut Ui) {
     let get_current_filter = || dep!(PhotoManager, |pm| pm.get_current_filter().clone());
 
-    ui.painter()
-        .rect_filled(ui.available_rect_before_wrap(), 0.0, color::SURFACE_X_DARK);
+    ui.painter().rect_filled(
+        ui.available_rect_before_wrap(),
+        0.0,
+        color::TOOLBAR_BACKGROUND,
+    );
 
     Frame::NONE
         .inner_margin(Margin::same(BAR_INNER_PADDING))
