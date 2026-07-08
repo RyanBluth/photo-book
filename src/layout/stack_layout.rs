@@ -1,9 +1,7 @@
 use eframe::egui::{Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 
-use crate::utils::RectExt;
-
-use super::{LayoutItem, Margin};
+use super::{LayoutItem, Margin, fit_aspect_ratio_in_rect};
 
 #[derive(Debug, Clone)]
 pub enum StackLayoutDirection {
@@ -43,181 +41,126 @@ pub struct StackLayout {
     pub distribution: StackLayoutDistribution,
 }
 
-impl StackLayout {
-    pub fn layout(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
-        match self.direction {
-            StackLayoutDirection::Vertical => self.layout_vertical(items),
-            StackLayoutDirection::Horizontal => self.layout_horizontal(items),
+#[derive(Debug, Clone, Copy)]
+enum Axis {
+    Vertical,
+    Horizontal,
+}
+
+impl Axis {
+    fn main_size(self, size: Vec2) -> f32 {
+        match self {
+            Axis::Vertical => size.y,
+            Axis::Horizontal => size.x,
         }
     }
 
-    fn layout_vertical(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
-        let item_dimensions = StackLayout::calculate_vertical_item_dimensions(
-            self.width,
-            self.height,
-            self.gap,
-            self.margin,
-            items,
-        );
-
-        let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
-        let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
-        let width_less_margin = self.width - (self.margin.left + self.margin.right);
-
-        let total_scaled_height =
-            item_dimensions.values().map(|dim| dim.y).sum::<f32>() + total_gap;
-
-        let top_left_rects = {
-            let mut y_offset = 0.0;
-            item_dimensions
-                .iter()
-                .map(|(id, size)| {
-                    let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                    y_offset += size.y + self.gap;
-                    (*id, rect)
-                })
-                .collect()
-        };
-
-        let distributed: IndexMap<usize, Rect> = match &self.distribution {
-            StackLayoutDistribution::Start => top_left_rects,
-            StackLayoutDistribution::Center => {
-                let height_diff = (height_less_margin - total_scaled_height) / 2.0;
-                top_left_rects
-                    .iter()
-                    .map(|(id, rect)| {
-                        (
-                            *id,
-                            Rect::from_min_size(
-                                Pos2::new(rect.min.x, rect.min.y + height_diff),
-                                rect.size(),
-                            ),
-                        )
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::End => {
-                let height_diff = height_less_margin - total_scaled_height;
-                top_left_rects
-                    .iter()
-                    .map(|(id, rect)| {
-                        (
-                            *id,
-                            Rect::from_min_size(
-                                Pos2::new(rect.min.x, rect.min.y + height_diff),
-                                rect.size(),
-                            ),
-                        )
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::EqualSpacing => {
-                let total_item_height = item_dimensions.values().map(|dim| dim.y).sum::<f32>();
-                let remaining_space = height_less_margin - total_item_height;
-                let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
-
-                let mut y_offset = equal_spacing;
-                item_dimensions
-                    .iter()
-                    .map(|(id, size)| {
-                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        y_offset += size.y + equal_spacing;
-                        (*id, rect)
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::Grid => {
-                let cell_size = (height_less_margin - total_gap) / items.len() as f32;
-                let mut y_offset = 0.0;
-
-                item_dimensions
-                    .iter()
-                    .map(|(id, size)| {
-                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        let target_rect = Rect::from_min_size(
-                            Pos2::new(0.0, y_offset),
-                            Vec2::new(width_less_margin, cell_size),
-                        );
-                        let fitted_rect = rect.fit_and_center_within(target_rect);
-                        y_offset += cell_size + self.gap;
-                        (*id, fitted_rect)
-                    })
-                    .collect()
-            }
-            StackLayoutDistribution::CenterWeightedGrid { main_axis_sizes } => {
-                let mut y_offset = 0.0;
-                item_dimensions
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, (id, size))| {
-                        let rect = Rect::from_min_size(Pos2::new(0.0, y_offset), *size);
-                        let target_rect = Rect::from_min_size(
-                            Pos2::new(0.0, y_offset),
-                            Vec2::new(width_less_margin, main_axis_sizes[idx]),
-                        );
-                        let fitted_rect = rect.fit_and_center_within(target_rect);
-                        y_offset += main_axis_sizes[idx] + self.gap;
-                        (*id, fitted_rect)
-                    })
-                    .collect()
-            }
-        };
-
-        let aligned = match self.alignment {
-            StackCrossAxisAlignment::Start => distributed,
-            StackCrossAxisAlignment::Center => distributed
-                .iter()
-                .map(|(id, rect)| {
-                    let x = (width_less_margin - rect.width()) / 2.0;
-                    let rect = Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size());
-                    (*id, rect)
-                })
-                .collect(),
-            StackCrossAxisAlignment::End => distributed
-                .iter()
-                .map(|(id, rect)| {
-                    let x = width_less_margin - rect.width();
-                    let rect = Rect::from_min_size(Pos2::new(x, rect.min.y), rect.size());
-                    (*id, rect)
-                })
-                .collect(),
-        };
-
-        aligned
-            .iter()
-            .map(|(id, rect)| {
-                (
-                    *id,
-                    rect.translate(Vec2::new(
-                        self.margin.left + self.x,
-                        self.margin.top + self.y,
-                    )),
-                )
-            })
-            .collect()
+    fn cross_size(self, size: Vec2) -> f32 {
+        match self {
+            Axis::Vertical => size.x,
+            Axis::Horizontal => size.y,
+        }
     }
 
-    fn layout_horizontal(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
-        let item_dimensions = StackLayout::calculate_horizontal_item_dimensions(
-            self.width,
-            self.height,
-            self.gap,
-            self.margin,
-            items,
-        );
+    fn pos(self, main: f32, cross: f32) -> Pos2 {
+        match self {
+            Axis::Vertical => Pos2::new(cross, main),
+            Axis::Horizontal => Pos2::new(main, cross),
+        }
+    }
 
-        let total_gap: f32 = self.gap * (items.len() as f32 - 1.0);
-        let width_less_margin = self.width - (self.margin.left + self.margin.right);
-        let height_less_margin = self.height - (self.margin.top + self.margin.bottom);
-        let total_scaled_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>() + total_gap;
+    fn size(self, main: f32, cross: f32) -> Vec2 {
+        match self {
+            Axis::Vertical => Vec2::new(cross, main),
+            Axis::Horizontal => Vec2::new(main, cross),
+        }
+    }
+
+    fn rect(self, main: f32, cross: f32, main_size: f32, cross_size: f32) -> Rect {
+        Rect::from_min_size(self.pos(main, cross), self.size(main_size, cross_size))
+    }
+
+    fn translate(self, main: f32, cross: f32) -> Vec2 {
+        match self {
+            Axis::Vertical => Vec2::new(cross, main),
+            Axis::Horizontal => Vec2::new(main, cross),
+        }
+    }
+
+    fn main_min(self, rect: Rect) -> f32 {
+        match self {
+            Axis::Vertical => rect.min.y,
+            Axis::Horizontal => rect.min.x,
+        }
+    }
+
+    fn with_cross(self, rect: Rect, cross: f32) -> Rect {
+        self.rect(
+            self.main_min(rect),
+            cross,
+            self.main_size(rect.size()),
+            self.cross_size(rect.size()),
+        )
+    }
+}
+
+impl StackLayout {
+    pub fn layout(&self, items: &[LayoutItem]) -> IndexMap<usize, Rect> {
+        if items.is_empty() {
+            return IndexMap::new();
+        }
+
+        match self.direction {
+            StackLayoutDirection::Vertical => self.layout_axis(items, Axis::Vertical),
+            StackLayoutDirection::Horizontal => self.layout_axis(items, Axis::Horizontal),
+        }
+    }
+
+    fn layout_axis(&self, items: &[LayoutItem], axis: Axis) -> IndexMap<usize, Rect> {
+        let item_dimensions = match axis {
+            Axis::Vertical => StackLayout::calculate_vertical_item_dimensions(
+                self.width,
+                self.height,
+                self.gap,
+                self.margin,
+                items,
+            ),
+            Axis::Horizontal => StackLayout::calculate_horizontal_item_dimensions(
+                self.width,
+                self.height,
+                self.gap,
+                self.margin,
+                items,
+            ),
+        };
+
+        let total_gap = self.gap * items.len().saturating_sub(1) as f32;
+        let main_less_margin = match axis {
+            Axis::Vertical => self.height - (self.margin.top + self.margin.bottom),
+            Axis::Horizontal => self.width - (self.margin.left + self.margin.right),
+        };
+        let cross_less_margin = match axis {
+            Axis::Vertical => self.width - (self.margin.left + self.margin.right),
+            Axis::Horizontal => self.height - (self.margin.top + self.margin.bottom),
+        };
+        let total_scaled_main = item_dimensions
+            .values()
+            .map(|size| axis.main_size(*size))
+            .sum::<f32>()
+            + total_gap;
 
         let top_left_rects: IndexMap<usize, Rect> = {
-            let mut x_offset = 0.0;
+            let mut main_offset = 0.0;
             item_dimensions
                 .iter()
                 .map(|(id, size)| {
-                    let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
-                    x_offset += size.x + self.gap;
+                    let rect = axis.rect(
+                        main_offset,
+                        0.0,
+                        axis.main_size(*size),
+                        axis.cross_size(*size),
+                    );
+                    main_offset += axis.main_size(*size) + self.gap;
                     (*id, rect)
                 })
                 .collect()
@@ -226,98 +169,88 @@ impl StackLayout {
         let distributed: IndexMap<usize, Rect> = match &self.distribution {
             StackLayoutDistribution::Start => top_left_rects,
             StackLayoutDistribution::Center => {
-                let width_diff = (width_less_margin - total_scaled_width) / 2.0;
+                let main_diff = (main_less_margin - total_scaled_main) / 2.0;
                 top_left_rects
                     .iter()
-                    .map(|(id, rect)| {
-                        let rect = Rect::from_min_size(
-                            Pos2::new(rect.min.x + width_diff, rect.min.y),
-                            rect.size(),
-                        );
-                        (*id, rect)
-                    })
+                    .map(|(id, rect)| (*id, rect.translate(axis.translate(main_diff, 0.0))))
                     .collect()
             }
             StackLayoutDistribution::End => {
-                let width_diff = width_less_margin - total_scaled_width;
+                let main_diff = main_less_margin - total_scaled_main;
                 top_left_rects
                     .iter()
-                    .map(|(id, rect)| {
-                        let rect = Rect::from_min_size(
-                            Pos2::new(rect.min.x + width_diff, rect.min.y),
-                            rect.size(),
-                        );
-                        (*id, rect)
-                    })
+                    .map(|(id, rect)| (*id, rect.translate(axis.translate(main_diff, 0.0))))
                     .collect()
             }
             StackLayoutDistribution::EqualSpacing => {
-                let total_item_width = item_dimensions.values().map(|dim| dim.x).sum::<f32>();
-                let remaining_space = width_less_margin - total_item_width;
+                let total_item_main = item_dimensions
+                    .values()
+                    .map(|size| axis.main_size(*size))
+                    .sum::<f32>();
+                let remaining_space = main_less_margin - total_item_main;
                 let equal_spacing = (remaining_space / (items.len() as f32 + 1.0)).max(self.gap);
 
-                let mut x_offset = equal_spacing;
+                let mut main_offset = equal_spacing;
                 item_dimensions
                     .iter()
                     .map(|(id, size)| {
-                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
-                        x_offset += size.x + equal_spacing;
+                        let rect = axis.rect(
+                            main_offset,
+                            0.0,
+                            axis.main_size(*size),
+                            axis.cross_size(*size),
+                        );
+                        main_offset += axis.main_size(*size) + equal_spacing;
                         (*id, rect)
                     })
                     .collect()
             }
             StackLayoutDistribution::Grid => {
-                let cell_size = (width_less_margin - total_gap) / items.len() as f32;
-                let mut x_offset = 0.0;
+                let cell_size = (main_less_margin - total_gap) / items.len() as f32;
+                let mut main_offset = 0.0;
                 item_dimensions
                     .iter()
                     .map(|(id, size)| {
-                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
-                        let fitted_rect = rect.fit_and_center_within(Rect::from_min_size(
-                            Pos2::new(x_offset, 0.0),
-                            Vec2::new(cell_size, height_less_margin),
-                        ));
-                        x_offset += cell_size + self.gap;
+                        let target_rect = axis.rect(main_offset, 0.0, cell_size, cross_less_margin);
+                        let fitted_rect = fit_aspect_ratio_in_rect(size.x / size.y, target_rect);
+                        main_offset += cell_size + self.gap;
                         (*id, fitted_rect)
                     })
                     .collect()
             }
             StackLayoutDistribution::CenterWeightedGrid { main_axis_sizes } => {
-                let mut x_offset = 0.0;
+                let mut main_offset = 0.0;
                 item_dimensions
                     .iter()
                     .enumerate()
                     .map(|(idx, (id, size))| {
-                        let rect = Rect::from_min_size(Pos2::new(x_offset, 0.0), *size);
-                        let target_rect = Rect::from_min_size(
-                            Pos2::new(x_offset, 0.0),
-                            Vec2::new(main_axis_sizes[idx], height_less_margin),
-                        );
-                        let fitted_rect = rect.fit_and_center_within(target_rect);
-                        x_offset += main_axis_sizes[idx] + self.gap;
+                        let main_size = main_axis_sizes
+                            .get(idx)
+                            .copied()
+                            .unwrap_or_else(|| axis.main_size(*size));
+                        let target_rect = axis.rect(main_offset, 0.0, main_size, cross_less_margin);
+                        let fitted_rect = fit_aspect_ratio_in_rect(size.x / size.y, target_rect);
+                        main_offset += main_size + self.gap;
                         (*id, fitted_rect)
                     })
                     .collect()
             }
         };
 
-        let aligned = match self.alignment {
+        let aligned: IndexMap<usize, Rect> = match self.alignment {
             StackCrossAxisAlignment::Start => distributed,
             StackCrossAxisAlignment::Center => distributed
                 .iter()
                 .map(|(id, rect)| {
-                    let y: f32 = (self.height - self.margin.top - self.margin.bottom) / 2.0
-                        - rect.height() / 2.0;
-                    let rect = Rect::from_min_size(Pos2::new(rect.min.x, y), rect.size());
-                    (*id, rect)
+                    let cross = (cross_less_margin - axis.cross_size(rect.size())) / 2.0;
+                    (*id, axis.with_cross(*rect, cross))
                 })
                 .collect(),
             StackCrossAxisAlignment::End => distributed
                 .iter()
                 .map(|(id, rect)| {
-                    let y = self.height - rect.height();
-                    let rect = Rect::from_min_size(Pos2::new(rect.min.x, y), rect.size());
-                    (*id, rect)
+                    let cross = cross_less_margin - axis.cross_size(rect.size());
+                    (*id, axis.with_cross(*rect, cross))
                 })
                 .collect(),
         };

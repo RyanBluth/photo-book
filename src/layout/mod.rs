@@ -2,7 +2,7 @@ pub mod grid_layout;
 pub mod stack_layout;
 pub mod template;
 
-use eframe::egui::Rect;
+use eframe::egui::{Pos2, Rect, Vec2};
 use indexmap::IndexMap;
 
 use self::{
@@ -136,6 +136,17 @@ impl LayoutNode {
                 children,
             } => {
                 let total_weight: f32 = children.iter().map(|c| c.weight).sum();
+                if total_weight <= 0.0
+                    || !total_weight.is_finite()
+                    || children
+                        .iter()
+                        .any(|child| child.weight <= 0.0 || !child.weight.is_finite())
+                {
+                    let skipped = self.total_photo_count().min(items.len());
+                    *items = &items[skipped..];
+                    return IndexMap::new();
+                }
+
                 let total_gaps = gap * (children.len().saturating_sub(1)) as f32;
                 let is_horizontal = *direction == SplitDirection::Horizontal;
 
@@ -143,7 +154,8 @@ impl LayoutNode {
                     width - total_gaps
                 } else {
                     height - total_gaps
-                };
+                }
+                .max(0.0);
 
                 let mut results = IndexMap::new();
                 let mut pos = if is_horizontal { x } else { y };
@@ -219,9 +231,34 @@ impl LayoutNode {
     }
 }
 
+pub(crate) fn fit_aspect_ratio_in_rect(aspect_ratio: f32, rect: Rect) -> Rect {
+    if aspect_ratio <= 0.0
+        || !aspect_ratio.is_finite()
+        || rect.width() <= 0.0
+        || rect.height() <= 0.0
+    {
+        return Rect::from_center_size(rect.center(), Vec2::ZERO);
+    }
+
+    let rect_aspect_ratio = rect.width() / rect.height();
+    let size = if aspect_ratio > rect_aspect_ratio {
+        Vec2::new(rect.width(), rect.width() / aspect_ratio)
+    } else {
+        Vec2::new(rect.height() * aspect_ratio, rect.height())
+    };
+
+    Rect::from_min_size(
+        Pos2::new(
+            rect.center().x - size.x / 2.0,
+            rect.center().y - size.y / 2.0,
+        ),
+        size,
+    )
+}
+
 pub fn apply_layout_node(node: &LayoutNode, canvas_state: &mut CanvasState, gap: f32, margin: f32) {
     let page_size = canvas_state.page.value.size_pixels();
-    let items: Vec<LayoutItem> = canvas_state.into();
+    let items = canvas_state.quick_layout_items();
     let mut slice = &items[..];
     let regions = node.apply(
         margin,

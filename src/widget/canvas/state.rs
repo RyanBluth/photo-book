@@ -7,7 +7,7 @@ use indexmap::{IndexMap, indexmap};
 use crate::{
     dep,
     id::{LayerId, next_layer_id},
-    layout::LayoutNode,
+    layout::{LayoutItem, LayoutNode},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     project_settings::ProjectSettingsManager,
@@ -306,17 +306,42 @@ impl CanvasState {
     }
 
     pub fn update_quick_layout_order(&mut self) {
-        self.quick_layout_order
-            .retain(|id| self.layers.contains_key(id));
+        self.quick_layout_order.retain(|id| {
+            self.layers
+                .get(id)
+                .is_some_and(|layer| Self::quick_layout_item_for_layer(*id, layer).is_some())
+        });
 
         for layer in &self.layers {
-            if !layer.1.content.is_photo() {
-                continue;
-            }
-            if !self.quick_layout_order.contains(&layer.0) {
+            if Self::quick_layout_item_for_layer(*layer.0, layer.1).is_some()
+                && !self.quick_layout_order.contains(layer.0)
+            {
                 self.quick_layout_order.push(*layer.0);
             }
         }
+    }
+
+    pub fn quick_layout_items(&self) -> Vec<LayoutItem> {
+        self.quick_layout_order
+            .iter()
+            .filter_map(|layer_id| {
+                let layer = self.layers.get(layer_id)?;
+                Self::quick_layout_item_for_layer(*layer_id, layer)
+            })
+            .collect()
+    }
+
+    fn quick_layout_item_for_layer(layer_id: LayerId, layer: &Layer) -> Option<LayoutItem> {
+        let LayerContent::Photo(photo) = &layer.content else {
+            return None;
+        };
+
+        let cropped_width = photo.photo.metadata.rotated_width() as f32 * photo.crop.width();
+        let cropped_height = photo.photo.metadata.rotated_height() as f32 * photo.crop.height();
+        Some(LayoutItem {
+            aspect_ratio: cropped_width / cropped_height,
+            id: layer_id,
+        })
     }
 }
 

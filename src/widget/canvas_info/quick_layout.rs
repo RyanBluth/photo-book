@@ -2,7 +2,7 @@ use eframe::egui::{self, Sense, Slider, Vec2};
 use egui_extras::Column;
 
 use crate::{
-    layout::{LayoutItem, LayoutNode, apply_layout_node, template},
+    layout::{LayoutNode, apply_layout_node, template},
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
     widget::{
@@ -10,8 +10,6 @@ use crate::{
         spacer::Spacer,
     },
 };
-
-use super::layers::LayerContent;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct QuickLayoutState {
@@ -172,7 +170,7 @@ impl<'a> QuickLayout<'a> {
         static PRESETS: LazyLock<Vec<template::LayoutPreset>> =
             LazyLock::new(|| template::load_presets(include_str!("../../../layouts/presets.ron")));
 
-        let n = self.canvas_state.quick_layout_order.len();
+        let n = self.canvas_state.quick_layout_items().len();
 
         if n == 0 {
             return vec![];
@@ -181,30 +179,6 @@ impl<'a> QuickLayout<'a> {
         PRESETS
             .iter()
             .filter_map(|preset| preset.resolve(n))
-            .collect()
-    }
-}
-
-impl From<&mut CanvasState> for Vec<LayoutItem> {
-    fn from(state: &mut CanvasState) -> Vec<LayoutItem> {
-        state
-            .quick_layout_order
-            .iter()
-            .filter_map(|layer_id| {
-                let layer = state.layers.get(layer_id).unwrap();
-                if let LayerContent::Photo(photo) = &layer.content {
-                    let cropped_width =
-                        photo.photo.metadata.rotated_width() as f32 * photo.crop.width();
-                    let cropped_height =
-                        photo.photo.metadata.rotated_height() as f32 * photo.crop.height();
-                    Some(LayoutItem {
-                        aspect_ratio: cropped_width / cropped_height,
-                        id: *layer_id,
-                    })
-                } else {
-                    None
-                }
-            })
             .collect()
     }
 }
