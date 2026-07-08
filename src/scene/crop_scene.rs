@@ -51,15 +51,13 @@ impl CropScene {
             photo_rect.height() * initial_crop.left_top().y,
         );
 
-        let mut scaled_crop_rect: Rect = Rect::from_min_max(
+        let scaled_crop_rect: Rect = Rect::from_min_max(
             crop_origin,
             Pos2::new(
                 crop_origin.x + photo_rect.width() * initial_crop.width(),
                 crop_origin.y + photo_rect.height() * initial_crop.height(),
             ),
         );
-
-        scaled_crop_rect = scaled_crop_rect.to_local_space(photo_rect);
 
         let transform_state = TransformableState {
             rect: scaled_crop_rect,
