@@ -127,7 +127,7 @@ impl Widget for GalleryImage {
 
                         if self.selected {
                             ui.painter().rect_stroke(
-                                image_rect.expand(3.0),
+                                image_rect,
                                 6.0,
                                 Stroke::new(3.0, color::ACCENT),
                                 StrokeKind::Inside,
