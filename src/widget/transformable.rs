@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{self, Button, CursorIcon, Image, Response, Sense, Ui},
+    egui::{self, CursorIcon, Response, Sense, Ui},
     epaint::{Pos2, Rect, Stroke, Vec2},
 };
 use egui::{Id, LayerId, Order, StrokeKind, UiBuilder};
@@ -10,6 +10,7 @@ use crate::{
     dep_mut,
     theme::color,
     utils::{IdExt, RectExt},
+    widget::icon_button::IconButton,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Copy)]
@@ -607,19 +608,12 @@ impl<'a> TransformableWidget<'a> {
                 if ui
                     .put(
                         Rect::from_center_size(left_half_rect.center(), button_size),
-                        Button::image(
-                            Image::from(Asset::resize())
-                                .tint(color::WHITE)
-                                .fit_to_exact_size(button_size * 0.8),
-                        )
-                        .fill(
-                            if matches!(self.state.handle_mode, TransformHandleMode::Resize(_)) {
-                                color::SURFACE_STRONG
-                            } else {
-                                color::SURFACE_MUTED
-                            },
-                        )
-                        .sense(Sense::click()),
+                        IconButton::new(Asset::resize())
+                            .active(matches!(
+                                self.state.handle_mode,
+                                TransformHandleMode::Resize(_)
+                            ))
+                            .size(button_size * 0.8),
                     )
                     .clicked()
                 {
@@ -629,19 +623,9 @@ impl<'a> TransformableWidget<'a> {
                 if ui
                     .put(
                         Rect::from_center_size(right_half_rect.center(), button_size),
-                        Button::image(
-                            Image::from(Asset::rotate())
-                                .tint(color::WHITE)
-                                .fit_to_exact_size(button_size * 0.8),
-                        )
-                        .fill(
-                            if matches!(self.state.handle_mode, TransformHandleMode::Rotate) {
-                                color::SURFACE_STRONG
-                            } else {
-                                color::SURFACE_MUTED
-                            },
-                        )
-                        .sense(Sense::click()),
+                        IconButton::new(Asset::rotate())
+                            .active(matches!(self.state.handle_mode, TransformHandleMode::Rotate))
+                            .size(button_size * 0.8),
                     )
                     .clicked()
                 {

@@ -470,14 +470,14 @@ fn add_scale_controls(ui: &mut Ui, scale: &mut f32) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add(
                     Image::from(Asset::larger())
-                        .tint(color::WHITE)
+                        .tint(color::ICON)
                         .maintain_aspect_ratio(true)
                         .fit_to_exact_size(Vec2::splat(20.0)),
                 );
                 ui.add(Slider::new(scale, 0.5..=1.5).show_value(true));
                 ui.add(
                     Image::from(Asset::smaller())
-                        .tint(color::WHITE)
+                        .tint(color::ICON)
                         .maintain_aspect_ratio(true)
                         .fit_to_exact_size(Vec2::splat(20.0)),
                 );

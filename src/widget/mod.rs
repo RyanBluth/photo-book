@@ -13,6 +13,7 @@ pub mod crop;
 pub mod file_tree;
 pub mod gallery_image;
 pub mod histogram;
+pub mod icon_button;
 pub mod image_gallery;
 pub mod image_viewer;
 pub mod left_sidebar;
