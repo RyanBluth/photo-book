@@ -2,7 +2,7 @@ use std::ops::RangeInclusive;
 
 use egui::{Align2, FontId, Key, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2};
 
-use crate::theme::color;
+use crate::{cursor_manager::CursorManager, dep_mut, theme::color};
 
 const ROW_HEIGHT: f32 = 22.0;
 const CORNER_RADIUS: f32 = 4.0;
@@ -49,6 +49,11 @@ impl<'a> AdjustmentSlider<'a> {
             .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, self.label));
 
         let previous_value = *self.value;
+
+        if response.hovered() {
+            dep_mut!(CursorManager, |cursor_manager| cursor_manager
+                .set_cursor(egui::CursorIcon::ResizeHorizontal));
+        }
 
         if response.double_clicked() {
             *self.value = self.default;
