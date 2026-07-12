@@ -4,14 +4,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use egui::{Layout, Vec2};
 use indexmap::IndexMap;
 
 use crate::{
     dep_mut,
     id::{ModalId, next_modal_id},
     modal::ModalResponse,
-    theme::color,
+    theme::{color, style},
 };
 
 use super::Modal;
@@ -187,24 +186,27 @@ impl ModalManager {
     fn show_modal(&mut self, ui: &mut egui::Ui, modal_id: ModalId) {
         if let Some(guard) = self.modals.get(&modal_id) {
             let mut modal = guard.lock().unwrap();
-            let viewport_rect = ui.ctx().viewport_rect();
-
-            ui.painter().rect_filled(viewport_rect, 0.0, color::OVERLAY);
-
-            let mut response = None;
-
-            egui::Window::new(&modal.title())
-                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                .resizable(false)
-                .collapsible(false)
-                .min_size(Vec2::new(400.0, 300.0))
+            let response = egui::Modal::new(egui::Id::new(("app_modal", modal_id)))
+                .backdrop_color(color::OVERLAY)
+                .frame(style::dialog_frame())
                 .show(ui.ctx(), |ui: &mut egui::Ui| {
+                    ui.set_min_width(style::DIALOG_MIN_WIDTH);
+                    style::dialog_title(ui, modal.title());
+                    ui.add_space(12.0);
                     modal.body_ui(ui);
-                    ui.add_space(20.0);
-                    ui.with_layout(Layout::left_to_right(egui::Align::Min), |ui| {
-                        response = modal.actions_ui_boxed(ui);
-                    });
+                    ui.add_space(24.0);
+                    egui::Sides::new()
+                        .show(ui, |_| {}, |ui| modal.actions_ui_boxed(ui))
+                        .1
                 });
+
+            let should_close = response.should_close();
+            let action_response = response.inner;
+            let response = action_response.or_else(|| {
+                should_close
+                    .then(|| modal.cancel_response_boxed())
+                    .flatten()
+            });
 
             if let Some(response) = response {
                 self.responses.insert(modal_id, Mutex::new(response));
@@ -217,6 +219,7 @@ trait DynModal: Send + Any {
     fn title(&self) -> String;
     fn body_ui(&mut self, ui: &mut egui::Ui);
     fn actions_ui_boxed(&mut self, ui: &mut egui::Ui) -> Option<Box<dyn ModalResponse>>;
+    fn cancel_response_boxed(&self) -> Option<Box<dyn ModalResponse>>;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -235,6 +238,10 @@ where
     fn actions_ui_boxed(&mut self, ui: &mut egui::Ui) -> Option<Box<dyn ModalResponse>> {
         self.actions_ui(ui)
             .map(|r| Box::new(r) as Box<dyn ModalResponse>)
+    }
+
+    fn cancel_response_boxed(&self) -> Option<Box<dyn ModalResponse>> {
+        T::Response::cancel().map(|r| Box::new(r) as Box<dyn ModalResponse>)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

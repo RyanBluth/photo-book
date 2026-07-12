@@ -1,3 +1,5 @@
+pub mod style;
+
 pub mod color {
     use egui::Color32;
 

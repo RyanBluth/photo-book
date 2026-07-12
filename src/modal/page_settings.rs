@@ -2,6 +2,7 @@ use crate::{
     dep, dep_mut,
     model::edit_state::EditablePage,
     project_settings::ProjectSettingsManager,
+    theme::style,
     widget::canvas_info::page_info::{PageInfo, PageInfoState},
 };
 
@@ -43,16 +44,16 @@ impl Modal for PageSettingsModal {
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
-        if ui.button("Cancel").clicked() {
-            return Some(ModalActionResponse::Cancel);
-        }
-
-        if ui.button("Save").clicked() {
+        if style::primary_button(ui, "Save").clicked() {
             dep_mut!(ProjectSettingsManager, |project_settings_manager| {
                 project_settings_manager.project_settings.default_page =
                     Some(self.editable_page.value.clone());
             });
             return Some(ModalActionResponse::Confirm);
+        }
+
+        if ui.button("Cancel").clicked() {
+            return Some(ModalActionResponse::Cancel);
         }
 
         None

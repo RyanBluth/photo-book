@@ -2,6 +2,7 @@ use crate::{
     dep,
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
+    theme::style,
     widget::photo_filter::{PhotoFilter, PhotoFilterState},
 };
 
@@ -93,42 +94,44 @@ impl Modal for PhotoFilterModal {
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         let mut response: Option<Self::Response> = None;
+        let has_active_filters = self.filter_state.has_active_filters();
+        let is_modified = self.is_modified();
+        let mut clear_clicked = false;
 
-        ui.horizontal(|ui| {
-            // Left side: Clear All button (only if filters are active)
-            if self.filter_state.has_active_filters() {
-                let clear_button = egui::Button::new(
-                    egui::RichText::new("🗑 Clear All").color(ui.style().visuals.warn_fg_color),
-                );
-                if ui.add(clear_button).clicked() {
-                    self.filter_state.reset();
+        egui::Sides::new().show(
+            ui,
+            |ui| {
+                if has_active_filters {
+                    let clear_button = egui::Button::new(
+                        egui::RichText::new("🗑 Clear All").color(ui.style().visuals.warn_fg_color),
+                    );
+                    if ui.add(clear_button).clicked() {
+                        clear_clicked = true;
+                    }
                 }
-            }
-
-            // Right side: Cancel and Apply buttons
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            },
+            |ui| {
                 // Apply button (primary action)
-                let apply_text = if self.is_modified() {
+                let apply_text = if is_modified {
                     "✓ Apply Changes"
                 } else {
                     "Apply"
                 };
 
-                let apply_button = egui::Button::new(egui::RichText::new(apply_text).strong())
-                    .fill(ui.style().visuals.selection.bg_fill);
-
-                if ui.add(apply_button).clicked() {
+                if style::primary_button(ui, egui::RichText::new(apply_text).strong()).clicked() {
                     response = Some(ModalActionResponse::Confirm);
                 }
-
-                ui.add_space(8.0);
 
                 // Cancel button (secondary action)
                 if ui.button("Cancel").clicked() {
                     response = Some(ModalActionResponse::Cancel);
                 }
-            });
-        });
+            },
+        );
+
+        if clear_clicked {
+            self.filter_state.reset();
+        }
 
         response
     }

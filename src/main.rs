@@ -173,6 +173,8 @@ async fn main() -> anyhow::Result<()> {
             #[cfg(target_os = "linux")]
             cc.egui_ctx.enable_accesskit();
 
+            theme::style::apply(&cc.egui_ctx);
+
             // re_ui::apply_style_and_install_loaders(&cc.egui_ctx);
             dep_mut!(
                 gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
