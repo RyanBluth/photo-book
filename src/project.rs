@@ -852,6 +852,7 @@ pub enum PhotoMetadataField {
     ShutterSpeed(Rational),
     Aperture(Rational),
     FocalLength(Rational),
+    Lens(String),
 }
 
 impl From<AppPhotoMetadataField> for PhotoMetadataField {
@@ -879,6 +880,7 @@ impl From<AppPhotoMetadataField> for PhotoMetadataField {
             AppPhotoMetadataField::FocalLength(focal_length) => {
                 PhotoMetadataField::FocalLength(focal_length.into())
             }
+            AppPhotoMetadataField::Lens(lens) => PhotoMetadataField::Lens(lens),
         }
     }
 }
@@ -908,6 +910,7 @@ impl From<PhotoMetadataField> for AppPhotoMetadataField {
             PhotoMetadataField::FocalLength(focal_length) => {
                 AppPhotoMetadataField::FocalLength(focal_length.into())
             }
+            PhotoMetadataField::Lens(lens) => AppPhotoMetadataField::Lens(lens),
         }
     }
 }

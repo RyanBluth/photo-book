@@ -155,7 +155,10 @@ impl<'a> PhotoInfo<'a> {
                                     .truncate(),
                             );
                             ui.add_space(6.0);
-                            ui.label(RichText::new("No lens information").size(14.0).strong());
+                            ui.add(
+                                Label::new(RichText::new(self.lens()).size(14.0).strong())
+                                    .truncate(),
+                            );
                         });
                     });
 
@@ -437,6 +440,15 @@ impl<'a> PhotoInfo<'a> {
                 camera.trim().to_string()
             }
             _ => "No camera information".to_string(),
+        }
+    }
+
+    fn lens(&self) -> String {
+        match self.field(PhotoMetadataFieldLabel::Lens) {
+            Some(PhotoMetadataField::Lens(lens)) if !lens.trim().is_empty() => {
+                lens.trim().to_string()
+            }
+            _ => "No lens information".to_string(),
         }
     }
 

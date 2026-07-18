@@ -181,7 +181,8 @@ metadata_fields!(
     (ISO, u32),
     (ShutterSpeed, Rational),
     (Aperture, Rational),
-    (FocalLength, Rational)
+    (FocalLength, Rational),
+    (Lens, String)
 );
 
 impl Display for PhotoMetadataField {
@@ -209,6 +210,7 @@ impl Display for PhotoMetadataField {
             PhotoMetadataField::FocalLength(focal_length) => {
                 write!(f, "{}mm", focal_length.num / focal_length.denom)
             }
+            PhotoMetadataField::Lens(lens) => f.write_str(lens),
         }
     }
 }
@@ -228,6 +230,7 @@ impl Display for PhotoMetadataFieldLabel {
             PhotoMetadataFieldLabel::ShutterSpeed => f.write_str("Shutter Speed"),
             PhotoMetadataFieldLabel::Aperture => f.write_str("Aperture"),
             PhotoMetadataFieldLabel::FocalLength => f.write_str("Focal Length"),
+            PhotoMetadataFieldLabel::Lens => f.write_str("Lens"),
         }
     }
 }
@@ -319,6 +322,19 @@ impl PhotoMetadata {
                     }
                 }
             };
+            if let Some(field) = exif.get_field(Tag::LensModel, In::PRIMARY) {
+                if let Value::Ascii(ref vec) = field.value {
+                    if let Some(value) = vec.first() {
+                        let lens = String::from_utf8_lossy(value)
+                            .trim_matches(char::from(0))
+                            .trim()
+                            .to_string();
+                        if !lens.is_empty() {
+                            fields.insert(PhotoMetadataField::Lens(lens));
+                        }
+                    }
+                }
+            }
             if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
                 if let Value::Ascii(ref vec) = field.value {
                     if let Some(date_time) = vec
@@ -479,6 +495,7 @@ impl PhotoMetadata {
             PhotoMetadataFieldLabel::RotatedWidth,
             PhotoMetadataFieldLabel::RotatedHeight,
             PhotoMetadataFieldLabel::Camera,
+            PhotoMetadataFieldLabel::Lens,
             PhotoMetadataFieldLabel::DateTime,
             PhotoMetadataFieldLabel::ISO,
             PhotoMetadataFieldLabel::ShutterSpeed,
@@ -691,5 +708,42 @@ impl<'a> Drop for SaveOnDropPhoto<'a> {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_lens_model_from_exif() {
+        let lens = b"RF24-70mm F2.8 L IS USM\0";
+        let mut exif_data = vec![
+            b'I', b'I', 0x2a, 0x00, 0x08, 0x00, 0x00, 0x00, // TIFF header
+            0x01, 0x00, // One primary IFD entry
+            0x69, 0x87, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, // Exif IFD pointer
+            0x1a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Offset and next IFD
+            0x01, 0x00, // One Exif IFD entry
+            0x34, 0xa4, 0x02, 0x00, 0x18, 0x00, 0x00, 0x00, // LensModel ASCII
+            0x2c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Value offset and next IFD
+        ];
+        exif_data.extend_from_slice(lens);
+
+        let exif = Reader::new().read_raw(exif_data).unwrap();
+        let fields = PhotoMetadata::process_metadata(
+            &PathBuf::from("photo.jpg"),
+            Ok(exif),
+            imagesize::ImageSize {
+                width: 100,
+                height: 80,
+            },
+        );
+
+        assert_eq!(
+            fields.get(PhotoMetadataFieldLabel::Lens),
+            Some(&PhotoMetadataField::Lens(
+                "RF24-70mm F2.8 L IS USM".to_string()
+            ))
+        );
     }
 }
