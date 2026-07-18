@@ -1,6 +1,6 @@
 use std::{collections::HashSet, sync::Arc};
 
-use egui::{FontDefinitions, FontFamily, FontId, epaint::TextOptions, text::Fonts};
+use egui::{FontDefinitions, FontFamily};
 use font_kit::source::SystemSource;
 use font_kit::{handle::Handle, properties::Style};
 use indexmap::IndexMap;
@@ -22,6 +22,8 @@ pub struct FontManager {
 }
 
 impl FontManager {
+    const REQUIRED_GLYPHS: &str = "abcdefghijklmnopqrstuvwxyz1234567890";
+
     pub fn new() -> Self {
         Self {
             fonts: IndexMap::new(),
@@ -100,15 +102,14 @@ impl FontManager {
                 .insert(FontFamily::Name(Arc::from(family.clone())), font_names);
         }
 
-        let mut fonts = Fonts::new(TextOptions::default(), font_definitions.clone());
-
-        let valid_fonts = fonts
-            .with_pixels_per_point(1.0)
-            .families()
+        // `egui::Fonts::has_glyphs` in egui 0.35 reports false for a family when
+        // its regular face is also the face selected for replacement glyphs. This
+        // is especially common for macOS families with a single available face.
+        // Check the loaded system font directly instead.
+        let valid_fonts = font_infos
             .iter()
-            .map(|family| FontId::new(20.0, family.clone()))
-            .filter(|font_id| fonts.has_glyphs(font_id, "abcdefghijklmnopqrstuvwxyz1234567890"))
-            .map(|font_id| font_id.family.to_string())
+            .filter(|(_, fonts)| fonts.iter().any(|font| font.has_required_glyphs))
+            .map(|(family, _)| family.clone())
             .collect::<HashSet<String>>();
 
         let mut valid_font_definitions = FontDefinitions::default();
@@ -177,6 +178,9 @@ impl FontManager {
                 err
             })
             .ok()?;
+        let has_required_glyphs = Self::REQUIRED_GLYPHS
+            .chars()
+            .all(|character| loaded_font.glyph_for_char(character).is_some());
 
         let family = loaded_font.family_name().to_string();
         let properties = loaded_font.properties();
@@ -197,6 +201,7 @@ impl FontManager {
             full_name,
             font_data_name,
             font_data: Arc::new(font_data),
+            has_required_glyphs,
         })
     }
 
@@ -234,6 +239,7 @@ pub struct FontInfo {
     pub full_name: String,
     pub font_data_name: String,
     pub font_data: Arc<egui::FontData>,
+    has_required_glyphs: bool,
 }
 
 impl FontInfo {
