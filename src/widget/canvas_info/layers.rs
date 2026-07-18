@@ -1,19 +1,18 @@
 use std::hash::Hasher;
 
 use eframe::epaint::{Color32, Stroke};
-use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Sense, StrokeKind, Vec2};
+use egui::{CursorIcon, FontId, Id, Pos2, Rect, Sense, StrokeKind, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
 use crate::{
     cursor_manager::CursorManager,
-    dep, dep_mut,
-    gpu_photo_adjustment::{GpuPhotoAdjustmentRenderer, GpuPhotoPaintRequest, GpuPhotoSource},
+    dep_mut,
     history::HistoricallyEqual,
     id::{LayerId, next_layer_id},
     model::{self, editable_value::EditableValue},
     photo::Photo,
-    photo_manager::PhotoManager,
+    photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
     template::TemplateRegion,
     theme::color,
     utils::{IdExt, Toggle},
@@ -678,66 +677,33 @@ impl<'a> Layers<'a> {
     }
 
     fn show_photo_thumbnail(ui: &mut egui::Ui, layer_id: LayerId, canvas_photo: &CanvasPhoto) {
-        let texture = dep_mut!(PhotoManager, |photo_manager| {
-            photo_manager
-                .unadjusted_thumbnail_texture_for(&canvas_photo.photo, ui.ctx())
-                .ok()
-                .flatten()
-        });
         let bounds = Vec2::new(70.0, 50.0);
         let image_size = Self::cropped_thumbnail_size(canvas_photo, bounds);
         let (slot_rect, _) = ui.allocate_exact_size(bounds, Sense::hover());
         let image_rect = Rect::from_center_size(slot_rect.center(), image_size);
 
         let render_key = format!("layer-thumbnail:{layer_id}");
-        let gpu_result = (!canvas_photo.adjustments.is_identity()).then(|| {
-            dep!(GpuPhotoAdjustmentRenderer, |renderer| {
-                renderer.paint(
-                    ui,
-                    GpuPhotoPaintRequest {
-                        photo: &canvas_photo.photo,
-                        source: GpuPhotoSource::Thumbnail,
-                        clip_rect: ui.clip_rect(),
-                        rect: image_rect,
-                        source_uv: canvas_photo.crop,
-                        rotation_radians: 0.0,
-                        adjustments: &canvas_photo.adjustments,
-                        render_key: Some(&render_key),
-                    },
-                )
-            })
-        });
+        let render_status = PhotoRenderer::paint(
+            ui,
+            &canvas_photo.photo,
+            &canvas_photo.adjustments,
+            image_rect,
+            PhotoRenderOptions::default()
+                .thumbnail()
+                .with_crop(canvas_photo.crop)
+                .with_render_key(&render_key),
+        );
 
-        let adjusted_texture = if gpu_result.is_some_and(|result| result.requires_cpu_fallback()) {
-            dep_mut!(PhotoManager, |photo_manager| {
-                photo_manager
-                    .thumbnail_texture_for_with_adjustments(
-                        &canvas_photo.photo,
-                        &canvas_photo.adjustments,
-                        ui.ctx(),
-                    )
-                    .ok()
-                    .flatten()
-            })
-        } else {
-            None
-        };
-
-        if let Some(adjusted_texture) = adjusted_texture {
-            Image::from_texture(adjusted_texture)
-                .uv(canvas_photo.crop)
-                .paint_at(ui, image_rect);
-        } else if !gpu_result.is_some_and(|result| result.is_ready()) {
-            if let Some(texture) = texture {
-                Image::from_texture(texture)
-                    .uv(canvas_photo.crop)
-                    .paint_at(ui, image_rect);
-            } else {
-                ui.put(
-                    image_rect,
-                    RectPlaceholder::new(image_size, color::SURFACE_EMPHASIS, 0.0),
-                );
-            }
+        if !matches!(
+            render_status,
+            Ok(PhotoRenderStatus::Ready
+                | PhotoRenderStatus::Placeholder
+                | PhotoRenderStatus::NotVisible)
+        ) {
+            ui.put(
+                image_rect,
+                RectPlaceholder::new(image_size, color::SURFACE_EMPHASIS, 0.0),
+            );
         }
     }
 

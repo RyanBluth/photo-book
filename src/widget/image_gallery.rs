@@ -217,13 +217,8 @@ impl<'a> ImageGallery<'a> {
 
                                     row.col(|ui: &mut Ui| {
                                         let photo = &group[offest + i];
-                                        let texture = dep_mut!(PhotoManager, |photo_manager| {
-                                            photo_manager
-                                                .unadjusted_thumbnail_texture_for(photo, ui.ctx())
-                                        });
                                         let image = GalleryImage::new(
                                             photo.clone(),
-                                            texture,
                                             selection_snapshot.selected_paths.contains(&photo.path),
                                         );
                                         let image_response = ui.add(image);

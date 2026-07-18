@@ -1,20 +1,19 @@
 use std::fmt;
 
 use eframe::{
-    egui::{self, Image, Key, Response, Sense, Widget},
+    egui::{self, Key, Response, Sense, Widget},
     epaint::{Pos2, Rect, Vec2},
 };
 use egui::CursorIcon;
 
 use crate::{
     cursor_manager::CursorManager,
-    dep, dep_mut,
-    gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
+    dep_mut,
     photo::{
         MaxPhotoDimension::{Height, Width},
         Photo,
     },
-    photo_manager::PhotoManager,
+    photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
     theme::color,
 };
 
@@ -276,39 +275,20 @@ impl<'a> Widget for ImageViewer<'a> {
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         let adjustments = self.photo.adjustments();
-        if !adjustments.is_identity()
-            && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer.try_paint(
-                ui,
-                self.photo,
-                rect,
-                image_rect,
-                &adjustments,
-            ))
-        {
-            return response;
-        }
-
-        match dep_mut!(PhotoManager, |photo_manager| photo_manager
-            .texture_for(self.photo, ui.ctx()))
-        {
-            Ok(Some(texture)) => {
-                Image::from_texture(texture).paint_at(ui, image_rect);
+        match PhotoRenderer::paint(
+            ui,
+            self.photo,
+            &adjustments,
+            image_rect,
+            PhotoRenderOptions::default()
+                .with_clip_rect(rect)
+                .with_render_key("image-viewer"),
+        ) {
+            Ok(PhotoRenderStatus::Pending) => {
+                ui.painter()
+                    .rect_filled(image_rect, 0.0, color::SURFACE_MUTED);
             }
-            Ok(None) => match dep_mut!(PhotoManager, |photo_manager| {
-                photo_manager.thumbnail_texture_for(self.photo, ui.ctx())
-            }) {
-                Ok(Some(texture)) => {
-                    Image::from_texture(texture).paint_at(ui, image_rect);
-
-                    // TODO: This is a workaround to redraw until the full image is loaded in case the user isn't moving the mouse to trigger a repaint
-                    // Is there a better way to do this?
-                    ui.ctx().request_repaint();
-                }
-                Ok(None) | Err(_) => {
-                    ui.painter()
-                        .rect_filled(image_rect, 0.0, color::SURFACE_MUTED);
-                }
-            },
+            Ok(_) => {}
             Err(error) => {
                 ui.painter().text(
                     image_rect.center(),

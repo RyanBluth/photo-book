@@ -2,7 +2,6 @@ pub mod selection;
 pub mod state;
 pub mod types;
 use crate::{
-    gpu_photo_adjustment::{GpuPhotoAdjustmentRenderer, GpuPhotoPaintRequest, GpuPhotoSource},
     model::scale_mode::ScaleMode,
     utils::Vec2Ext,
     widget::{
@@ -21,12 +20,11 @@ use eframe::{
         StrokeKind, Ui, UiBuilder,
     },
     emath::Rot2,
-    epaint::{Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
+    epaint::{Color32, EllipseShape, FontId, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
 };
 use egui::{
     Order,
     epaint::{ColorMode, PathStroke},
-    load::SizedTexture,
 };
 
 use crate::{
@@ -36,7 +34,7 @@ use crate::{
     font_manager::FontManager,
     id::LayerId,
     layout::apply_layout_node,
-    photo_manager::PhotoManager,
+    photo_renderer::{PhotoRenderOptions, PhotoRenderer},
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::TemplateRegionKind,
     theme::color,
@@ -788,8 +786,6 @@ impl<'a> Canvas<'a> {
         let layer_response = match &mut layer.content {
             LayerContent::Photo(photo) => {
                 let gpu_photo_adjustments = self.gpu_photo_adjustments && !is_preview;
-                let use_gpu = gpu_photo_adjustments && (!photo.adjustments.is_identity() || active);
-                let texture = Self::load_photo_texture(photo, use_gpu, ui.ctx());
                 let gpu_render_key = format!(
                     "{}:{}:{}",
                     self.state.canvas_id.value(),
@@ -814,56 +810,17 @@ impl<'a> Canvas<'a> {
                                     active && !is_preview,
                                     true,
                                     |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                                        let gpu_result = use_gpu.then(|| {
-                                            dep!(GpuPhotoAdjustmentRenderer, |renderer| {
-                                                renderer.paint(
-                                                    ui,
-                                                    GpuPhotoPaintRequest {
-                                                        photo: &photo.photo,
-                                                        source: GpuPhotoSource::FullResolution,
-                                                        clip_rect: ui.clip_rect(),
-                                                        rect: transformed_rect,
-                                                        source_uv: photo.crop,
-                                                        rotation_radians: transformable_state
-                                                            .rotation,
-                                                        adjustments: &photo.adjustments,
-                                                        render_key: Some(&gpu_render_key),
-                                                    },
-                                                )
-                                            })
-                                        });
-
-                                        let adjusted_texture = if gpu_result
-                                            .is_some_and(|result| result.requires_cpu_fallback())
-                                            && gpu_photo_adjustments
-                                        {
-                                            Self::load_adjusted_photo_texture(photo, ui.ctx())
-                                        } else {
-                                            None
-                                        };
-
-                                        if !gpu_result.is_some_and(|result| result.is_ready())
-                                            && adjusted_texture.is_none()
-                                            && let Some(texture) = texture
-                                        {
-                                            Self::paint_photo_texture(
-                                                ui,
-                                                texture.id,
-                                                transformed_rect,
-                                                photo.crop,
-                                                transformable_state.rotation,
-                                            );
-                                        }
-
-                                        if let Some(adjusted_texture) = adjusted_texture {
-                                            Self::paint_photo_texture(
-                                                ui,
-                                                adjusted_texture.id,
-                                                transformed_rect,
-                                                photo.crop,
-                                                transformable_state.rotation,
-                                            );
-                                        }
+                                        let _ = PhotoRenderer::paint(
+                                            ui,
+                                            &photo.photo,
+                                            &photo.adjustments,
+                                            transformed_rect,
+                                            PhotoRenderOptions::default()
+                                                .gpu(gpu_photo_adjustments)
+                                                .with_crop(photo.crop)
+                                                .with_rotation(transformable_state.rotation)
+                                                .with_render_key(&gpu_render_key),
+                                        );
                                     },
                                 );
 
@@ -994,9 +951,6 @@ impl<'a> Canvas<'a> {
 
                 if let Some(photo) = photo {
                     let gpu_photo_adjustments = self.gpu_photo_adjustments && !is_preview;
-                    let use_gpu =
-                        gpu_photo_adjustments && (!photo.adjustments.is_identity() || active);
-                    let texture = Self::load_photo_texture(photo, use_gpu, ui.ctx());
 
                     let photo_size = Vec2::new(
                         photo.photo.metadata.rotated_width() as f32,
@@ -1056,49 +1010,17 @@ impl<'a> Canvas<'a> {
                         layer.id,
                         is_preview
                     );
-                    let gpu_result = use_gpu.then(|| {
-                        dep!(GpuPhotoAdjustmentRenderer, |renderer| {
-                            renderer.paint(
-                                ui,
-                                GpuPhotoPaintRequest {
-                                    photo: &photo.photo,
-                                    source: GpuPhotoSource::FullResolution,
-                                    clip_rect: clipped_rect,
-                                    rect: paint_rect,
-                                    source_uv,
-                                    rotation_radians: 0.0,
-                                    adjustments: &photo.adjustments,
-                                    render_key: Some(&gpu_render_key),
-                                },
-                            )
-                        })
-                    });
-
-                    let adjusted_texture = if gpu_result
-                        .is_some_and(|result| result.requires_cpu_fallback())
-                        && gpu_photo_adjustments
-                    {
-                        Self::load_adjusted_photo_texture(photo, ui.ctx())
-                    } else {
-                        None
-                    };
-
-                    if !gpu_result.is_some_and(|result| result.is_ready())
-                        && adjusted_texture.is_none()
-                        && let Some(texture) = texture
-                    {
-                        Self::paint_photo_texture(ui, texture.id, paint_rect, source_uv, 0.0);
-                    }
-
-                    if let Some(adjusted_texture) = adjusted_texture {
-                        Self::paint_photo_texture(
-                            ui,
-                            adjusted_texture.id,
-                            paint_rect,
-                            source_uv,
-                            0.0,
-                        );
-                    }
+                    let _ = PhotoRenderer::paint(
+                        ui,
+                        &photo.photo,
+                        &photo.adjustments,
+                        paint_rect,
+                        PhotoRenderOptions::default()
+                            .gpu(gpu_photo_adjustments)
+                            .with_clip_rect(clipped_rect)
+                            .with_crop(source_uv)
+                            .with_render_key(&gpu_render_key),
+                    );
 
                     ui.set_clip_rect(current_clip);
                 }
@@ -1359,51 +1281,6 @@ impl<'a> Canvas<'a> {
         };
 
         layer_response
-    }
-
-    fn paint_photo_texture(
-        ui: &Ui,
-        texture_id: egui::TextureId,
-        rect: Rect,
-        uv: Rect,
-        rotation: f32,
-    ) {
-        let mut mesh = Mesh::with_texture(texture_id);
-        mesh.add_rect_with_uv(rect, uv, color::WHITE);
-        mesh.rotate(Rot2::from_angle(rotation), rect.center());
-        ui.painter().add(Shape::mesh(mesh));
-    }
-
-    fn load_photo_texture(
-        photo: &CanvasPhoto,
-        use_gpu: bool,
-        ctx: &Context,
-    ) -> Option<SizedTexture> {
-        dep_mut!(PhotoManager, |photo_manager| {
-            if use_gpu {
-                photo_manager.unadjusted_gpu_placeholder_texture_for(&photo.photo, ctx)
-            } else if photo.adjustments.is_identity() {
-                photo_manager
-                    .unadjusted_texture_for_photo_with_thumbnail_fallback(&photo.photo, ctx)
-            } else {
-                photo_manager.texture_for_photo_with_thumbnail_fallback(
-                    &photo.photo,
-                    &photo.adjustments,
-                    ctx,
-                )
-            }
-            .ok()
-            .flatten()
-        })
-    }
-
-    fn load_adjusted_photo_texture(photo: &CanvasPhoto, ctx: &Context) -> Option<SizedTexture> {
-        dep_mut!(PhotoManager, |photo_manager| {
-            photo_manager
-                .texture_for_photo_with_thumbnail_fallback(&photo.photo, &photo.adjustments, ctx)
-                .ok()
-                .flatten()
-        })
     }
 
     fn draw_quick_layout_number(

@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     io::BufWriter,
     path::{Path, PathBuf},
@@ -49,6 +50,78 @@ const FULL_RES_PRELOAD_START_BUDGET: usize = 4;
 const FULL_RES_PRELOAD_READY_BUDGET: usize = 2;
 const FULL_RES_CACHE_CAPACITY: usize = 20;
 const ADJUSTED_THUMBNAIL_CACHE_CAPACITY: usize = 512;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PhotoTextureResolution {
+    Full,
+    Thumbnail,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PhotoTextureAdjustments<'a> {
+    Stored,
+    Explicit(&'a PhotoAdjustments),
+    None,
+}
+
+/// Controls how [`PhotoManager::texture_for`] loads a photo texture.
+#[derive(Clone, Copy, Debug)]
+pub struct PhotoTextureOptions<'a> {
+    resolution: PhotoTextureResolution,
+    adjustments: PhotoTextureAdjustments<'a>,
+    thumbnail_fallback: bool,
+    blocking: bool,
+}
+
+impl Default for PhotoTextureOptions<'_> {
+    fn default() -> Self {
+        Self::full_resolution()
+    }
+}
+
+impl<'a> PhotoTextureOptions<'a> {
+    /// Loads the full-resolution image using the photo's stored adjustments.
+    pub fn full_resolution() -> Self {
+        Self {
+            resolution: PhotoTextureResolution::Full,
+            adjustments: PhotoTextureAdjustments::Stored,
+            thumbnail_fallback: false,
+            blocking: false,
+        }
+    }
+
+    /// Loads the thumbnail using the photo's stored adjustments.
+    pub fn thumbnail() -> Self {
+        Self {
+            resolution: PhotoTextureResolution::Thumbnail,
+            ..Self::full_resolution()
+        }
+    }
+
+    /// Uses these adjustments instead of the photo's stored adjustments.
+    pub fn with_adjustments(mut self, adjustments: &'a PhotoAdjustments) -> Self {
+        self.adjustments = PhotoTextureAdjustments::Explicit(adjustments);
+        self
+    }
+
+    /// Loads the source image without applying adjustments.
+    pub fn without_adjustments(mut self) -> Self {
+        self.adjustments = PhotoTextureAdjustments::None;
+        self
+    }
+
+    /// Returns a thumbnail while the full-resolution texture is still loading.
+    pub fn with_thumbnail_fallback(mut self) -> Self {
+        self.thumbnail_fallback = true;
+        self
+    }
+
+    /// Polls egui's image loader until an unadjusted texture is ready.
+    pub fn blocking(mut self) -> Self {
+        self.blocking = true;
+        self
+    }
+}
 
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
@@ -339,244 +412,100 @@ impl PhotoManager {
         }
     }
 
-    pub fn thumbnail_texture_for(
-        &mut self,
-        photo: &Photo,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        let adjustments = self.get_photo_adjustments(&photo.path);
-        self.thumbnail_texture_for_with_adjustments(photo, &adjustments, ctx)
-    }
-
-    pub fn thumbnail_texture_for_with_adjustments(
-        &mut self,
-        photo: &Photo,
-        adjustments: &PhotoAdjustments,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_exists(photo) {
-            return Ok(None);
-        }
-
-        let allow_adjustment_jobs = !ctx.input(|input| input.pointer.primary_down());
-        let cache = self.get_cache_mut(ctx);
-        if adjustments.is_identity() {
-            Self::load_texture(
-                &photo.thumbnail_uri(),
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            )
-        } else {
-            Self::load_adjusted_thumbnail_texture(
-                photo,
-                adjustments,
-                allow_adjustment_jobs,
-                ctx,
-                cache,
-            )
-        }
-    }
-
-    pub fn unadjusted_thumbnail_texture_for(
-        &mut self,
-        photo: &Photo,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_exists(photo) {
-            return Ok(None);
-        }
-
-        let cache = self.get_cache_mut(ctx);
-        Self::load_texture(
-            &photo.thumbnail_uri(),
-            ctx,
-            &mut cache.texture_cache,
-            &mut cache.pending_textures,
-        )
-    }
-
-    #[allow(dead_code)]
-    pub fn tumbnail_texture_at(
-        &mut self,
-        at: usize,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        match self.photo_database.get_photo_by_index(at) {
-            Some(photo) => {
-                let photo = photo.clone();
-                self.thumbnail_texture_for(&photo, ctx)
-            }
-            _ => Ok(None),
-        }
-    }
-
+    /// Loads a texture according to `options`, returning `None` while asynchronous work is pending.
     pub fn texture_for(
         &mut self,
         photo: &Photo,
         ctx: &Context,
+        options: PhotoTextureOptions<'_>,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
-        let adjustments = self.get_photo_adjustments(&photo.path);
-        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
-        let cache = self.get_cache_mut(ctx);
-        let protected_uri = if adjustments.is_identity() {
-            uri.clone()
-        } else {
-            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+        let adjustments = match options.adjustments {
+            PhotoTextureAdjustments::Stored => Cow::Owned(self.get_photo_adjustments(&photo.path)),
+            PhotoTextureAdjustments::Explicit(adjustments) => Cow::Borrowed(adjustments),
+            PhotoTextureAdjustments::None => Cow::Owned(PhotoAdjustments::default()),
         };
-        let result = if adjustments.is_identity() {
-            Self::load_full_res_texture(&uri, ctx, cache)
-        } else {
-            Self::load_adjusted_full_res_texture(
-                photo,
-                &adjustments,
-                max_texture_side,
-                !ctx.input(|input| input.pointer.primary_down()),
-                ctx,
-                cache,
-            )
-        };
+        let adjustments = adjustments.as_ref();
+        let allow_adjustment_jobs =
+            options.blocking || !ctx.input(|input| input.pointer.primary_down());
 
-        Self::evict_full_res_textures(ctx, cache, &protected_uri);
+        match options.resolution {
+            PhotoTextureResolution::Thumbnail => {
+                if !self.thumbnail_exists(photo) {
+                    return Ok(None);
+                }
 
-        result
-    }
-
-    pub fn texture_for_blocking_with_adjustments(
-        &mut self,
-        photo: &Photo,
-        adjustments: &PhotoAdjustments,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
-        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
-        let cache = self.get_cache_mut(ctx);
-        let protected_uri = if adjustments.is_identity() {
-            uri.clone()
-        } else {
-            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
-        };
-        let result = if adjustments.is_identity() {
-            Self::load_full_res_texture_blocking(&uri, ctx, cache)
-        } else {
-            Self::load_adjusted_full_res_texture(
-                photo,
-                adjustments,
-                max_texture_side,
-                true,
-                ctx,
-                cache,
-            )
-        };
-
-        Self::evict_full_res_textures(ctx, cache, &protected_uri);
-
-        result
-    }
-
-    pub fn texture_for_photo_with_thumbnail_fallback(
-        &mut self,
-        photo: &Photo,
-        adjustments: &PhotoAdjustments,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
-        let uri = photo.uri();
-        let thumbnail_exists = self.thumbnail_exists(photo);
-        let allow_adjustment_jobs = !ctx.input(|input| input.pointer.primary_down());
-        let cache = self.get_cache_mut(ctx);
-        let protected_uri = if adjustments.is_identity() {
-            uri.clone()
-        } else {
-            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
-        };
-        let full_res_result = if adjustments.is_identity() {
-            Self::load_full_res_texture(&uri, ctx, cache)
-        } else {
-            Self::load_adjusted_full_res_texture(
-                photo,
-                adjustments,
-                max_texture_side,
-                allow_adjustment_jobs,
-                ctx,
-                cache,
-            )
-        };
-        let result = match full_res_result {
-            Ok(Some(tex)) => Ok(Some(tex)),
-            _ if !thumbnail_exists => Ok(None),
-            _ if adjustments.is_identity() => Self::load_texture(
-                &photo.thumbnail_uri(),
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            ),
-            _ if allow_adjustment_jobs => {
-                Self::load_adjusted_thumbnail_texture(photo, adjustments, true, ctx, cache)
-            }
-            _ => Self::load_texture(
-                &photo.thumbnail_uri(),
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            ),
-        };
-
-        Self::evict_full_res_textures(ctx, cache, &protected_uri);
-
-        result
-    }
-
-    pub fn unadjusted_texture_for_photo_with_thumbnail_fallback(
-        &mut self,
-        photo: &Photo,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        let uri = photo.uri();
-        let thumbnail_exists = self.thumbnail_exists(photo);
-        let cache = self.get_cache_mut(ctx);
-        let result = match Self::load_full_res_texture(&uri, ctx, cache) {
-            Ok(Some(texture)) => Ok(Some(texture)),
-            _ if !thumbnail_exists => Ok(None),
-            _ => Self::load_texture(
-                &photo.thumbnail_uri(),
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            ),
-        };
-
-        Self::evict_full_res_textures(ctx, cache, &uri);
-        result
-    }
-
-    pub fn unadjusted_gpu_placeholder_texture_for(
-        &mut self,
-        photo: &Photo,
-        ctx: &Context,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        if !self.thumbnail_exists(photo) {
-            return Ok(None);
-        }
-
-        self.unadjusted_thumbnail_texture_for(photo, ctx)
-    }
-
-    #[allow(dead_code)]
-    pub fn texture_at(&mut self, at: usize, ctx: &Context) -> anyhow::Result<Option<SizedTexture>> {
-        match self.photo_database.get_photo_by_index(at) {
-            Some(photo) => {
-                let photo = photo.clone();
-                let uri = photo.uri();
                 let cache = self.get_cache_mut(ctx);
-                let result = Self::load_full_res_texture(&uri, ctx, cache);
+                if adjustments.is_identity() {
+                    Self::load_unadjusted_texture(
+                        &photo.thumbnail_uri(),
+                        options.blocking,
+                        ctx,
+                        cache,
+                    )
+                } else {
+                    Self::load_adjusted_thumbnail_texture(
+                        photo,
+                        adjustments,
+                        allow_adjustment_jobs,
+                        ctx,
+                        cache,
+                    )
+                }
+            }
+            PhotoTextureResolution::Full => {
+                let uri = photo.uri();
+                let thumbnail_exists = options.thumbnail_fallback && self.thumbnail_exists(photo);
+                let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
+                let protected_uri = if adjustments.is_identity() {
+                    uri.clone()
+                } else {
+                    adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
+                };
+                let cache = self.get_cache_mut(ctx);
+                let full_res_result = if adjustments.is_identity() {
+                    if options.blocking {
+                        Self::load_full_res_texture_blocking(&uri, ctx, cache)
+                    } else {
+                        Self::load_full_res_texture(&uri, ctx, cache)
+                    }
+                } else {
+                    Self::load_adjusted_full_res_texture(
+                        photo,
+                        adjustments,
+                        max_texture_side,
+                        allow_adjustment_jobs,
+                        ctx,
+                        cache,
+                    )
+                };
 
-                Self::evict_full_res_textures(ctx, cache, &uri);
+                let result = if options.thumbnail_fallback {
+                    match full_res_result {
+                        Ok(Some(texture)) => Ok(Some(texture)),
+                        _ if !thumbnail_exists => Ok(None),
+                        _ if adjustments.is_identity() || !allow_adjustment_jobs => {
+                            Self::load_unadjusted_texture(
+                                &photo.thumbnail_uri(),
+                                options.blocking,
+                                ctx,
+                                cache,
+                            )
+                        }
+                        _ => Self::load_adjusted_thumbnail_texture(
+                            photo,
+                            adjustments,
+                            true,
+                            ctx,
+                            cache,
+                        ),
+                    }
+                } else {
+                    full_res_result
+                };
 
+                Self::evict_full_res_textures(ctx, cache, &protected_uri);
                 result
             }
-            _ => Ok(None),
         }
     }
 
@@ -964,6 +893,29 @@ impl PhotoManager {
             cache.adjusted_texture_cache.remove(&uri);
             cache.pending_adjusted_textures.remove(&uri);
             ctx.forget_image(&uri);
+        }
+    }
+
+    fn load_unadjusted_texture(
+        uri: &str,
+        blocking: bool,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        if blocking {
+            Self::load_texture_blocking(
+                uri,
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            )
+        } else {
+            Self::load_texture(
+                uri,
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            )
         }
     }
 

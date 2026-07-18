@@ -1,32 +1,24 @@
 use eframe::{
-    egui::{Image, Response, Sense, Ui, Widget, load::SizedTexture},
+    egui::{Response, Sense, Ui, Widget},
     epaint::Vec2,
 };
 use egui::{Spinner, Stroke, StrokeKind, UiBuilder};
 use log::error;
 
 use crate::{
-    dep, dep_mut, gpu_photo_adjustment::GpuPhotoAdjustmentRenderer, photo::Photo,
-    photo_manager::PhotoManager, theme::color, widget::placeholder::RectPlaceholder,
+    photo::Photo,
+    photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
+    theme::color,
 };
 
 pub struct GalleryImage {
     photo: Photo,
-    texture: anyhow::Result<Option<SizedTexture>>,
     selected: bool,
 }
 
 impl GalleryImage {
-    pub fn new(
-        photo: Photo,
-        texture: anyhow::Result<Option<SizedTexture>>,
-        selected: bool,
-    ) -> Self {
-        Self {
-            photo,
-            texture,
-            selected,
-        }
+    pub fn new(photo: Photo, selected: bool) -> Self {
+        Self { photo, selected }
     }
 }
 
@@ -55,75 +47,37 @@ impl Widget for GalleryImage {
 
                         ui.add_space(verical_spacing);
 
-                        let image_rect = match self.texture {
-                            Ok(Some(texture)) => {
-                                let adjustments = self.photo.adjustments();
-                                let (image_rect, _) =
-                                    ui.allocate_exact_size(scaled_image_size, Sense::hover());
-                                let gpu_painted = !adjustments.is_identity()
-                                    && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer
-                                        .try_paint_thumbnail(
-                                            ui,
-                                            &self.photo,
-                                            rect,
-                                            image_rect,
-                                            &adjustments,
-                                        ));
-
-                                if !gpu_painted {
-                                    let fallback_texture = if adjustments.is_identity() {
-                                        Some(texture)
-                                    } else {
-                                        dep_mut!(PhotoManager, |photo_manager| {
-                                            photo_manager
-                                                .thumbnail_texture_for(&self.photo, ui.ctx())
-                                        })
-                                        .ok()
-                                        .flatten()
-                                        .or(Some(texture))
-                                    };
-
-                                    if let Some(texture) = fallback_texture {
-                                        Image::from_texture(texture).paint_at(ui, image_rect);
-                                    } else {
-                                        ui.painter().rect_filled(
-                                            image_rect,
-                                            4.0,
-                                            color::SURFACE_MUTED,
-                                        );
-                                    }
-                                };
-
-                                ui.painter().rect_stroke(
-                                    image_rect,
-                                    5.0,
-                                    Stroke::new(5.0, color::SURFACE_X_DARK),
-                                    StrokeKind::Outside,
-                                );
-                                image_rect
-                            }
-                            Ok(None) => {
-                                let response = RectPlaceholder::new(
-                                    scaled_image_size,
-                                    color::SURFACE_MUTED,
-                                    4.0,
-                                )
-                                .ui(ui);
-
-                                ui.put(response.rect, Spinner::new());
-                                response.rect
+                        let (image_rect, _) =
+                            ui.allocate_exact_size(scaled_image_size, Sense::hover());
+                        let adjustments = self.photo.adjustments();
+                        match PhotoRenderer::paint(
+                            ui,
+                            &self.photo,
+                            &adjustments,
+                            image_rect,
+                            PhotoRenderOptions::default()
+                                .thumbnail()
+                                .with_clip_rect(rect)
+                                .with_render_key("image-gallery"),
+                        ) {
+                            Ok(PhotoRenderStatus::Pending) => {
+                                ui.painter()
+                                    .rect_filled(image_rect, 4.0, color::SURFACE_MUTED);
+                                ui.put(image_rect, Spinner::new());
                             }
                             Err(err) => {
-                                // Show themed error placeholder for now.
-                                // TODO: Show error message or something
-                                let rect =
-                                    RectPlaceholder::new(scaled_image_size, color::ERROR, 4.0)
-                                        .ui(ui)
-                                        .rect;
+                                ui.painter().rect_filled(image_rect, 4.0, color::ERROR);
                                 error!("Failed to load image: {:?}. {:?}", self.photo.path, err);
-                                rect
                             }
-                        };
+                            Ok(_) => {}
+                        }
+
+                        ui.painter().rect_stroke(
+                            image_rect,
+                            5.0,
+                            Stroke::new(5.0, color::SURFACE_X_DARK),
+                            StrokeKind::Outside,
+                        );
 
                         if self.selected {
                             ui.painter().rect_stroke(

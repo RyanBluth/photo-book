@@ -1,13 +1,17 @@
 use std::{ops::Range, path::PathBuf};
 
 use egui::{
-    Align, CursorIcon, Image, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind,
-    Ui, UiBuilder, Vec2, load::SizedTexture, style::ScrollAnimation,
+    Align, CursorIcon, Pos2, Rect, Response, ScrollArea, Sense, Spinner, Stroke, StrokeKind, Ui,
+    UiBuilder, Vec2, style::ScrollAnimation,
 };
 
 use crate::{
-    cursor_manager::CursorManager, dep, dep_mut, gpu_photo_adjustment::GpuPhotoAdjustmentRenderer,
-    photo::Photo, photo_manager::PhotoManager, theme::color,
+    cursor_manager::CursorManager,
+    dep_mut,
+    photo::Photo,
+    photo_manager::PhotoManager,
+    photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
+    theme::color,
 };
 
 const DEFAULT_BAR_HEIGHT: f32 = 120.0;
@@ -229,14 +233,10 @@ fn thumbnail_cell(
         Vec2::new(cell_width, cell_height - stroke_width * 2.0),
         Sense::click(),
     );
-    let thumbnail = dep_mut!(PhotoManager, |photo_manager| {
-        photo_manager.unadjusted_thumbnail_texture_for(photo, ui.ctx())
-    });
-
     let photo_rect = rect
         .shrink2(Vec2::new(0.0, stroke_width * 2.0))
         .translate(Vec2::new(0.0, stroke_width));
-    let thumbnail_rect = paint_thumbnail(ui, photo, photo_rect, thumbnail);
+    let thumbnail_rect = paint_thumbnail(ui, photo, photo_rect);
 
     if selected {
         ui.painter().rect_stroke(
@@ -257,54 +257,30 @@ fn thumbnail_cell(
     response.on_hover_text(photo.path.display().to_string())
 }
 
-fn paint_thumbnail(
-    ui: &mut Ui,
-    photo: &Photo,
-    bounds: Rect,
-    thumbnail: anyhow::Result<Option<SizedTexture>>,
-) -> Rect {
+fn paint_thumbnail(ui: &mut Ui, photo: &Photo, bounds: Rect) -> Rect {
     let image_size = fitted_image_size(photo, bounds.size());
     let image_rect = Rect::from_center_size(bounds.center(), image_size);
 
-    match thumbnail {
-        Ok(Some(texture)) => {
-            let adjustments = photo.adjustments();
-            let gpu_painted = !adjustments.is_identity()
-                && dep!(GpuPhotoAdjustmentRenderer, |renderer| renderer
-                    .try_paint_thumbnail(
-                        ui,
-                        photo,
-                        bounds,
-                        image_rect,
-                        &adjustments
-                    ));
-
-            if !gpu_painted {
-                let fallback_texture = if adjustments.is_identity() {
-                    Some(texture)
-                } else {
-                    dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.thumbnail_texture_for(photo, ui.ctx())
-                    })
-                    .ok()
-                    .flatten()
-                    .or(Some(texture))
-                };
-
-                if let Some(texture) = fallback_texture {
-                    Image::from_texture(texture).paint_at(ui, image_rect);
-                }
-            }
-        }
-        Ok(None) => {
+    let adjustments = photo.adjustments();
+    match PhotoRenderer::paint(
+        ui,
+        photo,
+        &adjustments,
+        image_rect,
+        PhotoRenderOptions::default()
+            .thumbnail()
+            .with_clip_rect(bounds)
+            .with_render_key("photo-filmstrip"),
+    ) {
+        Ok(PhotoRenderStatus::Pending) => {
             ui.painter()
                 .rect_filled(image_rect, 2.0, color::SURFACE_MUTED);
             ui.put(image_rect, Spinner::new());
-            ui.ctx().request_repaint();
         }
         Err(_) => {
             ui.painter().rect_filled(image_rect, 2.0, color::ERROR);
         }
+        Ok(_) => {}
     }
 
     image_rect

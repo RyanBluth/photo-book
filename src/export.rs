@@ -23,7 +23,7 @@ use crate::{dep, dep_mut};
 use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
-use crate::photo_manager::PhotoManager;
+use crate::photo_manager::{PhotoManager, PhotoTextureOptions};
 use crate::scene::canvas_scene::CanvasHistoryManager;
 use crate::widget::canvas::{Canvas, CanvasState};
 use crate::widget::canvas_info::layers::LayerContent;
@@ -213,10 +213,12 @@ impl Exporter {
                     photo: Some(photo), ..
                 } => loop {
                     let result = dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.texture_for_blocking_with_adjustments(
+                        photo_manager.texture_for(
                             &photo.photo,
-                            &photo.adjustments,
                             &backend.egui_ctx,
+                            PhotoTextureOptions::full_resolution()
+                                .with_adjustments(&photo.adjustments)
+                                .blocking(),
                         )
                     });
                     match result {

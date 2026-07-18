@@ -7,7 +7,7 @@ use egui_extras::{Column, TableBuilder};
 
 use crate::{
     dep, dep_mut,
-    photo_manager::PhotoManager,
+    photo_manager::{PhotoManager, PhotoTextureOptions},
     selection_manager::{SelectionManager, SelectionModifiers, SelectionSnapshot},
     theme,
 };
@@ -470,13 +470,14 @@ impl TreeListRowUi<'_> {
             .cloned());
 
         let texture_handle = if let Some(photo) = photo_clone {
-            dep_mut!(
-                PhotoManager,
-                |pm| match pm.thumbnail_texture_for(&photo, ui.ctx()) {
-                    Ok(Some(texture)) => Some(texture),
-                    _ => None,
-                }
-            )
+            dep_mut!(PhotoManager, |pm| match pm.texture_for(
+                &photo,
+                ui.ctx(),
+                PhotoTextureOptions::thumbnail(),
+            ) {
+                Ok(Some(texture)) => Some(texture),
+                _ => None,
+            })
         } else {
             None
         };

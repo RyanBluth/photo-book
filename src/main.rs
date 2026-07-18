@@ -59,6 +59,7 @@ mod native_mac_menu;
 mod photo;
 mod photo_database;
 mod photo_manager;
+mod photo_renderer;
 mod project;
 mod project_settings;
 mod scene;

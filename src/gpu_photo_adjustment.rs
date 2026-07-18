@@ -144,16 +144,6 @@ pub enum GpuPaintResult {
     Ready,
 }
 
-impl GpuPaintResult {
-    pub fn is_ready(self) -> bool {
-        self == Self::Ready
-    }
-
-    pub fn requires_cpu_fallback(self) -> bool {
-        self == Self::Unsupported
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GpuPhotoSource {
     FullResolution,
@@ -321,58 +311,6 @@ impl GpuPhotoAdjustmentRenderer {
             });
 
         self.enabled = true;
-    }
-
-    pub fn try_paint(
-        &self,
-        ui: &mut egui::Ui,
-        photo: &Photo,
-        clip_rect: Rect,
-        rect: Rect,
-        adjustments: &PhotoAdjustments,
-    ) -> bool {
-        self.paint(
-            ui,
-            GpuPhotoPaintRequest {
-                photo,
-                source: GpuPhotoSource::FullResolution,
-                clip_rect,
-                rect,
-                source_uv: Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
-                rotation_radians: 0.0,
-                adjustments,
-                render_key: None,
-            },
-        )
-        .is_ready()
-    }
-
-    pub fn try_paint_thumbnail(
-        &self,
-        ui: &mut egui::Ui,
-        photo: &Photo,
-        clip_rect: Rect,
-        rect: Rect,
-        adjustments: &PhotoAdjustments,
-    ) -> bool {
-        if !self.enabled || adjustments.is_identity() || !adjustments.gpu_preview_supported() {
-            return false;
-        }
-
-        self.paint(
-            ui,
-            GpuPhotoPaintRequest {
-                photo,
-                source: GpuPhotoSource::Thumbnail,
-                clip_rect,
-                rect,
-                source_uv: Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
-                rotation_radians: 0.0,
-                adjustments,
-                render_key: None,
-            },
-        )
-        .is_ready()
     }
 
     pub fn paint(&self, ui: &mut egui::Ui, request: GpuPhotoPaintRequest<'_>) -> GpuPaintResult {
@@ -941,14 +879,6 @@ fn write_curve_lut(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn paint_result_only_falls_back_for_unsupported_rendering() {
-        assert!(GpuPaintResult::Unsupported.requires_cpu_fallback());
-        assert!(!GpuPaintResult::NotVisible.requires_cpu_fallback());
-        assert!(!GpuPaintResult::Pending.requires_cpu_fallback());
-        assert!(!GpuPaintResult::Ready.requires_cpu_fallback());
-    }
 
     #[test]
     fn uniform_maps_clipped_rect_into_image_uv_space() {
