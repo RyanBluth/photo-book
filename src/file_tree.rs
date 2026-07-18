@@ -404,6 +404,7 @@ impl FileTree {
     ///   a path that doesn't belong in this tree:
     ///     * Inserting an empty path into an established tree (non-empty root).
     ///     * Inserting a path whose root component differs from the tree's existing, non-empty root.
+    ///
     ///   In these cases, a warning is logged, and the path is not inserted.
     ///
     /// # Examples
@@ -567,6 +568,7 @@ impl FileTreeIterator {
     }
 
     /// Attempts to compress a directory chain if it has a series of single-child directories
+    #[allow(clippy::single_match, clippy::while_let_loop)]
     fn compress_directory_chain(
         &self,
         dir_node: &FileTreeNode,
@@ -611,34 +613,33 @@ impl FileTreeIterator {
                         }
 
                         // If we collected multiple nodes, create a compressed item
-                        if skipped_nodes.len() > 0 {
+                        if !skipped_nodes.is_empty() {
                             // Get the last node to find its children
-                            if let Some(last_node) = skipped_nodes.last() {
-                                if let FileTreeNode::Directory(_last_path, last_children) =
+                            if let Some(last_node) = skipped_nodes.last()
+                                && let FileTreeNode::Directory(_last_path, last_children) =
                                     last_node
-                                {
-                                    // Create a new path that combines all paths in the chain
-                                    for node in &skipped_nodes {
-                                        if let FileTreeNode::Directory(path, _) = node {
-                                            if let Some(file_name) = path.file_name() {
-                                                full_path.push(file_name);
-                                            }
-                                        }
+                            {
+                                // Create a new path that combines all paths in the chain
+                                for node in &skipped_nodes {
+                                    if let FileTreeNode::Directory(path, _) = node
+                                        && let Some(file_name) = path.file_name()
+                                    {
+                                        full_path.push(file_name);
                                     }
-
-                                    // Create a new directory node with the full path and the last node's children
-                                    let new_dir_node =
-                                        FileTreeNode::Directory(full_path, last_children.clone());
-
-                                    return Some((
-                                        FlattenedTreeItem {
-                                            is_root: is_root,
-                                            node: new_dir_node,
-                                            depth,
-                                        },
-                                        skipped_nodes,
-                                    ));
                                 }
+
+                                // Create a new directory node with the full path and the last node's children
+                                let new_dir_node =
+                                    FileTreeNode::Directory(full_path, last_children.clone());
+
+                                return Some((
+                                    FlattenedTreeItem {
+                                        is_root,
+                                        node: new_dir_node,
+                                        depth,
+                                    },
+                                    skipped_nodes,
+                                ));
                             }
                         }
                     }
@@ -698,16 +699,16 @@ impl Iterator for FileTreeIterator {
                 self.compress_directory_chain(&current_node, depth, depth == 0)
             {
                 // Get the last node in the chain to find its children
-                if let Some(last_node) = skipped_nodes.last() {
-                    if let FileTreeNode::Directory(_, last_children) = last_node {
-                        // Add the children of the last node in the chain to the stack
-                        for child in last_children.iter().rev() {
-                            // Skip it if it's already in our chain
-                            if !skipped_nodes.contains(child) {
-                                // Since compressed items are intended to be displayed as a single item, we add 1 to the depth.
-                                let new_depth = depth + 1;
-                                self.stack.push((child.clone(), new_depth));
-                            }
+                if let Some(last_node) = skipped_nodes.last()
+                    && let FileTreeNode::Directory(_, last_children) = last_node
+                {
+                    // Add the children of the last node in the chain to the stack
+                    for child in last_children.iter().rev() {
+                        // Skip it if it's already in our chain
+                        if !skipped_nodes.contains(child) {
+                            // Since compressed items are intended to be displayed as a single item, we add 1 to the depth.
+                            let new_depth = depth + 1;
+                            self.stack.push((child.clone(), new_depth));
                         }
                     }
                 }
@@ -717,11 +718,11 @@ impl Iterator for FileTreeIterator {
             }
 
             // Normal case - not a compressed directory chain
-            if let FileTreeNode::Directory(_, children) = &current_node {
-                if !children.is_empty() {
-                    for child_node in children.iter().rev() {
-                        self.stack.push((child_node.clone(), depth + 1));
-                    }
+            if let FileTreeNode::Directory(_, children) = &current_node
+                && !children.is_empty()
+            {
+                for child_node in children.iter().rev() {
+                    self.stack.push((child_node.clone(), depth + 1));
                 }
             }
 

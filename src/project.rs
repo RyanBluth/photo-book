@@ -61,6 +61,7 @@ use crate::{
 pub const PROJECT_VERSION: u32 = 12;
 
 #[derive(Error, Debug)]
+#[allow(clippy::enum_variant_names)]
 pub enum ProjectError {
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -103,10 +104,10 @@ impl Project {
                 .map(|photo| Photo {
                     path: photo.path.clone(),
                     rating: photo_manager.get_photo_rating(&photo.path),
-                    tags: photo_manager.get_photo_tags(&photo.path).into(),
+                    tags: photo_manager.get_photo_tags(&photo.path),
                     adjustments: photo_manager.get_photo_adjustments(&photo.path).into(),
                     metadata: photo.metadata.clone().into(),
-                    last_modified: photo.last_modified.clone(),
+                    last_modified: photo.last_modified,
                 })
                 .collect()
         });
@@ -1155,16 +1156,14 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
                     photo_manager.get_photo_rating(&canvas_photo.photo.path)
                 }),
                 tags: dep!(PhotoManager, |photo_manager| {
-                    photo_manager
-                        .get_photo_tags(&canvas_photo.photo.path)
-                        .into()
+                    photo_manager.get_photo_tags(&canvas_photo.photo.path)
                 }),
                 adjustments: dep!(PhotoManager, |photo_manager| {
                     photo_manager.get_photo_adjustments(&canvas_photo.photo.path)
                 })
                 .into(),
                 metadata: canvas_photo.photo.metadata.clone().into(),
-                last_modified: canvas_photo.photo.last_modified.clone(),
+                last_modified: canvas_photo.photo.last_modified,
             },
             adjustments: canvas_photo.adjustments.clone().into(),
             crop: canvas_photo.crop.into(),

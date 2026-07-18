@@ -201,7 +201,7 @@ pub fn chip(ui: &mut Ui, text: &str) -> ChipResponse {
     ChipResponse {
         clicked: response.clicked(),
         close_clicked: false,
-        response: response,
+        response,
     }
 }
 

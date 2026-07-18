@@ -93,10 +93,10 @@ impl<'a> QuickLayout<'a> {
                 ui.add(Slider::new(&mut new_margin, 0.0..=100.0));
             });
 
-            if let Some(ref last_layout) = self.state.last_layout {
-                if new_gap != self.state.gap || new_margin != self.state.margin {
-                    apply_layout_node(last_layout, self.canvas_state, new_gap, new_margin);
-                }
+            if let Some(ref last_layout) = self.state.last_layout
+                && (new_gap != self.state.gap || new_margin != self.state.margin)
+            {
+                apply_layout_node(last_layout, self.canvas_state, new_gap, new_margin);
             }
 
             self.state.gap = new_gap;

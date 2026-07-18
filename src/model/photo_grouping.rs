@@ -1,14 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum PhotoGrouping {
     Rating,
     Tag,
+    #[default]
     Date,
-}
-
-impl Default for PhotoGrouping {
-    fn default() -> Self {
-        Self::Date
-    }
 }

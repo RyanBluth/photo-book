@@ -44,7 +44,7 @@ impl MultiSelect {
             id: Id::random(),
         };
 
-        let res = Self {
+        Self {
             transformable_state: transformable_state.clone(),
             selected_layers: layers
                 .iter()
@@ -56,8 +56,7 @@ impl MultiSelect {
                     id: *id,
                 })
                 .collect(),
-        };
-        res
+        }
     }
 
     pub fn update_selected<'a>(&'a mut self, layers: &'a IndexMap<LayerId, Layer>) {
@@ -82,7 +81,7 @@ impl MultiSelect {
         let removed_layers = self
             .selected_layers
             .iter()
-            .filter(|child| !selected_layer_ids.iter().any(|id| child.id == *id))
+            .filter(|child| !selected_layer_ids.contains(&child.id))
             .map(|child| child.id)
             .collect::<Vec<_>>();
 
@@ -113,8 +112,8 @@ impl MultiSelect {
     }
 
     fn compute_rect(layers: &IndexMap<LayerId, Layer>, selected_layers: &[usize]) -> Rect {
-        let mut min = Vec2::splat(std::f32::MAX);
-        let mut max = Vec2::splat(std::f32::MIN);
+        let mut min = Vec2::splat(f32::MAX);
+        let mut max = Vec2::splat(f32::MIN);
 
         for layer_id in selected_layers {
             let layer = &layers.get(layer_id).unwrap();

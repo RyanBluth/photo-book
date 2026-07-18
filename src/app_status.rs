@@ -40,7 +40,7 @@ pub struct AppStatusIterItem<'a> {
 impl<'a> AppStatusIterItem<'a> {
     pub fn description(&self) -> String {
         match self.status {
-            AppJobStatus::Indefinite => format!("{}", self.job.title()),
+            AppJobStatus::Indefinite => self.job.title().to_string(),
             AppJobStatus::Finite { complete, total } => {
                 format!("{} ({}/{})", self.job.title(), complete, total)
             }
@@ -75,7 +75,7 @@ impl AppStatus {
     pub fn increment(&mut self, job: AppJob) {
         if let Some(item) = self.active.get_mut(&job) {
             match item {
-                AppJobStatus::Indefinite => return,
+                AppJobStatus::Indefinite => (),
                 AppJobStatus::Finite { complete, total } => {
                     *item = AppJobStatus::Finite {
                         complete: *complete + 1,

@@ -43,7 +43,7 @@ impl Widget for GalleryImage {
                         let scaled_image_size: Vec2 = image_size * scale;
 
                         let verical_spacing =
-                            (0.0 as f32).max((available_size.y - scaled_image_size.y) / 2.0);
+                            0.0_f32.max((available_size.y - scaled_image_size.y) / 2.0);
 
                         ui.add_space(verical_spacing);
 

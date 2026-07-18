@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::page::Page;
 
-pub const BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
+pub static BUILT_IN: Lazy<Vec<Template>> = Lazy::new(|| {
     vec![
         // 12x8 Single
         Template {

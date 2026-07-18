@@ -39,7 +39,7 @@ pub struct LeftSidebarResponse {
 impl Default for LeftSidebarState {
     fn default() -> Self {
         Self {
-            book_list_state: BookListState::default(),
+            book_list_state: BookListState,
             file_tree_state: FileTreeState::default(),
             album_list_state: AlbumListState::default(),
             book_list_section_state: CollapsableSectionState::new(true, "Books".to_string())

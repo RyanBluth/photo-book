@@ -18,6 +18,7 @@ pub mod gallery_scene;
 pub mod organize_edit_scene;
 pub mod viewer_scene;
 
+#[allow(clippy::large_enum_variant)]
 pub enum SceneResponse {
     None,
     Pop(ScenePopResponse),
@@ -51,14 +52,16 @@ impl SceneTransition {
 
 impl PartialEq for SceneTransition {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (SceneTransition::_OrganizeEdit(_), SceneTransition::_OrganizeEdit(_)) => true,
-            (SceneTransition::Gallery(_), SceneTransition::Gallery(_)) => true,
-            (SceneTransition::Viewer(_), SceneTransition::Viewer(_)) => true,
-            (SceneTransition::Canvas(_), SceneTransition::Canvas(_)) => true,
-            (SceneTransition::Crop(_), SceneTransition::Crop(_)) => true,
-            _ => false,
-        }
+        matches!(
+            (self, other),
+            (
+                SceneTransition::_OrganizeEdit(_),
+                SceneTransition::_OrganizeEdit(_)
+            ) | (SceneTransition::Gallery(_), SceneTransition::Gallery(_))
+                | (SceneTransition::Viewer(_), SceneTransition::Viewer(_))
+                | (SceneTransition::Canvas(_), SceneTransition::Canvas(_))
+                | (SceneTransition::Crop(_), SceneTransition::Crop(_))
+        )
     }
 }
 
@@ -130,6 +133,7 @@ impl Default for SceneManager {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum NavigationRequest {
     Push(SceneTransition),
     Pop(ScenePopResponse),
@@ -167,6 +171,7 @@ impl _CanvasSceneState {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum _SceneState {
     Gallery {
         state: ImageGalleryState,

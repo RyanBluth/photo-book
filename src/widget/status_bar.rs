@@ -1,14 +1,11 @@
-use egui::{
-    Align, FontId, Image, Layout, Rect, Response, RichText, Sense, Spinner, Stroke, Ui, UiBuilder,
-    Vec2, Widget,
-};
+use egui::{Align, FontId, Layout, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget};
 
 use crate::{
     app_status::AppStatus,
     assets::Asset,
     dep, dep_mut,
     session::Session,
-    theme::{self, color},
+    theme::{self},
     utils::EguiUiExt,
     widget::icon_button::IconButton,
 };
@@ -45,7 +42,7 @@ impl StatusBar {
 
         ui.sized(
             ui.id().with("status_left"),
-            |ui| Self::left_content(ui),
+            Self::left_content,
             |ui, left_size, add_contents| {
                 let left_rect = Rect::from_min_size(
                     inner_content_rect.left_top(),

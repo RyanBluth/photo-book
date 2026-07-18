@@ -87,7 +87,7 @@ impl CanvasState {
             multi_select: None,
             page,
             template,
-            quick_layout_order: quick_layout_order,
+            quick_layout_order,
             last_quick_layout: None,
             canvas_id: Id::random(),
             text_edit_mode: TextEditMode::None,
@@ -262,21 +262,9 @@ impl CanvasState {
     }
 
     pub fn swap_layer_centers_and_bounds(&mut self, layer_id1: LayerId, layer_id2: LayerId) {
-        let original_child_a_rect = self
-            .layers
-            .get(&layer_id1)
-            .unwrap()
-            .transform_state
-            .rect
-            .clone();
+        let original_child_a_rect = self.layers.get(&layer_id1).unwrap().transform_state.rect;
 
-        let original_child_b_rect = self
-            .layers
-            .get(&layer_id2)
-            .unwrap()
-            .transform_state
-            .rect
-            .clone();
+        let original_child_b_rect = self.layers.get(&layer_id2).unwrap().transform_state.rect;
 
         self.layers
             .get_mut(&layer_id1)

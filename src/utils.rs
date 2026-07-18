@@ -5,7 +5,7 @@ use eframe::{
     emath::Rot2,
     epaint::{Pos2, Rect, Vec2},
 };
-use egui::{Align, Id, InnerResponse, Layout, Response, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
 
 use crate::{
     cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue,
@@ -451,11 +451,11 @@ impl EguiUiExt for Ui {
 }
 
 pub trait ExifDateTimeExt {
-    fn into_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError>;
+    fn to_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError>;
 }
 
 impl ExifDateTimeExt for exif::DateTime {
-    fn into_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError> {
+    fn to_chrono_date_time(&self) -> Result<chrono::DateTime<Utc>, ParseError> {
         let naive_datetime =
             chrono::NaiveDateTime::parse_from_str(&self.to_string(), "%Y-%m-%d %H:%M:%S")?;
         let datetime = Utc.from_utc_datetime(&naive_datetime);

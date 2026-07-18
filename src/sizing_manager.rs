@@ -55,11 +55,11 @@ impl SizingManager {
         let available_rect = ui.available_rect_before_wrap();
         let available_size = available_rect.size();
 
-        if let Some(entry) = self.entries.get(&id) {
-            if sizes_match(entry.available_size, available_size) {
-                layout(ui, entry.measured_size, Box::new(add_contents));
-                return;
-            }
+        if let Some(entry) = self.entries.get(&id)
+            && sizes_match(entry.available_size, available_size)
+        {
+            layout(ui, entry.measured_size, Box::new(add_contents));
+            return;
         }
 
         let mut measure_ui = ui.new_child(
@@ -97,10 +97,10 @@ impl SizingManager {
     ) -> Vec2 {
         let available_size = available_rect.size();
 
-        if let Some(entry) = self.entries.get(&id) {
-            if sizes_match(entry.available_size, available_size) {
-                return entry.measured_size;
-            }
+        if let Some(entry) = self.entries.get(&id)
+            && sizes_match(entry.available_size, available_size)
+        {
+            return entry.measured_size;
         }
 
         let mut measure_ui = ui.new_child(

@@ -220,7 +220,7 @@ impl PhotoManager {
             app_status.update(AppJob::DiscoveringPhotos, AppJobStatus::Indefinite);
         });
         tokio::spawn(async move {
-            let glob_patterns = vec![
+            let glob_patterns = [
                 format!("{}/**/*.jpg", path.to_string_lossy()),
                 format!("{}/**/*.jpeg", path.to_string_lossy()),
                 format!("{}/**/*.png", path.to_string_lossy()),
@@ -995,7 +995,7 @@ impl PhotoManager {
     }
 
     fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
-        if photo_paths.len() > 0 {
+        if !photo_paths.is_empty() {
             dep_mut!(AppStatus, |app_status| {
                 app_status.start_finite(AppJob::GeneratingThumbnails, photo_paths.len());
             });
@@ -1025,189 +1025,185 @@ impl PhotoManager {
         Ok(())
     }
 
-    async fn gen_thumbnail(photo_path: &PathBuf, thumbnail_dir: &PathBuf) -> anyhow::Result<()> {
+    async fn gen_thumbnail(photo_path: &Path, thumbnail_dir: &Path) -> anyhow::Result<()> {
         let file_name = photo_path.file_name();
         let extension = photo_path.extension();
 
-        if let (Some(_), Some(extension)) = (file_name, extension) {
-            if extension.to_ascii_lowercase() == "jpg"
-                || extension.to_ascii_lowercase() == "png"
-                || extension.to_ascii_lowercase() == "jpeg"
-            {
-                // TODO: incorporate the last modified date of the photo into the hash
-                let hash = Photo::thumbnail_hash_for_path(photo_path);
+        if let (Some(_), Some(extension)) = (file_name, extension)
+            && (extension.eq_ignore_ascii_case("jpg")
+                || extension.eq_ignore_ascii_case("png")
+                || extension.eq_ignore_ascii_case("jpeg"))
+        {
+            // TODO: incorporate the last modified date of the photo into the hash
+            let hash = Photo::thumbnail_hash_for_path(photo_path);
 
-                let mut thumbnail_path = thumbnail_dir.join(&hash);
-                thumbnail_path.set_extension(extension);
+            let mut thumbnail_path = thumbnail_dir.join(&hash);
+            thumbnail_path.set_extension(extension);
 
-                if thumbnail_path.exists() {
-                    // info!("Thumbnail already exists for: {:?}", &photo_path);
-                    dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.mark_thumbnail_available(hash, &thumbnail_path);
-                    });
-
-                    return Ok(());
-                } else {
-                    info!("Generating thumbnail: {:?}", &thumbnail_path);
-                }
-
-                let file_bytes = tokio::fs::read(photo_path).await?;
-                let img = spawn_blocking(move || {
-                    let format = image::guess_format(&file_bytes)?;
-                    let reader =
-                        image::ImageReader::with_format(std::io::Cursor::new(file_bytes), format);
-                    let mut decoder = reader.into_decoder()?;
-                    let orientation = image::ImageDecoder::orientation(&mut decoder)?;
-                    let mut image = image::DynamicImage::from_decoder(decoder)?;
-                    image.apply_orientation(orientation);
-                    std::result::Result::<_, image::ImageError>::Ok(image)
-                })
-                .await??;
-
-                let color_type = img.color();
-
-                let width = img.width();
-                let height = img.height();
-
-                let mut src_image = fr::images::Image::from_vec_u8(
-                    img.width(),
-                    img.height(),
-                    // TODO: This isn't going to cover every type of image
-                    if color_type.has_alpha() {
-                        img.to_rgba8().into_raw()
-                    } else {
-                        img.into_rgb8().into_raw()
-                    },
-                    if color_type.has_alpha() {
-                        fr::PixelType::U8x4
-                    } else {
-                        fr::PixelType::U8x3
-                    },
-                )?;
-
-                // Multiple RGB channels of source image by alpha channel
-                // (not required for the Nearest algorithm)
-                let alpha_mul_div = fr::MulDiv::default();
-
-                if color_type.has_alpha() {
-                    alpha_mul_div.multiply_alpha_inplace(&mut src_image)?;
-                }
-
-                let ratio = height as f32 / width as f32;
-                let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
-                let dst_width: u32 = THUMBNAIL_SIZE as u32;
-
-                let (dst_width, dst_height) = (dst_width, dst_height);
-                let pixel_type = src_image.pixel_type();
-                let src_image = src_image;
-                let color_type = color_type;
-
-                let dst_image = spawn_blocking(move || {
-                    let mut dst_image = fr::images::Image::new(dst_width, dst_height, pixel_type);
-                    let mut resizer = fr::Resizer::new();
-
-                    // CPU extensions setup
-                    let mut cpu_extensions_vec = vec![CpuExtensions::None];
-                    #[cfg(target_arch = "x86_64")]
-                    {
-                        cpu_extensions_vec.push(CpuExtensions::Sse4_1);
-                        cpu_extensions_vec.push(CpuExtensions::Avx2);
-                    }
-                    #[cfg(target_arch = "aarch64")]
-                    {
-                        cpu_extensions_vec.push(CpuExtensions::Neon);
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        cpu_extensions_vec.push(CpuExtensions::Simd128);
-                    }
-
-                    for cpu_extension in cpu_extensions_vec {
-                        if cpu_extension.is_supported() {
-                            unsafe {
-                                resizer.set_cpu_extensions(cpu_extension);
-                                break;
-                            }
-                        }
-                    }
-
-                    resizer.resize(
-                        &src_image,
-                        &mut dst_image,
-                        &ResizeOptions {
-                            algorithm: fast_image_resize::ResizeAlg::Nearest,
-                            cropping: fast_image_resize::SrcCropping::None,
-                            mul_div_alpha: false,
-                        },
-                    )?;
-
-                    if color_type.has_alpha() {
-                        let alpha_mul_div = fr::MulDiv::default();
-                        alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
-                    }
-
-                    Ok::<_, anyhow::Error>(dst_image)
-                })
-                .await??;
-
-                // Write destination image as PNG-file
-                let mut result_buf = BufWriter::new(Vec::new());
-
-                match extension
-                    .to_ascii_lowercase()
-                    .to_str()
-                    .ok_or(anyhow!("Failed to convert extension to str"))?
-                {
-                    "jpg" | "jpeg" => match dst_image.pixel_type() {
-                        fr::PixelType::U8x4 => {
-                            let buffer = dst_image.buffer();
-                            let rgb_data: Vec<u8> = buffer
-                                .chunks_exact(4)
-                                .flat_map(|chunk| chunk[0..3].iter().copied())
-                                .collect();
-                            JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
-                                &rgb_data,
-                                dst_width,
-                                dst_height,
-                                ExtendedColorType::Rgb8,
-                            )?;
-                        }
-                        _ => {
-                            JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
-                                dst_image.buffer(),
-                                dst_width,
-                                dst_height,
-                                ExtendedColorType::Rgb8,
-                            )?;
-                        }
-                    },
-                    "png" => {
-                        PngEncoder::new(&mut result_buf).write_image(
-                            dst_image.buffer(),
-                            dst_width,
-                            dst_height,
-                            ExtendedColorType::Rgba8,
-                        )?;
-                    }
-                    _ => {
-                        return Err(anyhow::anyhow!("Invalid file extension"));
-                    }
-                }
-
-                let buf = result_buf.into_inner()?;
-
-                let mut file = TokioFile::create(&thumbnail_path).await?;
-                file.write_all(&buf).await?;
-                file.sync_all().await?;
-
-                info!("Thumbnail generated: {:?}", &thumbnail_path);
-
+            if thumbnail_path.exists() {
+                // info!("Thumbnail already exists for: {:?}", &photo_path);
                 dep_mut!(PhotoManager, |photo_manager| {
                     photo_manager.mark_thumbnail_available(hash, &thumbnail_path);
                 });
 
-                //ctx.request_repaint();
+                return Ok(());
+            } else {
+                info!("Generating thumbnail: {:?}", &thumbnail_path);
             }
+
+            let file_bytes = tokio::fs::read(photo_path).await?;
+            let img = spawn_blocking(move || {
+                let format = image::guess_format(&file_bytes)?;
+                let reader =
+                    image::ImageReader::with_format(std::io::Cursor::new(file_bytes), format);
+                let mut decoder = reader.into_decoder()?;
+                let orientation = image::ImageDecoder::orientation(&mut decoder)?;
+                let mut image = image::DynamicImage::from_decoder(decoder)?;
+                image.apply_orientation(orientation);
+                std::result::Result::<_, image::ImageError>::Ok(image)
+            })
+            .await??;
+
+            let color_type = img.color();
+
+            let width = img.width();
+            let height = img.height();
+
+            let mut src_image = fr::images::Image::from_vec_u8(
+                img.width(),
+                img.height(),
+                // TODO: This isn't going to cover every type of image
+                if color_type.has_alpha() {
+                    img.to_rgba8().into_raw()
+                } else {
+                    img.into_rgb8().into_raw()
+                },
+                if color_type.has_alpha() {
+                    fr::PixelType::U8x4
+                } else {
+                    fr::PixelType::U8x3
+                },
+            )?;
+
+            // Multiple RGB channels of source image by alpha channel
+            // (not required for the Nearest algorithm)
+            let alpha_mul_div = fr::MulDiv::default();
+
+            if color_type.has_alpha() {
+                alpha_mul_div.multiply_alpha_inplace(&mut src_image)?;
+            }
+
+            let ratio = height as f32 / width as f32;
+            let dst_height: u32 = (THUMBNAIL_SIZE * ratio) as u32;
+            let dst_width: u32 = THUMBNAIL_SIZE as u32;
+
+            let (dst_width, dst_height) = (dst_width, dst_height);
+            let pixel_type = src_image.pixel_type();
+            let dst_image = spawn_blocking(move || {
+                let mut dst_image = fr::images::Image::new(dst_width, dst_height, pixel_type);
+                let mut resizer = fr::Resizer::new();
+
+                // CPU extensions setup
+                let mut cpu_extensions_vec = vec![CpuExtensions::None];
+                #[cfg(target_arch = "x86_64")]
+                {
+                    cpu_extensions_vec.push(CpuExtensions::Sse4_1);
+                    cpu_extensions_vec.push(CpuExtensions::Avx2);
+                }
+                #[cfg(target_arch = "aarch64")]
+                {
+                    cpu_extensions_vec.push(CpuExtensions::Neon);
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    cpu_extensions_vec.push(CpuExtensions::Simd128);
+                }
+
+                for cpu_extension in cpu_extensions_vec {
+                    if cpu_extension.is_supported() {
+                        unsafe {
+                            resizer.set_cpu_extensions(cpu_extension);
+                            break;
+                        }
+                    }
+                }
+
+                resizer.resize(
+                    &src_image,
+                    &mut dst_image,
+                    &ResizeOptions {
+                        algorithm: fast_image_resize::ResizeAlg::Nearest,
+                        cropping: fast_image_resize::SrcCropping::None,
+                        mul_div_alpha: false,
+                    },
+                )?;
+
+                if color_type.has_alpha() {
+                    let alpha_mul_div = fr::MulDiv::default();
+                    alpha_mul_div.divide_alpha_inplace(&mut dst_image)?;
+                }
+
+                Ok::<_, anyhow::Error>(dst_image)
+            })
+            .await??;
+
+            // Write destination image as PNG-file
+            let mut result_buf = BufWriter::new(Vec::new());
+
+            match extension
+                .to_ascii_lowercase()
+                .to_str()
+                .ok_or(anyhow!("Failed to convert extension to str"))?
+            {
+                "jpg" | "jpeg" => match dst_image.pixel_type() {
+                    fr::PixelType::U8x4 => {
+                        let buffer = dst_image.buffer();
+                        let rgb_data: Vec<u8> = buffer
+                            .chunks_exact(4)
+                            .flat_map(|chunk| chunk[0..3].iter().copied())
+                            .collect();
+                        JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
+                            &rgb_data,
+                            dst_width,
+                            dst_height,
+                            ExtendedColorType::Rgb8,
+                        )?;
+                    }
+                    _ => {
+                        JpegEncoder::new_with_quality(&mut result_buf, 60).write_image(
+                            dst_image.buffer(),
+                            dst_width,
+                            dst_height,
+                            ExtendedColorType::Rgb8,
+                        )?;
+                    }
+                },
+                "png" => {
+                    PngEncoder::new(&mut result_buf).write_image(
+                        dst_image.buffer(),
+                        dst_width,
+                        dst_height,
+                        ExtendedColorType::Rgba8,
+                    )?;
+                }
+                _ => {
+                    return Err(anyhow::anyhow!("Invalid file extension"));
+                }
+            }
+
+            let buf = result_buf.into_inner()?;
+
+            let mut file = TokioFile::create(&thumbnail_path).await?;
+            file.write_all(&buf).await?;
+            file.sync_all().await?;
+
+            info!("Thumbnail generated: {:?}", &thumbnail_path);
+
+            dep_mut!(PhotoManager, |photo_manager| {
+                photo_manager.mark_thumbnail_available(hash, &thumbnail_path);
+            });
+
+            //ctx.request_repaint();
         }
 
         Ok(())
@@ -1272,19 +1268,19 @@ impl PhotoManager {
         self.photo_database.album_photos_iter(album_id)
     }
 
-    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &Path) {
         self.photo_database.add_to_album(album_id, photo_path);
     }
 
-    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &Path) {
         self.photo_database.remove_from_album(album_id, photo_path);
     }
 
-    pub fn get_photo_albums(&self, photo_path: &PathBuf) -> HashSet<AlbumId> {
+    pub fn get_photo_albums(&self, photo_path: &Path) -> HashSet<AlbumId> {
         self.photo_database.get_photo_albums(photo_path)
     }
 
-    pub fn create_album(&mut self, album_name: &String) -> Option<AlbumId> {
+    pub fn create_album(&mut self, album_name: &str) -> Option<AlbumId> {
         self.photo_database.create_album(album_name)
     }
 
@@ -1292,7 +1288,7 @@ impl PhotoManager {
         self.photo_database.insert_album(album)
     }
 
-    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &String) {
+    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &str) {
         self.photo_database.rename_album(album_id, new_name);
     }
 

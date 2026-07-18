@@ -140,49 +140,47 @@ impl<'a> Canvas<'a> {
 
         ui.set_clip_rect(canvas_rect);
 
-        if self.can_zoom() && ui.ctx().pointer_hover_pos().is_some() {
-            if is_pointer_on_canvas {
-                ui.input(|input| {
-                    for event in &input.events {
-                        if let egui::Event::MouseWheel { delta, unit, .. } = event {
-                            let scroll_delta = match unit {
-                                egui::MouseWheelUnit::Point => delta.y,
-                                egui::MouseWheelUnit::Line => {
-                                    delta.y * 20.0 // Approximate line height
-                                }
-                                egui::MouseWheelUnit::Page => delta.y * canvas_rect.height(),
-                            };
-
-                            if scroll_delta == 0.0 {
-                                continue;
+        if self.can_zoom() && ui.ctx().pointer_hover_pos().is_some() && is_pointer_on_canvas {
+            ui.input(|input| {
+                for event in &input.events {
+                    if let egui::Event::MouseWheel { delta, unit, .. } = event {
+                        let scroll_delta = match unit {
+                            egui::MouseWheelUnit::Point => delta.y,
+                            egui::MouseWheelUnit::Line => {
+                                delta.y * 20.0 // Approximate line height
                             }
+                            egui::MouseWheelUnit::Page => delta.y * canvas_rect.height(),
+                        };
 
-                            let zoom_factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
+                        if scroll_delta == 0.0 {
+                            continue;
+                        }
 
-                            let new_zoom = self.state.zoom * zoom_factor;
+                        let zoom_factor = if scroll_delta > 0.0 { 1.1 } else { 1.0 / 1.1 };
 
-                            if let Some(pointer_pos) = input.pointer.hover_pos() {
-                                let current_page_rect: Rect = Rect::from_center_size(
-                                    canvas_rect.center() + self.state.offset,
-                                    self.state.page.size_pixels() * self.state.zoom,
-                                );
-                                let old_pointer_to_page = pointer_pos - current_page_rect.center();
-                                let new_page_rect: Rect = Rect::from_center_size(
-                                    canvas_rect.center() + self.state.offset,
-                                    self.state.page.size_pixels() * new_zoom,
-                                );
-                                let new_pointer_to_page = pointer_pos - new_page_rect.center();
+                        let new_zoom = self.state.zoom * zoom_factor;
 
-                                // Corrected offset calculation
-                                self.state.offset += old_pointer_to_page
-                                    - new_pointer_to_page * (new_zoom / self.state.zoom);
+                        if let Some(pointer_pos) = input.pointer.hover_pos() {
+                            let current_page_rect: Rect = Rect::from_center_size(
+                                canvas_rect.center() + self.state.offset,
+                                self.state.page.size_pixels() * self.state.zoom,
+                            );
+                            let old_pointer_to_page = pointer_pos - current_page_rect.center();
+                            let new_page_rect: Rect = Rect::from_center_size(
+                                canvas_rect.center() + self.state.offset,
+                                self.state.page.size_pixels() * new_zoom,
+                            );
+                            let new_pointer_to_page = pointer_pos - new_page_rect.center();
 
-                                self.state.zoom = new_zoom;
-                            }
+                            // Corrected offset calculation
+                            self.state.offset += old_pointer_to_page
+                                - new_pointer_to_page * (new_zoom / self.state.zoom);
+
+                            self.state.zoom = new_zoom;
                         }
                     }
-                });
-            }
+                }
+            });
         }
 
         let page_rect: Rect = Rect::from_center_size(
@@ -246,10 +244,10 @@ impl<'a> Canvas<'a> {
         self.draw_tool(ui, page_rect);
 
         // Add action bar at the bottom
-        if self.state.layers.values().any(|layer| layer.selected) {
-            if let Some(response) = self.show_action_bar(ui) {
-                return Some(response);
-            }
+        if self.state.layers.values().any(|layer| layer.selected)
+            && let Some(response) = self.show_action_bar(ui)
+        {
+            return Some(response);
         }
 
         None
@@ -342,11 +340,7 @@ impl<'a> Canvas<'a> {
                 let selection_box =
                     self.screen_to_page_rect(page_rect, Rect::from_two_pos(*start_pos, mouse_pos));
                 for layer in self.state.layers.values_mut() {
-                    if layer.transform_state.rect.intersects(selection_box) {
-                        layer.selected = true;
-                    } else {
-                        layer.selected = false;
-                    }
+                    layer.selected = layer.transform_state.rect.intersects(selection_box);
                 }
 
                 ToolState::Idle(IdleTool::Select)
@@ -762,14 +756,13 @@ impl<'a> Canvas<'a> {
             None
         };
 
-        if let Some(transform_response) = transform_response {
-            if transform_response.ended_moving
+        if let Some(transform_response) = transform_response
+            && (transform_response.ended_moving
                 || transform_response.ended_resizing
-                || transform_response.ended_rotating
-            {
-                self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, self.state);
-            }
+                || transform_response.ended_rotating)
+        {
+            self.history_manager
+                .save_history(CanvasHistoryKind::Transform, self.state);
         }
     }
 
@@ -783,7 +776,7 @@ impl<'a> Canvas<'a> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap().clone();
         let active = layer.selected && self.state.multi_select.is_none();
 
-        let layer_response = match &mut layer.content {
+        match &mut layer.content {
             LayerContent::Photo(photo) => {
                 let gpu_photo_adjustments = self.gpu_photo_adjustments && !is_preview;
                 let gpu_render_key = format!(
@@ -842,7 +835,7 @@ impl<'a> Canvas<'a> {
                 });
 
                 self.state.layers.insert(*layer_id, layer.clone());
-                return transform_response;
+                transform_response
             }
             LayerContent::Text(text) => {
                 let mut transform_state = layer.transform_state.clone();
@@ -895,7 +888,7 @@ impl<'a> Canvas<'a> {
                             } else {
                                 Self::draw_text(
                                     ui,
-                                    &mut text_content.text,
+                                    &text_content.text,
                                     &text_content.font_id,
                                     transformed_rect,
                                     text_content.font_size * self.state.zoom,
@@ -1056,7 +1049,7 @@ impl<'a> Canvas<'a> {
                 );
 
                 // Check if this layer is being edited
-                let is_editing = self.state.text_edit_mode.is_editing(&layer_id);
+                let is_editing = self.state.text_edit_mode.is_editing(layer_id);
 
                 // Create a mutable copy of the text content to work with
                 let mut text_content = text.clone();
@@ -1101,7 +1094,7 @@ impl<'a> Canvas<'a> {
                 } else {
                     Self::draw_text(
                         ui,
-                        &mut text_content.text,
+                        &text_content.text,
                         &text_content.font_id,
                         rect,
                         text_content.font_size * self.state.zoom,
@@ -1129,7 +1122,7 @@ impl<'a> Canvas<'a> {
                 }
 
                 // Check for exiting edit mode
-                if is_editing && !self.state.text_edit_mode.is_editing(&layer_id) {
+                if is_editing && !self.state.text_edit_mode.is_editing(layer_id) {
                     self.state.text_edit_mode = TextEditMode::None;
                     self.history_manager
                         .save_history(CanvasHistoryKind::EditText, self.state);
@@ -1161,7 +1154,7 @@ impl<'a> Canvas<'a> {
             LayerContent::Shape(canvas_shape) => {
                 let mut transform_state = layer.transform_state.clone();
                 let response = ui.push_id(
-                    format!("shape_{}_{:?}", layer_id.to_string(), canvas_shape.kind),
+                    format!("shape_{}_{:?}", layer_id, canvas_shape.kind),
                     |ui| {
                         TransformableWidget::new(&mut transform_state).show(
                             ui,
@@ -1189,7 +1182,7 @@ impl<'a> Canvas<'a> {
                                                     .unwrap_or(Stroke::NONE),
                                                 canvas_shape
                                                     .stroke
-                                                    .map(|(_, kind)| kind.into())
+                                                    .map(|(_, kind)| kind)
                                                     .unwrap_or(StrokeKind::Outside),
                                             )
                                             .with_angle_and_pivot(
@@ -1278,9 +1271,7 @@ impl<'a> Canvas<'a> {
                 self.state.layers.insert(*layer_id, updated_layer);
                 Some(response.inner)
             }
-        };
-
-        layer_response
+        }
     }
 
     fn draw_quick_layout_number(
@@ -1319,6 +1310,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_editing_text(
         ui: &mut Ui,
         text: &mut String,
@@ -1391,9 +1383,10 @@ impl<'a> Canvas<'a> {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn draw_text(
         ui: &mut Ui,
-        text: &mut String,
+        text: &str,
         font_id: &FontId,
         rect: Rect,
         font_size: f32,
@@ -1419,7 +1412,7 @@ impl<'a> Canvas<'a> {
         // Create the text layout with wrapping
         let wrap_width = rect.width();
         let layout_font_id = FontManager::available_font_id(ui.ctx(), font_id, font_size);
-        let galley = ui.fonts_mut(|f| f.layout(text.clone(), layout_font_id, color, wrap_width));
+        let galley = ui.fonts_mut(|f| f.layout(text.to_owned(), layout_font_id, color, wrap_width));
 
         // For rotation, we need to think about the galley (actual text) size vs the rect size
         // The galley is positioned within the rect according to alignment
@@ -1635,13 +1628,13 @@ impl<'a> Canvas<'a> {
         match selected_layers.len() {
             1 => {
                 let layer_id = selected_layers[0];
-                if let Some(layer) = self.state.layers.get(&layer_id) {
-                    if let LayerContent::Photo(_photo) = &layer.content {
-                        actions.push(ActionItem {
-                            kind: ActionItemKind::Text("Crop".to_string()),
-                            action: ActionBarAction::Crop(layer_id),
-                        });
-                    }
+                if let Some(layer) = self.state.layers.get(&layer_id)
+                    && let LayerContent::Photo(_photo) = &layer.content
+                {
+                    actions.push(ActionItem {
+                        kind: ActionItemKind::Text("Crop".to_string()),
+                        action: ActionBarAction::Crop(layer_id),
+                    });
                 }
             }
             2 => {
@@ -1688,7 +1681,7 @@ impl<'a> Canvas<'a> {
                 .map(|item| format!("{:?}", item.action))
                 .collect::<String>();
 
-            match ui
+            if let ActionBarResponse::Clicked(action) = ui
                 .scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
                     AutoCenter::new(format!("action_bar_{}", action_bar_id))
                         .show(ui, |ui| {
@@ -1699,83 +1692,68 @@ impl<'a> Canvas<'a> {
                 })
                 .inner
             {
-                ActionBarResponse::Clicked(action) => {
-                    match action {
-                        ActionBarAction::SwapCenters(id1, id2) => {
-                            let original_child_a_rect = self
-                                .state
-                                .layers
-                                .get(&id1)
-                                .unwrap()
-                                .transform_state
-                                .rect
-                                .clone();
+                match action {
+                    ActionBarAction::SwapCenters(id1, id2) => {
+                        let original_child_a_rect =
+                            self.state.layers.get(&id1).unwrap().transform_state.rect;
 
-                            let original_child_b_rect = self
+                        let original_child_b_rect =
+                            self.state.layers.get(&id2).unwrap().transform_state.rect;
+
+                        self.state
+                            .layers
+                            .get_mut(&id1)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_b_rect.center());
+
+                        self.state
+                            .layers
+                            .get_mut(&id2)
+                            .unwrap()
+                            .transform_state
+                            .rect
+                            .set_center(original_child_a_rect.center());
+                    }
+                    ActionBarAction::SwapCentersAndBounds(id1, id2) => {
+                        self.state.swap_layer_centers_and_bounds(id1, id2);
+                    }
+                    ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
+                        if let Some(ref layout) = self.state.last_quick_layout.clone() {
+                            let first_id_index = self
                                 .state
-                                .layers
-                                .get(&id2)
-                                .unwrap()
-                                .transform_state
-                                .rect
-                                .clone();
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id1)
+                                .unwrap();
+
+                            let second_id_index = self
+                                .state
+                                .quick_layout_order
+                                .iter()
+                                .position(|id| *id == id2)
+                                .unwrap();
 
                             self.state
-                                .layers
-                                .get_mut(&id1)
-                                .unwrap()
-                                .transform_state
-                                .rect
-                                .set_center(original_child_b_rect.center());
+                                .quick_layout_order
+                                .swap(first_id_index, second_id_index);
 
-                            self.state
-                                .layers
-                                .get_mut(&id2)
-                                .unwrap()
-                                .transform_state
-                                .rect
-                                .set_center(original_child_a_rect.center());
-                        }
-                        ActionBarAction::SwapCentersAndBounds(id1, id2) => {
-                            self.state.swap_layer_centers_and_bounds(id1, id2);
-                        }
-                        ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
-                            if let Some(ref layout) = self.state.last_quick_layout.clone() {
-                                let first_id_index = self
-                                    .state
-                                    .quick_layout_order
-                                    .iter()
-                                    .position(|id| *id == id1)
-                                    .unwrap();
-
-                                let second_id_index = self
-                                    .state
-                                    .quick_layout_order
-                                    .iter()
-                                    .position(|id| *id == id2)
-                                    .unwrap();
-
-                                self.state
-                                    .quick_layout_order
-                                    .swap(first_id_index, second_id_index);
-
-                                apply_layout_node(layout, &mut self.state, 0.0, 0.0);
-                            }
-                        }
-                        ActionBarAction::Crop(layer_id) => {
-                            if let Some(layer) = self.state.layers.get(&layer_id) {
-                                if matches!(layer.content, LayerContent::Photo(_)) {
-                                    return Some(CanvasResponse::EnterCropMode {
-                                        target_layer: layer_id,
-                                    });
-                                }
-                            }
+                            apply_layout_node(layout, self.state, 0.0, 0.0);
                         }
                     }
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, self.state);
+                    ActionBarAction::Crop(layer_id) => {
+                        if let Some(layer) = self.state.layers.get(&layer_id)
+                            && matches!(layer.content, LayerContent::Photo(_))
+                        {
+                            return Some(CanvasResponse::EnterCropMode {
+                                target_layer: layer_id,
+                            });
+                        }
+                    }
                 }
-                _ => {}
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, self.state);
             }
         }
 

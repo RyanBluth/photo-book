@@ -590,7 +590,7 @@ impl OrganizeEditScene {
             return;
         };
 
-        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(&id));
+        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(id));
 
         let modal_response = dep!(ModalManager, |modal_manager| modal_manager
             .response_for(&id));
@@ -608,7 +608,7 @@ impl OrganizeEditScene {
             return;
         };
 
-        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(&id));
+        let exists = dep!(ModalManager, |modal_manager| modal_manager.exists(id));
 
         let modal_response = dep!(ModalManager, |modal_manager| modal_manager
             .response_for(&id));
@@ -896,7 +896,7 @@ impl Scene for OrganizeEditScene {
                 .frame(frame)
                 .show(ui, |ui| {
                     dep!(StringLog, |log| {
-                        LogViewer::new(&*log)
+                        LogViewer::new(log)
                             .id_salt("root_log_viewer_scroll")
                             .show(ui);
                     });

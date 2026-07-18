@@ -96,6 +96,7 @@ impl ToolState {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum _CreatingLayer {
     /// Line being created - stored here for live preview
     _Line(Layer, Pos2),

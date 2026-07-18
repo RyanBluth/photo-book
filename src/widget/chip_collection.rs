@@ -58,7 +58,7 @@ impl<'a, T: PartialEq + Display> Widget for _ChipCollection<'a, T> {
             ui.spacing_mut().item_spacing.x = self.spacing;
             ui.spacing_mut().item_spacing.y = self.spacing;
 
-            for (_index, item) in self.items.iter().enumerate() {
+            for item in self.items.iter() {
                 let text = item.to_string();
                 let is_selected = self.selected_item.map(|sel| sel == item).unwrap_or(false);
 

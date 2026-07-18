@@ -122,11 +122,11 @@ impl HistogramManager {
             return HistogramLoadResult::Pending(fallback);
         }
 
-        if !self.pending.contains_key(&key) {
+        self.pending.entry(key).or_insert_with(|| {
             let (sender, receiver) = oneshot::channel();
             spawn_histogram_job(thumbnail_path, adjustments.clone(), sender);
-            self.pending.insert(key, receiver);
-        }
+            receiver
+        });
 
         HistogramLoadResult::Pending(fallback)
     }

@@ -75,19 +75,10 @@ impl AlbumListLayout {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AlbumListState {
     pub selected_album: Option<AlbumId>,
     pub expanded_albums: HashSet<AlbumId>,
-}
-
-impl Default for AlbumListState {
-    fn default() -> Self {
-        Self {
-            selected_album: None,
-            expanded_albums: HashSet::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone)]

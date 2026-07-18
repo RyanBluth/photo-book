@@ -116,11 +116,11 @@ impl<'a> TagChips<'a> {
                             );
 
                             // Handle tag selection
-                            if let Some(clicked_idx) = chip_response.clicked_item() {
-                                if let Some(tag) = unselected_tags.get(clicked_idx) {
-                                    self.selected_tags.insert(tag.clone());
-                                    changed = true;
-                                }
+                            if let Some(clicked_idx) = chip_response.clicked_item()
+                                && let Some(tag) = unselected_tags.get(clicked_idx)
+                            {
+                                self.selected_tags.insert(tag.clone());
+                                changed = true;
                             }
                         } else {
                             ui.label("All available tags are selected");
@@ -144,11 +144,11 @@ impl<'a> TagChips<'a> {
                             );
 
                             // Handle tag removal
-                            if let Some(removed_idx) = selected_chip_response.closed_item() {
-                                if let Some(tag) = selected_vec.get(removed_idx) {
-                                    self.selected_tags.remove(tag);
-                                    changed = true;
-                                }
+                            if let Some(removed_idx) = selected_chip_response.closed_item()
+                                && let Some(tag) = selected_vec.get(removed_idx)
+                            {
+                                self.selected_tags.remove(tag);
+                                changed = true;
                             }
                         }
                     } else {

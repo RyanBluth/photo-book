@@ -58,11 +58,11 @@ impl<'a> AdjustmentSlider<'a> {
         if response.double_clicked() {
             *self.value = self.default;
             response.mark_changed();
-        } else if response.dragged() || response.clicked() {
-            if let Some(pointer_pos) = response.interact_pointer_pos() {
-                *self.value = value_from_x(pointer_pos.x, rect, &self.range);
-                response.mark_changed();
-            }
+        } else if (response.dragged() || response.clicked())
+            && let Some(pointer_pos) = response.interact_pointer_pos()
+        {
+            *self.value = value_from_x(pointer_pos.x, rect, &self.range);
+            response.mark_changed();
         }
 
         if response.has_focus() {

@@ -1,4 +1,3 @@
-use image::metadata;
 use std::{
     collections::{HashMap, HashSet},
     f32::consts::PI,
@@ -7,7 +6,7 @@ use std::{
     hash::{Hash, Hasher},
     io::BufReader,
     ops::{Deref, DerefMut},
-    path::PathBuf,
+    path::{Path, PathBuf},
 };
 use tokio::fs::File as TokioFile;
 
@@ -242,12 +241,12 @@ pub struct PhotoMetadata {
 
 impl PhotoMetadata {
     fn process_metadata(
-        path: &PathBuf,
+        path: &Path,
         exif: Result<exif::Exif, exif::Error>,
         size: imagesize::ImageSize,
     ) -> MetadataCollection {
         let mut fields = MetadataCollection::new();
-        fields.insert(PhotoMetadataField::Path(path.clone()));
+        fields.insert(PhotoMetadataField::Path(path.to_path_buf()));
 
         let width = size.width;
         let height = size.height;
@@ -313,44 +312,40 @@ impl PhotoMetadata {
                 fields.insert(PhotoMetadataField::RotatedHeight(height));
             }
 
-            if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY) {
-                if let Value::Ascii(ref vec) = field.value {
-                    if let Some(value) = vec.first() {
-                        fields.insert(PhotoMetadataField::Camera(
-                            String::from_utf8_lossy(value).to_string(),
-                        ));
-                    }
-                }
+            if let Some(field) = exif.get_field(Tag::Model, In::PRIMARY)
+                && let Value::Ascii(ref vec) = field.value
+                && let Some(value) = vec.first()
+            {
+                fields.insert(PhotoMetadataField::Camera(
+                    String::from_utf8_lossy(value).to_string(),
+                ));
             };
-            if let Some(field) = exif.get_field(Tag::LensModel, In::PRIMARY) {
-                if let Value::Ascii(ref vec) = field.value {
-                    if let Some(value) = vec.first() {
-                        let lens = String::from_utf8_lossy(value)
-                            .trim_matches(char::from(0))
-                            .trim()
-                            .to_string();
-                        if !lens.is_empty() {
-                            fields.insert(PhotoMetadataField::Lens(lens));
-                        }
-                    }
+            if let Some(field) = exif.get_field(Tag::LensModel, In::PRIMARY)
+                && let Value::Ascii(ref vec) = field.value
+                && let Some(value) = vec.first()
+            {
+                let lens = String::from_utf8_lossy(value)
+                    .trim_matches(char::from(0))
+                    .trim()
+                    .to_string();
+                if !lens.is_empty() {
+                    fields.insert(PhotoMetadataField::Lens(lens));
                 }
             }
-            if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY) {
-                if let Value::Ascii(ref vec) = field.value {
-                    if let Some(date_time) = vec
-                        .first()
-                        .and_then(|value| exif::DateTime::from_ascii(value).ok())
-                        .and_then(|exif_date_time| exif_date_time.into_chrono_date_time().ok())
-                    {
-                        fields.insert(PhotoMetadataField::DateTime(date_time))
-                    }
-                }
+            if let Some(field) = exif.get_field(Tag::DateTimeOriginal, In::PRIMARY)
+                && let Value::Ascii(ref vec) = field.value
+                && let Some(date_time) = vec
+                    .first()
+                    .and_then(|value| exif::DateTime::from_ascii(value).ok())
+                    .and_then(|exif_date_time| exif_date_time.to_chrono_date_time().ok())
+            {
+                fields.insert(PhotoMetadataField::DateTime(date_time))
             }
 
-            if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY) {
-                if let Some(value) = field.value.get_uint(0) {
-                    fields.insert(PhotoMetadataField::ISO(value));
-                }
+            if let Some(field) = exif.get_field(Tag::PhotographicSensitivity, In::PRIMARY)
+                && let Some(value) = field.value.get_uint(0)
+            {
+                fields.insert(PhotoMetadataField::ISO(value));
             }
 
             if let Some(field) = exif.get_field(Tag::ExposureTime, In::PRIMARY) {
@@ -375,26 +370,24 @@ impl PhotoMetadata {
                 }
             }
 
-            if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY) {
-                if let Value::Rational(ref vec) = field.value {
-                    if let Some(value) = vec.first() {
-                        fields.insert(PhotoMetadataField::Aperture(Rational {
-                            num: value.num as i32,
-                            denom: value.denom as i32,
-                        }));
-                    }
-                }
+            if let Some(field) = exif.get_field(Tag::FNumber, In::PRIMARY)
+                && let Value::Rational(ref vec) = field.value
+                && let Some(value) = vec.first()
+            {
+                fields.insert(PhotoMetadataField::Aperture(Rational {
+                    num: value.num as i32,
+                    denom: value.denom as i32,
+                }));
             }
 
-            if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY) {
-                if let Value::Rational(ref vec) = field.value {
-                    if let Some(value) = vec.first() {
-                        fields.insert(PhotoMetadataField::FocalLength(Rational {
-                            num: value.num as i32,
-                            denom: value.denom as i32,
-                        }));
-                    }
-                }
+            if let Some(field) = exif.get_field(Tag::FocalLength, In::PRIMARY)
+                && let Value::Rational(ref vec) = field.value
+                && let Some(value) = vec.first()
+            {
+                fields.insert(PhotoMetadataField::FocalLength(Rational {
+                    num: value.num as i32,
+                    denom: value.denom as i32,
+                }));
             }
         } else {
             fields.insert(PhotoMetadataField::Rotation(PhotoRotation::Normal));
@@ -405,10 +398,10 @@ impl PhotoMetadata {
         fields
     }
 
-    pub fn from_path(path: &PathBuf) -> Result<Self, PhotoError> {
+    pub fn from_path(path: &Path) -> Result<Self, PhotoError> {
         let file = File::open(path)?;
         let exif = Reader::new().read_from_container(&mut BufReader::new(&file));
-        let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
+        let size = imagesize::size(path).unwrap_or(imagesize::ImageSize {
             width: 0,
             height: 0,
         });
@@ -418,10 +411,10 @@ impl PhotoMetadata {
         })
     }
 
-    pub async fn from_path_async(path: &PathBuf) -> Result<Self, PhotoError> {
+    pub async fn from_path_async(path: &Path) -> Result<Self, PhotoError> {
         let file = TokioFile::open(path).await?;
         let exif = Reader::new().read_from_container(&mut BufReader::new(file.into_std().await));
-        let size = imagesize::size(path.clone()).unwrap_or(imagesize::ImageSize {
+        let size = imagesize::size(path).unwrap_or(imagesize::ImageSize {
             width: 0,
             height: 0,
         });
@@ -555,7 +548,7 @@ impl Photo {
         })
     }
 
-    pub(crate) fn thumbnail_hash_for_path(path: &PathBuf) -> String {
+    pub(crate) fn thumbnail_hash_for_path(path: &Path) -> String {
         hash64(&format!(
             "{}:{}",
             THUMBNAIL_CACHE_VERSION,
@@ -652,7 +645,7 @@ impl Photo {
         dep_mut!(PhotoManager, |pm| pm.remove_photo_tag(&self.path, tag));
     }
 
-    fn last_modified(path: &PathBuf) -> Option<DateTime<Utc>> {
+    fn last_modified(path: &Path) -> Option<DateTime<Utc>> {
         path.metadata()
             .map(|metadata| {
                 if let Ok(date) = metadata.modified() {
@@ -702,10 +695,10 @@ impl DerefMut for SaveOnDropPhoto<'_> {
 impl<'a> Drop for SaveOnDropPhoto<'a> {
     fn drop(&mut self) {
         dep_mut!(PhotoManager, |photo_manager| {
-            if let Some(current_photo) = photo_manager.photo_database.get_photo(&self.path) {
-                if current_photo != self.photo {
-                    photo_manager.update_photo(self.clone());
-                }
+            if let Some(current_photo) = photo_manager.photo_database.get_photo(&self.path)
+                && current_photo != self.photo
+            {
+                photo_manager.update_photo(self.clone());
             }
         });
     }

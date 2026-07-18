@@ -5,7 +5,7 @@ use font_kit::source::SystemSource;
 use font_kit::{handle::Handle, properties::Style};
 use indexmap::IndexMap;
 
-use crate::app_status::{self, AppJob, AppStatus};
+use crate::app_status::{AppJob, AppStatus};
 use crate::dep_mut;
 
 #[derive(Debug, PartialEq)]

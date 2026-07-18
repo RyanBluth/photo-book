@@ -163,23 +163,21 @@ impl<'a> AlignmentInfo<'a> {
                                 .width()
                                 + space_between
                                 + min;
-                            for i in 1..self.state.layers.len() - 1 {
-                                let width = self.state.layers[sorted_indices[i]]
-                                    .transform_state
-                                    .rect
-                                    .width();
-                                self.state.layers[sorted_indices[i]]
+                            for &index in sorted_indices
+                                .iter()
+                                .take(self.state.layers.len() - 1)
+                                .skip(1)
+                            {
+                                let width = self.state.layers[index].transform_state.rect.width();
+                                self.state.layers[index]
                                     .transform_state
                                     .rect
                                     .set_left(offset);
-                                self.state.layers[sorted_indices[i]]
+                                self.state.layers[index]
                                     .transform_state
                                     .rect
                                     .set_right(offset + width);
-                                offset += self.state.layers[sorted_indices[i]]
-                                    .transform_state
-                                    .rect
-                                    .width()
+                                offset += self.state.layers[index].transform_state.rect.width()
                                     + space_between;
                             }
                         }
@@ -217,23 +215,21 @@ impl<'a> AlignmentInfo<'a> {
                                 .height()
                                 + space_between
                                 + min;
-                            for i in 1..self.state.layers.len() - 1 {
-                                let height = self.state.layers[sorted_indices[i]]
-                                    .transform_state
-                                    .rect
-                                    .height();
-                                self.state.layers[sorted_indices[i]]
+                            for &index in sorted_indices
+                                .iter()
+                                .take(self.state.layers.len() - 1)
+                                .skip(1)
+                            {
+                                let height = self.state.layers[index].transform_state.rect.height();
+                                self.state.layers[index]
                                     .transform_state
                                     .rect
                                     .set_top(offset);
-                                self.state.layers[sorted_indices[i]]
+                                self.state.layers[index]
                                     .transform_state
                                     .rect
                                     .set_bottom(offset + height);
-                                offset += self.state.layers[sorted_indices[i]]
-                                    .transform_state
-                                    .rect
-                                    .height()
+                                offset += self.state.layers[index].transform_state.rect.height()
                                     + space_between;
                             }
                         }

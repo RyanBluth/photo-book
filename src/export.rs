@@ -7,9 +7,8 @@ use printpdf::{Mm, Op, PdfDocument, PdfPage, PdfSaveOptions, RawImage, XObjectTr
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::usize;
 
 use tokio::task::spawn_blocking;
 
@@ -29,6 +28,7 @@ use crate::widget::canvas::{Canvas, CanvasState};
 use crate::widget::canvas_info::layers::LayerContent;
 
 #[derive(Error, Debug, Clone)]
+#[allow(clippy::enum_variant_names)]
 pub enum ExportError {
     #[error("Failed to create surface")]
     SurfaceCreationError,
@@ -100,16 +100,16 @@ impl Exporter {
 
         let file_name = file_name.to_string();
 
-        if !directory.exists() {
-            if let Err(err) = std::fs::create_dir_all(&directory) {
-                let mut tasks = tasks.lock().unwrap();
-                tasks.insert(
-                    task_id,
-                    ExportTaskStatus::Failed(ExportError::FileError(err.to_string())),
-                );
-                ctx.request_repaint();
-                return task_id;
-            }
+        if !directory.exists()
+            && let Err(err) = std::fs::create_dir_all(&directory)
+        {
+            let mut tasks = tasks.lock().unwrap();
+            tasks.insert(
+                task_id,
+                ExportTaskStatus::Failed(ExportError::FileError(err.to_string())),
+            );
+            ctx.request_repaint();
+            return task_id;
         }
 
         spawn_blocking(move || {
@@ -118,7 +118,7 @@ impl Exporter {
 
             let show_export_failure_modal =
                 |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
-                    _ = dep_mut!(ModalManager, |modal_manager| {
+                    dep_mut!(ModalManager, |modal_manager| {
                         modal_manager.dismiss(progress_modal_id);
                     });
                     ModalManager::push(BasicModal::new(
@@ -179,7 +179,7 @@ impl Exporter {
     #[allow(deprecated)]
     fn export_page(
         mut canvas_state: CanvasState,
-        directory: &PathBuf,
+        directory: &Path,
         page_number: u32,
     ) -> Result<(), ExportError> {
         let directory = PathBuf::from(directory);
@@ -293,8 +293,8 @@ impl Exporter {
     }
 
     fn export_pdf(
-        pages: &Vec<CanvasState>,
-        directory: &PathBuf,
+        pages: &[CanvasState],
+        directory: &Path,
         file_name: &str,
     ) -> Result<(), ExportError> {
         let directory = PathBuf::from(directory);
@@ -302,10 +302,10 @@ impl Exporter {
         let mut doc = PdfDocument::new(file_name);
         let mut pdf_pages = Vec::new();
 
-        for page_number in 0..pages.len() {
+        for (page_number, page) in pages.iter().enumerate() {
             let image_path = directory.join(format!("page_{}.jpg", page_number));
 
-            let page_size = pages[page_number].page.size_mm();
+            let page_size = page.page.size_mm();
             let (mm_width, mm_height) = (Mm(page_size.x), Mm(page_size.y));
 
             // Load and decode the JPEG image
@@ -320,7 +320,7 @@ impl Exporter {
             let image_xobject_id = doc.add_image(&image);
 
             // Calculate transform based on DPI
-            let dpi = pages[page_number].page.ppi() as f32;
+            let dpi = page.page.ppi() as f32;
             let transform = XObjectTransform {
                 dpi: Some(dpi),
                 ..Default::default()

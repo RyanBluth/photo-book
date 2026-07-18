@@ -418,30 +418,28 @@ impl Scene for CanvasScene {
     }
 
     fn popped(&mut self, popped_scene_response: ScenePopResponse) {
-        match popped_scene_response {
-            ScenePopResponse::Crop(CropSceneResponse::Apply {
-                layer_id,
-                page_id,
-                crop,
-            }) => {
-                let page = self.state.pages_state.pages.get_mut(&page_id).unwrap();
-                let layer = page.layers.get_mut(&layer_id).unwrap();
-                if let LayerContent::Photo(photo) = &mut layer.content {
-                    photo.crop = crop;
+        if let ScenePopResponse::Crop(CropSceneResponse::Apply {
+            layer_id,
+            page_id,
+            crop,
+        }) = popped_scene_response
+        {
+            let page = self.state.pages_state.pages.get_mut(&page_id).unwrap();
+            let layer = page.layers.get_mut(&layer_id).unwrap();
+            if let LayerContent::Photo(photo) = &mut layer.content {
+                photo.crop = crop;
 
-                    let photo_rect: Rect = Rect::from_center_size(
-                        layer.transform_state.rect.center(),
-                        Vec2::new(
-                            photo.photo.metadata.rotated_width() as f32 * crop.size().x,
-                            photo.photo.metadata.rotated_height() as f32 * crop.size().y,
-                        ),
-                    );
+                let photo_rect: Rect = Rect::from_center_size(
+                    layer.transform_state.rect.center(),
+                    Vec2::new(
+                        photo.photo.metadata.rotated_width() as f32 * crop.size().x,
+                        photo.photo.metadata.rotated_height() as f32 * crop.size().y,
+                    ),
+                );
 
-                    layer.transform_state.rect =
-                        photo_rect.fit_and_center_within(layer.transform_state.rect);
-                }
+                layer.transform_state.rect =
+                    photo_rect.fit_and_center_within(layer.transform_state.rect);
             }
-            _ => {}
         }
     }
 }

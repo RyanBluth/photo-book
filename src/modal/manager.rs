@@ -23,24 +23,21 @@ pub struct TypedModalId<T: Modal> {
 
 impl<T: Modal> Clone for TypedModalId<T> {
     fn clone(&self) -> Self {
-        TypedModalId {
-            id: self.id,
-            _phantom: std::marker::PhantomData,
-        }
+        *self
     }
 }
 
 impl<T: Modal> Copy for TypedModalId<T> {}
 
-impl<T: Modal> Into<ModalId> for TypedModalId<T> {
-    fn into(self) -> ModalId {
-        self.id
+impl<T: Modal> From<TypedModalId<T>> for ModalId {
+    fn from(val: TypedModalId<T>) -> Self {
+        val.id
     }
 }
 
-impl<T: Modal> Into<ModalId> for &TypedModalId<T> {
-    fn into(self) -> ModalId {
-        self.id
+impl<T: Modal> From<&TypedModalId<T>> for ModalId {
+    fn from(val: &TypedModalId<T>) -> Self {
+        val.id
     }
 }
 
@@ -59,7 +56,6 @@ impl<T: Modal> Into<ModalId> for &TypedModalId<T> {
 ///     modal.update_value(42);
 /// });
 /// ```
-
 pub struct ModalManager {
     modals: IndexMap<ModalId, Arc<Mutex<Box<dyn DynModal>>>>,
     responses: HashMap<ModalId, Mutex<Box<dyn ModalResponse>>>,
@@ -175,11 +171,8 @@ impl ModalManager {
 
         self.responses.clear();
 
-        match self.modals.keys().last() {
-            Some(id) => {
-                self.show_modal(ui, *id);
-            }
-            None => {}
+        if let Some(id) = self.modals.keys().last() {
+            self.show_modal(ui, *id);
         }
     }
 

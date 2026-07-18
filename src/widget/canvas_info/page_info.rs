@@ -46,18 +46,18 @@ impl<'a> PageInfo<'a> {
                     .selected_text("Select size preset...")
                     .show_ui(ui, |ui| {
                         for preset in PageSizePreset::iter() {
-                            if ui.selectable_label(false, preset.to_string()).clicked() {
-                                if let Some((width, height)) = preset.dimensions() {
-                                    page.set_size(width, height);
-                                    page.edit_state.width.begin_editing();
-                                    page.edit_state.height.begin_editing();
+                            if ui.selectable_label(false, preset.to_string()).clicked()
+                                && let Some((width, height)) = preset.dimensions()
+                            {
+                                page.set_size(width, height);
+                                page.edit_state.width.begin_editing();
+                                page.edit_state.height.begin_editing();
 
-                                    *page.edit_state.width.editable_value() = width.to_string();
-                                    *page.edit_state.height.editable_value() = height.to_string();
+                                *page.edit_state.width.editable_value() = width.to_string();
+                                *page.edit_state.height.editable_value() = height.to_string();
 
-                                    page.edit_state.width.end_editing();
-                                    page.edit_state.height.end_editing();
-                                }
+                                page.edit_state.width.end_editing();
+                                page.edit_state.height.end_editing();
                             }
                         }
                     });

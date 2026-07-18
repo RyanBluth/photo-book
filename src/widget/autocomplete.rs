@@ -237,6 +237,7 @@ fn clamp_highlight(state: &mut AutocompleteState, filtered_len: usize) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn handle_keyboard<S: AsRef<str>>(
     ui: &mut Ui,
     text: &mut String,

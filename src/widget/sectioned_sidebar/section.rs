@@ -126,7 +126,7 @@ impl<'a> CollapsableSection<'a> {
                     return CollapsableSectionResponse::Collapsed;
                 }
             }
-            return CollapsableSectionResponse::None;
+            CollapsableSectionResponse::None
         })
         .inner
     }

@@ -185,18 +185,18 @@ impl<'a> Pages<'a> {
         });
 
         // Handle reordering
-        if let (Some(from_idx), Some(to_idx)) = (from, to) {
-            if from_idx != to_idx {
-                let (from_key, from_page) = self.state.pages.get_index(from_idx).unwrap();
-                let (from_key, from_page) = (from_key.clone(), from_page.clone());
+        if let (Some(from_idx), Some(to_idx)) = (from, to)
+            && from_idx != to_idx
+        {
+            let (from_key, from_page) = self.state.pages.get_index(from_idx).unwrap();
+            let (from_key, from_page) = (*from_key, from_page.clone());
 
-                self.state.pages.shift_remove(&from_key);
+            self.state.pages.shift_remove(&from_key);
 
-                if to_idx < self.state.pages.len() {
-                    self.state.pages.shift_insert(to_idx, from_key, from_page);
-                } else {
-                    self.state.pages.insert(from_key, from_page);
-                }
+            if to_idx < self.state.pages.len() {
+                self.state.pages.shift_insert(to_idx, from_key, from_page);
+            } else {
+                self.state.pages.insert(from_key, from_page);
             }
         }
 
@@ -215,23 +215,21 @@ impl<'a> Pages<'a> {
             }
 
             // Only show delete button if we have more than one page
-            if self.state.pages.len() > 1 {
-                if ui
+            if self.state.pages.len() > 1
+                && ui
                     .add(Button::image_and_text(Asset::add_page(), "Delete Page"))
                     .on_hover_text("Delete current page")
                     .clicked()
-                {
-                    if let Some(index) = self.state.pages.get_index_of(&self.state.selected_page) {
-                        self.state.pages.shift_remove_index(index);
-                        // Select the previous page, or the first page if we deleted the first one
-                        self.state.selected_page = *self
-                            .state
-                            .pages
-                            .get_index(index.saturating_sub(1))
-                            .unwrap()
-                            .0;
-                    }
-                }
+                && let Some(index) = self.state.pages.get_index_of(&self.state.selected_page)
+            {
+                self.state.pages.shift_remove_index(index);
+                // Select the previous page, or the first page if we deleted the first one
+                self.state.selected_page = *self
+                    .state
+                    .pages
+                    .get_index(index.saturating_sub(1))
+                    .unwrap()
+                    .0;
             }
         });
 

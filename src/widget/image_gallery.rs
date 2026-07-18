@@ -74,12 +74,12 @@ impl<'a> ImageGallery<'a> {
 
         if has_photos {
             ui.vertical(|ui| {
-                if ui.input(|input| input.key_down(Key::Escape)) {
-                    if !selection_snapshot.selected_paths.is_empty() {
-                        selection_snapshot = dep_mut!(SelectionManager, |selection_manager| {
-                            selection_manager.clear_this_frame(ui)
-                        });
-                    }
+                if ui.input(|input| input.key_down(Key::Escape))
+                    && !selection_snapshot.selected_paths.is_empty()
+                {
+                    selection_snapshot = dep_mut!(SelectionManager, |selection_manager| {
+                        selection_manager.clear_this_frame(ui)
+                    });
                 }
 
                 let spacing = 24.0;
@@ -89,9 +89,7 @@ impl<'a> ImageGallery<'a> {
                 let bottom_bar_id = ui.id().with("bottom_bar");
 
                 let top_bar_height = dep_mut!(SizingManager, |sizing_manager| {
-                    sizing_manager
-                        .size(ui, top_bar_id, |ui| add_filter_menu(ui))
-                        .y
+                    sizing_manager.size(ui, top_bar_id, add_filter_menu).y
                 });
                 let bottom_bar_height = dep_mut!(SizingManager, |sizing_manager| {
                     let mut measured_scale = state.scale;

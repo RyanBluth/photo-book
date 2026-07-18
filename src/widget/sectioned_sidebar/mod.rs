@@ -131,7 +131,7 @@ impl<'a> SectionedSidebarBuilder<'a> {
         let can_try_resize =
             self.section_index > 0 && state.expanded && is_any_previous_section_expanded;
 
-        let id = self.id.clone();
+        let id = self.id;
         let section_index = self.section_index;
         let section_id = id.with(section_index);
         let section_header_height = Self::section_header_height(ui);

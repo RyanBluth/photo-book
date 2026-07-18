@@ -337,7 +337,7 @@ mod tests {
         harness.fit_contents();
         harness.snapshot("histogram_lightroom_style");
         results.extend_harness(&mut harness);
-        results.assert();
+        results.unwrap();
     }
 
     fn sample_histogram() -> HistogramData {

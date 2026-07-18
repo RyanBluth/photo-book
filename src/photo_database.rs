@@ -2,7 +2,7 @@ use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
     hash::Hash,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::Arc,
 };
 
@@ -202,10 +202,10 @@ impl PhotoDatabase {
         if let Some(query_ratings) = &query.ratings {
             let mut rating_set: HashSet<Photo> = HashSet::new();
             for (path, rating) in &self.photo_ratings {
-                if query_ratings.contains(rating) {
-                    if let Some(photo) = self.get_photo(path) {
-                        rating_set.insert(photo.clone());
-                    }
+                if query_ratings.contains(rating)
+                    && let Some(photo) = self.get_photo(path)
+                {
+                    rating_set.insert(photo.clone());
                 }
             }
             result = result.intersection(&rating_set).cloned().collect();
@@ -215,10 +215,10 @@ impl PhotoDatabase {
             for tag in query_tags {
                 let mut tag_set: HashSet<Photo> = HashSet::new();
                 for (path, tags) in &self.photo_tags {
-                    if tags.contains(tag) {
-                        if let Some(photo) = self.get_photo(path) {
-                            tag_set.insert(photo.clone());
-                        }
+                    if tags.contains(tag)
+                        && let Some(photo) = self.get_photo(path)
+                    {
+                        tag_set.insert(photo.clone());
                     }
                 }
                 result = result.intersection(&tag_set).cloned().collect();
@@ -251,7 +251,7 @@ impl PhotoDatabase {
                     };
                     grouped_photos
                         .entry(group_label)
-                        .or_insert_with(IndexMap::new)
+                        .or_default()
                         .insert(photo.path.clone(), photo.clone());
                 }
                 PhotoGrouping::Tag => {
@@ -259,7 +259,7 @@ impl PhotoDatabase {
                     let group_label = format!("{:?}", tags);
                     grouped_photos
                         .entry(group_label)
-                        .or_insert_with(IndexMap::new)
+                        .or_default()
                         .insert(photo.path.clone(), photo.clone());
                 }
                 PhotoGrouping::Date => {
@@ -268,22 +268,22 @@ impl PhotoDatabase {
                         .fields
                         .get(PhotoMetadataFieldLabel::DateTime)
                         .and_then(|field| match field {
-                            PhotoMetadataField::DateTime(date_time) => Some(date_time.clone()),
+                            PhotoMetadataField::DateTime(date_time) => Some(*date_time),
                             _ => {
                                 if let Result::Ok(file_metadata) =
                                     std::fs::metadata(photo.path.clone())
                                 {
                                     if let Result::Ok(modified) = file_metadata.modified() {
                                         let modified_date_time: DateTime<Utc> = modified.into();
-                                        return Some(modified_date_time);
+                                        Some(modified_date_time)
                                     } else if let Result::Ok(created) = file_metadata.created() {
                                         let created_date_time: DateTime<Utc> = created.into();
-                                        return Some(created_date_time);
+                                        Some(created_date_time)
                                     } else {
-                                        return None;
+                                        None
                                     }
                                 } else {
-                                    return None;
+                                    None
                                 }
                             }
                         });
@@ -299,7 +299,7 @@ impl PhotoDatabase {
                     };
                     grouped_photos
                         .entry(key)
-                        .or_insert_with(IndexMap::new)
+                        .or_default()
                         .insert(photo.path.clone(), photo.clone());
                 }
             }
@@ -361,10 +361,10 @@ impl PhotoDatabase {
     }
 
     pub fn add_photo_tag(&mut self, path: &PathBuf, tag: String) {
-        if let Some(tags) = self.photo_tags.get(path) {
-            if tags.contains(&tag) {
-                return;
-            }
+        if let Some(tags) = self.photo_tags.get(path)
+            && tags.contains(&tag)
+        {
+            return;
         }
         self.photo_tags.entry(path.clone()).or_default().insert(tag);
         self.invalidate_query_cache();
@@ -509,11 +509,11 @@ impl PhotoDatabase {
         })
     }
 
-    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+    pub fn add_to_album(&mut self, album_id: &AlbumId, photo_path: &Path) {
         let changed = self
             .albums
             .get_mut(album_id)
-            .map(|album| album.photos.insert(photo_path.clone()))
+            .map(|album| album.photos.insert(photo_path.to_path_buf()))
             .unwrap_or(false);
 
         if changed {
@@ -521,7 +521,7 @@ impl PhotoDatabase {
         }
     }
 
-    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &PathBuf) {
+    pub fn remove_from_album(&mut self, album_id: &AlbumId, photo_path: &Path) {
         let changed = self
             .albums
             .get_mut(album_id)
@@ -533,7 +533,7 @@ impl PhotoDatabase {
         }
     }
 
-    pub fn create_album(&mut self, album_name: &String) -> Option<AlbumId> {
+    pub fn create_album(&mut self, album_name: &str) -> Option<AlbumId> {
         let album_name = album_name.trim();
         if album_name.is_empty() {
             return None;
@@ -559,7 +559,7 @@ impl PhotoDatabase {
         Some(album_id)
     }
 
-    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &String) {
+    pub fn rename_album(&mut self, album_id: &AlbumId, new_name: &str) {
         let new_name = new_name.trim();
         if new_name.is_empty() {
             return;
@@ -583,7 +583,7 @@ impl PhotoDatabase {
         }
     }
 
-    pub fn get_photo_albums(&self, photo_path: &PathBuf) -> HashSet<AlbumId> {
+    pub fn get_photo_albums(&self, photo_path: &Path) -> HashSet<AlbumId> {
         self.albums
             .values()
             .filter(|album| album.photos.contains(photo_path))
@@ -652,7 +652,7 @@ impl PhotoQueryResult {
             return Some(next_photo.clone());
         }
 
-        return None;
+        None
     }
 
     pub fn photo_before(&self, photo: &Photo) -> Option<Photo> {
@@ -670,7 +670,7 @@ impl PhotoQueryResult {
             return Some(prev_photo.clone());
         }
 
-        return None;
+        None
     }
 
     fn group_for_photo(&self, photo: &Photo) -> Option<String> {
@@ -1167,7 +1167,7 @@ mod tests {
     fn test_photo_album_membership_updates() {
         let mut db = PhotoDatabase::new();
         let path = PathBuf::from("/test/photo1.jpg");
-        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+        let album_id = db.create_album("Favorites").unwrap();
 
         db.add_photo(create_test_photo("/test/photo1.jpg", None));
         db.add_to_album(&album_id, &path);
@@ -1184,7 +1184,7 @@ mod tests {
     fn test_photo_album_membership_cleans_up_on_delete() {
         let mut db = PhotoDatabase::new();
         let path = PathBuf::from("/test/photo1.jpg");
-        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+        let album_id = db.create_album("Favorites").unwrap();
 
         db.add_photo(create_test_photo("/test/photo1.jpg", None));
         db.add_to_album(&album_id, &path);
@@ -1197,7 +1197,7 @@ mod tests {
     fn test_photo_album_membership_cleans_up_on_photo_remove() {
         let mut db = PhotoDatabase::new();
         let path = PathBuf::from("/test/photo1.jpg");
-        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+        let album_id = db.create_album("Favorites").unwrap();
 
         db.add_photo(create_test_photo("/test/photo1.jpg", None));
         db.add_to_album(&album_id, &path);
@@ -1213,7 +1213,7 @@ mod tests {
         let first_path = PathBuf::from("/test/photo2.jpg");
         let second_path = PathBuf::from("/test/photo1.jpg");
         let third_path = PathBuf::from("/test/photo3.jpg");
-        let album_id = db.create_album(&"Favorites".to_string()).unwrap();
+        let album_id = db.create_album("Favorites").unwrap();
 
         db.add_photo(create_test_photo("/test/photo1.jpg", None));
         db.add_photo(create_test_photo("/test/photo2.jpg", None));

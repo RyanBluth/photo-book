@@ -644,7 +644,7 @@ impl<'a> Layers<'a> {
                 .collect::<IndexMap<_, _>>();
 
             let (from_key, from_layer) = layers.get_index(from_idx).unwrap();
-            let (from_key, from_layer) = (from_key.clone(), from_layer.clone());
+            let (from_key, from_layer) = (*from_key, from_layer.clone());
 
             if to_idx < self.layers.len() {
                 layers.shift_insert(to_idx, from_key, from_layer.clone());

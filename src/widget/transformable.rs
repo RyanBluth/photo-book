@@ -329,10 +329,9 @@ impl<'a> TransformableWidget<'a> {
                                     if delta.x.abs() > delta.y.abs() && delta.x > 0.0 {
                                         new_rect.max.x += max_delta * ratio_x;
                                         new_rect.min.y -= max_delta * ratio_y;
-                                    } else if delta.x.abs() > delta.y.abs() && delta.x < 0.0 {
-                                        new_rect.max.x -= max_delta * ratio_x;
-                                        new_rect.min.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y > 0.0 {
+                                    } else if (delta.x.abs() > delta.y.abs() && delta.x < 0.0)
+                                        || (delta.y.abs() > delta.x.abs() && delta.y > 0.0)
+                                    {
                                         new_rect.max.x -= max_delta * ratio_x;
                                         new_rect.min.y += max_delta * ratio_y;
                                     } else if delta.y.abs() > delta.x.abs() && delta.y < 0.0 {
@@ -346,10 +345,9 @@ impl<'a> TransformableWidget<'a> {
                                     if delta.x.abs() > delta.y.abs() && delta.x > 0.0 {
                                         new_rect.min.x += max_delta * ratio_x;
                                         new_rect.max.y -= max_delta * ratio_y;
-                                    } else if delta.x.abs() > delta.y.abs() && delta.x < 0.0 {
-                                        new_rect.min.x -= max_delta * ratio_x;
-                                        new_rect.max.y += max_delta * ratio_y;
-                                    } else if delta.y.abs() > delta.x.abs() && delta.y > 0.0 {
+                                    } else if (delta.x.abs() > delta.y.abs() && delta.x < 0.0)
+                                        || (delta.y.abs() > delta.x.abs() && delta.y > 0.0)
+                                    {
                                         new_rect.min.x -= max_delta * ratio_x;
                                         new_rect.max.y += max_delta * ratio_y;
                                     } else if delta.y.abs() > delta.x.abs() && delta.y < 0.0 {
@@ -362,10 +360,10 @@ impl<'a> TransformableWidget<'a> {
                                     new_rect.max.y += delta_y;
                                 }
                                 TransformHandle::MiddleTop => {
-                                    new_rect.min.y -= delta.y * ratio_y * -1.0;
-                                    new_rect.max.y += delta.y * ratio_y * -1.0;
-                                    new_rect.min.x -= delta.y * ratio_x * -1.0;
-                                    new_rect.max.x += delta.y * ratio_x * -1.0;
+                                    new_rect.min.y -= -(delta.y * ratio_y);
+                                    new_rect.max.y += -(delta.y * ratio_y);
+                                    new_rect.min.x -= -(delta.y * ratio_x);
+                                    new_rect.max.x += -(delta.y * ratio_x);
                                 }
                                 TransformHandle::MiddleLeft => {
                                     new_rect.min.y += delta.x * ratio_y;
@@ -511,7 +509,7 @@ impl<'a> TransformableWidget<'a> {
         rotated_inner_content_rect: &Rect,
         handles: &[(TransformHandle, Pos2)],
     ) {
-        ui.ctx().pointer_latest_pos().map(|pos| {
+        if let Some(pos) = ui.ctx().pointer_latest_pos() {
             for (handle, handle_pos) in handles {
                 let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
                 if handle_rect.contains(pos) {
@@ -534,7 +532,7 @@ impl<'a> TransformableWidget<'a> {
                     });
                 }
             }
-        });
+        }
     }
 
     fn draw_bounds_with_handles(

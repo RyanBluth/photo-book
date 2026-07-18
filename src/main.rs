@@ -1,4 +1,10 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// hide console window on Windows in release
+// Several features are intentionally staged for future UI integration. Keep that code in place
+// without making normal builds noisy until the call sites are enabled.
+#![allow(dead_code, unused_macros)]
+// ISO is the established EXIF/UI spelling and is also serialized in project data.
+#![allow(clippy::upper_case_acronyms)]
 
 use std::{
     path::PathBuf,
