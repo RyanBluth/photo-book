@@ -203,7 +203,8 @@ impl Exporter {
             &mut canvas_state,
             Rect::from_min_max(Pos2::ZERO, size.to_pos2()),
             &mut history_manager,
-        );
+        )
+        .gpu_photo_adjustments(false);
 
         for layer in canvas.state.layers.values() {
             match &layer.content {
@@ -212,7 +213,11 @@ impl Exporter {
                     photo: Some(photo), ..
                 } => loop {
                     let result = dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.texture_for_blocking(&photo.photo, &backend.egui_ctx)
+                        photo_manager.texture_for_blocking_with_adjustments(
+                            &photo.photo,
+                            &photo.adjustments,
+                            &backend.egui_ctx,
+                        )
                     });
                     match result {
                         Ok(Some(_)) => break,

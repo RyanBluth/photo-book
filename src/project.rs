@@ -58,7 +58,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 11;
+pub const PROJECT_VERSION: u32 = 12;
 
 #[derive(Error, Debug)]
 pub enum ProjectError {
@@ -1138,6 +1138,7 @@ impl From<TemplateRegionKind> for AppTemplateRegionKind {
 #[derive(Debug, Clone, PartialEq, Savefile)]
 pub struct CanvasPhoto {
     pub photo: Photo,
+    pub adjustments: PhotoAdjustments,
     pub crop: Rect,
 }
 
@@ -1162,6 +1163,7 @@ impl From<AppCanvasPhoto> for CanvasPhoto {
                 metadata: canvas_photo.photo.metadata.clone().into(),
                 last_modified: canvas_photo.photo.last_modified.clone(),
             },
+            adjustments: canvas_photo.adjustments.clone().into(),
             crop: canvas_photo.crop.into(),
         }
     }
@@ -1176,14 +1178,11 @@ impl From<CanvasPhoto> for AppCanvasPhoto {
         dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.set_photo_rating(&canvas_photo.photo.path, canvas_photo.photo.rating);
             photo_manager.set_photo_tags(&canvas_photo.photo.path, canvas_photo.photo.tags.clone());
-            photo_manager.set_photo_adjustments(
-                &canvas_photo.photo.path,
-                canvas_photo.photo.adjustments.clone().into(),
-            );
         });
 
         Self {
             photo,
+            adjustments: canvas_photo.adjustments.into(),
             crop: canvas_photo.crop.into(),
         }
     }
@@ -1784,6 +1783,67 @@ mod tests {
         let restored_adjustments: AppPhotoAdjustments = project_adjustments.into();
 
         assert_eq!(restored_adjustments, adjustments);
+    }
+
+    #[test]
+    fn canvas_photo_adjustments_round_trip_as_instance_state() {
+        let photo_path = PathBuf::from("/test/canvas-photo.jpg");
+        let mut metadata_fields = AppMetadataCollection::new();
+        metadata_fields.insert(AppPhotoMetadataField::Path(photo_path.clone()));
+        metadata_fields.insert(AppPhotoMetadataField::Width(100));
+        metadata_fields.insert(AppPhotoMetadataField::Height(80));
+        metadata_fields.insert(AppPhotoMetadataField::Rotation(AppPhotoRotation::Normal));
+        metadata_fields.insert(AppPhotoMetadataField::RotatedWidth(100));
+        metadata_fields.insert(AppPhotoMetadataField::RotatedHeight(80));
+
+        let mut source_adjustments = AppPhotoAdjustments::default();
+        source_adjustments.light.exposure = 0.25;
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.set_photo_adjustments(&photo_path, source_adjustments.clone());
+        });
+
+        let mut canvas_adjustments = AppPhotoAdjustments::default();
+        canvas_adjustments.color.saturation = -0.4;
+
+        let app_canvas_photo = AppCanvasPhoto {
+            photo: AppPhoto::with_metadata(
+                photo_path.clone(),
+                AppPhotoMetadata {
+                    fields: metadata_fields,
+                },
+            ),
+            adjustments: canvas_adjustments.clone(),
+            crop: eframe::epaint::Rect::from_min_size(
+                eframe::epaint::Pos2::ZERO,
+                eframe::epaint::Vec2::splat(1.0),
+            ),
+        };
+
+        let project_canvas_photo: CanvasPhoto = app_canvas_photo.into();
+        assert_eq!(
+            AppPhotoAdjustments::from(project_canvas_photo.photo.adjustments.clone()),
+            source_adjustments
+        );
+        assert_eq!(
+            AppPhotoAdjustments::from(project_canvas_photo.adjustments.clone()),
+            canvas_adjustments
+        );
+
+        let mut unrelated_source_adjustments = AppPhotoAdjustments::default();
+        unrelated_source_adjustments.definition.amount = 0.7;
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.set_photo_adjustments(&photo_path, unrelated_source_adjustments.clone());
+        });
+
+        let restored_canvas_photo: AppCanvasPhoto = project_canvas_photo.into();
+
+        assert_eq!(restored_canvas_photo.adjustments, canvas_adjustments);
+        dep!(PhotoManager, |photo_manager| {
+            assert_eq!(
+                photo_manager.get_photo_adjustments(&photo_path),
+                unrelated_source_adjustments
+            );
+        });
     }
 
     #[test]

@@ -1,12 +1,12 @@
-use crate::{id::LayerId, photo::Photo, widget::canvas_info::layers::Layer};
+use crate::{
+    id::LayerId, model::photo_adjustments::PhotoAdjustments, photo::Photo,
+    widget::canvas_info::layers::Layer,
+};
 use eframe::epaint::{Pos2, Rect, Vec2};
 
 pub enum CanvasResponse {
     Exit,
-    EnterCropMode {
-        target_layer: LayerId,
-        photo: CanvasPhoto,
-    },
+    EnterCropMode { target_layer: LayerId },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,14 +106,18 @@ pub enum _CreatingLayer {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasPhoto {
     pub photo: Photo,
+    pub adjustments: PhotoAdjustments,
     // Normalized crop rect
     pub crop: Rect,
 }
 
 impl CanvasPhoto {
     pub fn new(photo: Photo) -> Self {
+        let adjustments = photo.adjustments();
+
         Self {
             photo,
+            adjustments,
             crop: Rect::from_min_size(Pos2::ZERO, Vec2::splat(1.0)),
         }
     }

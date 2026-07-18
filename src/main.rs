@@ -50,6 +50,7 @@ mod gpu_photo_adjustment;
 mod histogram_manager;
 mod history;
 mod id;
+mod image_utils;
 mod layout;
 mod modal;
 mod model;

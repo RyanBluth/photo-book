@@ -52,9 +52,9 @@ impl<'a> Pages<'a> {
         ui.spacing_mut().item_spacing = Vec2::splat(10.0);
 
         let window_width = ui.available_width();
-        let column_width = 256.0;
-        let row_height = 256.0;
-        let num_columns: usize = (window_width / column_width).floor() as usize;
+        let column_width = window_width.clamp(1.0, 256.0);
+        let row_height = column_width;
+        let num_columns = (window_width / column_width).floor().max(1.0) as usize;
 
         //let padding_size = num_columns as f32 * 10.0;
         let spacer_width = (window_width
@@ -63,7 +63,7 @@ impl<'a> Pages<'a> {
             - ui.spacing().item_spacing.x)
             .max(0.0);
 
-        let num_rows = self.state.pages.len().div_ceil(num_columns.max(1));
+        let num_rows = self.state.pages.len().div_ceil(num_columns);
 
         let mut clicked_page = None;
         let mut from = None;

@@ -1,5 +1,5 @@
 pub mod alignment;
-pub mod history_info;
+// pub mod history_info;
 pub mod layers;
 pub mod line_edit_control;
 pub mod line_tool_control;

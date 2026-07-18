@@ -1,13 +1,14 @@
 use std::hash::Hasher;
 
 use eframe::epaint::{Color32, Stroke};
-use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, StrokeKind, Vec2};
+use egui::{CursorIcon, FontId, Id, Image, Pos2, Rect, Sense, StrokeKind, Vec2};
 use indexmap::IndexMap;
 use strum_macros::{Display, EnumIter};
 
 use crate::{
     cursor_manager::CursorManager,
-    dep_mut,
+    dep, dep_mut,
+    gpu_photo_adjustment::{GpuPhotoAdjustmentRenderer, GpuPhotoPaintRequest, GpuPhotoSource},
     history::HistoricallyEqual,
     id::{LayerId, next_layer_id},
     model::{self, editable_value::EditableValue},
@@ -474,9 +475,19 @@ impl Layer {
 impl HistoricallyEqual for Layer {
     fn historically_equal_to(&self, other: &Self) -> bool {
         let layer_content_equal = match (&self.content, &other.content) {
-            (LayerContent::Photo(photo), LayerContent::Photo(other_photo)) => {
-                photo.photo == other_photo.photo
-            }
+            (LayerContent::Photo(photo), LayerContent::Photo(other_photo)) => photo == other_photo,
+            (
+                LayerContent::TemplatePhoto {
+                    region,
+                    photo,
+                    scale_mode,
+                },
+                LayerContent::TemplatePhoto {
+                    region: other_region,
+                    photo: other_photo,
+                    scale_mode: other_scale_mode,
+                },
+            ) => region == other_region && photo == other_photo && scale_mode == other_scale_mode,
             (LayerContent::Text(text), LayerContent::Text(other_text)) => {
                 text.text == other_text.text
                     && text.font_size == other_text.font_size
@@ -542,39 +553,17 @@ impl<'a> Layers<'a> {
                             let response = ui.dnd_drag_source(item_id, idx, |ui| {
                                 match &layer.content {
                                     LayerContent::Photo(canvas_photo) => {
-                                        let texture_id = dep_mut!(PhotoManager, |photo_manager| {
-                                            photo_manager.thumbnail_texture_for(
-                                                &canvas_photo.photo,
-                                                ui.ctx(),
-                                            )
-                                        });
-
-                                        let image_size =
-                                            Vec2::from(canvas_photo.photo.size_with_max_size(50.0));
-
-                                        match texture_id {
-                                            Ok(Some(texture_id)) => {
-                                                let image = Image::from_texture(texture_id)
-                                                    .fit_to_exact_size(image_size);
-                                                ui.add_sized(Vec2::new(70.0, 50.0), image);
-                                            }
-                                            _ => {
-                                                ui.add_sized(
-                                                    Vec2::new(70.0, 50.0),
-                                                    RectPlaceholder::new(
-                                                        image_size,
-                                                        color::SURFACE_EMPHASIS,
-                                                        0.0,
-                                                    ),
-                                                );
-                                            }
-                                        };
+                                        Self::show_photo_thumbnail(ui, *layer_id, canvas_photo);
                                     }
                                     LayerContent::Text(_) => {
                                         ui.label("Text");
                                     }
-                                    LayerContent::TemplatePhoto { .. } => {
-                                        ui.label("Template Photo");
+                                    LayerContent::TemplatePhoto { photo, .. } => {
+                                        if let Some(canvas_photo) = photo {
+                                            Self::show_photo_thumbnail(ui, *layer_id, canvas_photo);
+                                        } else {
+                                            ui.label("Template Photo");
+                                        }
                                     }
                                     LayerContent::TemplateText { .. } => {
                                         ui.label("Template Text");
@@ -686,5 +675,81 @@ impl<'a> Layers<'a> {
             Some(selected_layer_id) => LayersResponse::SelectedLayer(selected_layer_id),
             None => LayersResponse::None,
         }
+    }
+
+    fn show_photo_thumbnail(ui: &mut egui::Ui, layer_id: LayerId, canvas_photo: &CanvasPhoto) {
+        let texture = dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager
+                .unadjusted_thumbnail_texture_for(&canvas_photo.photo, ui.ctx())
+                .ok()
+                .flatten()
+        });
+        let bounds = Vec2::new(70.0, 50.0);
+        let image_size = Self::cropped_thumbnail_size(canvas_photo, bounds);
+        let (slot_rect, _) = ui.allocate_exact_size(bounds, Sense::hover());
+        let image_rect = Rect::from_center_size(slot_rect.center(), image_size);
+
+        let render_key = format!("layer-thumbnail:{layer_id}");
+        let gpu_result = (!canvas_photo.adjustments.is_identity()).then(|| {
+            dep!(GpuPhotoAdjustmentRenderer, |renderer| {
+                renderer.paint(
+                    ui,
+                    GpuPhotoPaintRequest {
+                        photo: &canvas_photo.photo,
+                        source: GpuPhotoSource::Thumbnail,
+                        clip_rect: ui.clip_rect(),
+                        rect: image_rect,
+                        source_uv: canvas_photo.crop,
+                        rotation_radians: 0.0,
+                        adjustments: &canvas_photo.adjustments,
+                        render_key: Some(&render_key),
+                    },
+                )
+            })
+        });
+
+        let adjusted_texture = if gpu_result.is_some_and(|result| result.requires_cpu_fallback()) {
+            dep_mut!(PhotoManager, |photo_manager| {
+                photo_manager
+                    .thumbnail_texture_for_with_adjustments(
+                        &canvas_photo.photo,
+                        &canvas_photo.adjustments,
+                        ui.ctx(),
+                    )
+                    .ok()
+                    .flatten()
+            })
+        } else {
+            None
+        };
+
+        if let Some(adjusted_texture) = adjusted_texture {
+            Image::from_texture(adjusted_texture)
+                .uv(canvas_photo.crop)
+                .paint_at(ui, image_rect);
+        } else if !gpu_result.is_some_and(|result| result.is_ready()) {
+            if let Some(texture) = texture {
+                Image::from_texture(texture)
+                    .uv(canvas_photo.crop)
+                    .paint_at(ui, image_rect);
+            } else {
+                ui.put(
+                    image_rect,
+                    RectPlaceholder::new(image_size, color::SURFACE_EMPHASIS, 0.0),
+                );
+            }
+        }
+    }
+
+    fn cropped_thumbnail_size(canvas_photo: &CanvasPhoto, bounds: Vec2) -> Vec2 {
+        let cropped_size = Vec2::new(
+            canvas_photo.photo.metadata.rotated_width() as f32 * canvas_photo.crop.width(),
+            canvas_photo.photo.metadata.rotated_height() as f32 * canvas_photo.crop.height(),
+        );
+        if cropped_size.x <= 0.0 || cropped_size.y <= 0.0 {
+            return bounds;
+        }
+
+        cropped_size * (bounds.x / cropped_size.x).min(bounds.y / cropped_size.y)
     }
 }

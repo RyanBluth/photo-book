@@ -35,6 +35,10 @@ struct Adjustments {
     uv_min_y: f32,
     uv_span_x: f32,
     uv_span_y: f32,
+    source_uv_min_x: f32,
+    source_uv_min_y: f32,
+    source_uv_span_x: f32,
+    source_uv_span_y: f32,
 };
 
 @group(0) @binding(0)
@@ -296,19 +300,25 @@ fn apply_sharpen(color: vec3<f32>, uv: vec2<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let source_uv = vec2<f32>(
+    let destination_uv = vec2<f32>(
         adjustments.uv_min_x + in.uv.x * adjustments.uv_span_x,
         adjustments.uv_min_y + in.uv.y * adjustments.uv_span_y,
     );
-    let uv = rotate_uv(source_uv, adjustments.rotation_radians);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    let local_uv = rotate_uv(destination_uv, adjustments.rotation_radians);
+    if (local_uv.x < 0.0 || local_uv.x > 1.0 || local_uv.y < 0.0 || local_uv.y > 1.0) {
         return vec4<f32>(0.0, 0.0, 0.0, 0.0);
     }
+    let uv = vec2<f32>(
+        adjustments.source_uv_min_x + local_uv.x * adjustments.source_uv_span_x,
+        adjustments.source_uv_min_y + local_uv.y * adjustments.source_uv_span_y,
+    );
 
     let sample = textureSample(source_texture, source_sampler, uv);
     var color = apply_adjustments(sample.rgb);
     color = apply_sharpen(color, uv);
     color = apply_grain(color, uv);
 
-    return vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), sample.a);
+    let alpha = sample.a;
+    let premultiplied_color = clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)) * alpha;
+    return vec4<f32>(premultiplied_color, alpha);
 }

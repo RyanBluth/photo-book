@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use egui::{Id, Key, Rect, Ui, Vec2};
-use egui_tiles::UiResponse;
+use egui_tiles::{Container, ContainerKind, SimplificationOptions, Tile, TileId, UiResponse};
 use indexmap::{IndexMap, indexmap};
 
 use crate::{
@@ -17,11 +17,12 @@ use crate::{
         canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
         canvas_info::{
             layers::{Layer, LayerContent},
-            panel::CanvasInfo,
+            panel::{CanvasAdjustments, CanvasArrange, CanvasLayers, CanvasProperties},
             quick_layout::{QuickLayout, QuickLayoutState},
         },
         image_gallery::{ImageGallery, ImageGalleryState},
         pages::{Pages, PagesResponse, PagesState},
+        photo_adjustments::PhotoAdjustmentsState,
         templates::{Templates, TemplatesResponse, TemplatesState},
     },
 };
@@ -37,10 +38,12 @@ use crate::widget::canvas::CanvasResponse;
 pub struct CanvasSceneState {
     pub gallery_state: ImageGalleryState,
     pub pages_state: PagesState,
-    history_manager: CanvasHistoryManager,
+    history_managers: IndexMap<PageId, CanvasHistoryManager>,
     templates_state: TemplatesState,
     export_task_id: Option<ExportTaskId>,
     quick_layout_state: QuickLayoutState,
+    adjustments_state: PhotoAdjustmentsState,
+    adjustments_history_pending: Option<PageId>,
     pub clipboard: Option<Vec<Layer>>,
 }
 
@@ -51,25 +54,39 @@ impl CanvasSceneState {
 
         Self {
             gallery_state: ImageGalleryState::default(),
-            history_manager: CanvasHistoryManager::with_initial_state(initial_state.clone()),
+            history_managers: indexmap! {
+                page_id => CanvasHistoryManager::with_initial_state(initial_state.clone())
+            },
             pages_state: PagesState::new(indexmap! { page_id => initial_state }, page_id),
             templates_state: TemplatesState::new(),
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
+            adjustments_state: PhotoAdjustmentsState::new(),
+            adjustments_history_pending: None,
             clipboard: None,
         }
     }
 
     pub fn with_pages(pages: IndexMap<PageId, CanvasState>, selected_page: PageId) -> Self {
+        let history_managers = pages
+            .iter()
+            .map(|(page_id, page)| {
+                (
+                    *page_id,
+                    CanvasHistoryManager::with_initial_state(page.clone()),
+                )
+            })
+            .collect();
+
         Self {
             gallery_state: ImageGalleryState::default(),
-            history_manager: CanvasHistoryManager::with_initial_state(
-                pages[&selected_page].clone(),
-            ),
+            history_managers,
             pages_state: PagesState::new(pages, selected_page),
             templates_state: TemplatesState::new(),
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
+            adjustments_state: PhotoAdjustmentsState::new(),
+            adjustments_history_pending: None,
             clipboard: None,
         }
     }
@@ -91,16 +108,46 @@ impl CanvasSceneState {
     pub fn selected_page_and_history_mut(
         &mut self,
     ) -> (&mut CanvasState, &mut CanvasHistoryManager) {
-        let page = self
-            .pages_state
-            .pages
-            .get_mut(&self.pages_state.selected_page)
-            .unwrap();
-        (&mut *page, &mut self.history_manager)
+        let selected_page = self.pages_state.selected_page;
+        let page = self.pages_state.pages.get_mut(&selected_page).unwrap();
+        let history = self.history_managers.get_mut(&selected_page).unwrap();
+        (page, history)
     }
 
     pub fn has_pages(&self) -> bool {
         !self.pages_state.pages.is_empty()
+    }
+
+    fn sync_history_managers(&mut self) {
+        self.history_managers
+            .retain(|page_id, _| self.pages_state.pages.contains_key(page_id));
+        for (page_id, page) in &self.pages_state.pages {
+            self.history_managers
+                .entry(*page_id)
+                .or_insert_with(|| CanvasHistoryManager::with_initial_state(page.clone()));
+        }
+    }
+
+    fn save_history_for_page(&mut self, page_id: PageId, kind: CanvasHistoryKind) {
+        let Some(page_snapshot) = self.pages_state.pages.get(&page_id).cloned() else {
+            return;
+        };
+        if let Some(history) = self.history_managers.get_mut(&page_id) {
+            history.save_history(kind, &page_snapshot);
+        }
+    }
+
+    fn save_selected_history(&mut self, kind: CanvasHistoryKind) {
+        self.save_history_for_page(self.pages_state.selected_page, kind);
+    }
+
+    fn flush_pending_adjustment_history(&mut self, pointer_down: bool) {
+        if pointer_down {
+            return;
+        }
+        if let Some(page_id) = self.adjustments_history_pending.take() {
+            self.save_history_for_page(page_id, CanvasHistoryKind::AdjustPhoto);
+        }
     }
 }
 
@@ -108,7 +155,10 @@ impl CanvasSceneState {
 pub enum CanvasScenePane {
     Gallery,
     Canvas,
-    Info,
+    Arrange,
+    Properties,
+    Adjustments,
+    Layers,
     Pages,
     Templates,
     QuickLayout,
@@ -138,18 +188,31 @@ impl CanvasScene {
         let left_tabs_ids = tiles.insert_tab_tile(left_tabs);
         let canvas_id = tiles.insert_pane(CanvasScenePane::Canvas);
 
-        let right_tabs = vec![
-            tiles.insert_pane(CanvasScenePane::Info),
-            tiles.insert_pane(CanvasScenePane::QuickLayout),
-        ];
-        let right_tabs_id = tiles.insert_tab_tile(right_tabs);
+        let properties_id = tiles.insert_pane(CanvasScenePane::Properties);
+        let arrange_id = tiles.insert_pane(CanvasScenePane::Arrange);
+        let adjustments_id = tiles.insert_pane(CanvasScenePane::Adjustments);
+        let inspector_tabs_id =
+            tiles.insert_tab_tile(vec![properties_id, arrange_id, adjustments_id]);
 
-        let children = vec![left_tabs_ids, canvas_id, right_tabs_id];
+        let layers_id = tiles.insert_pane(CanvasScenePane::Layers);
+        let quick_layout_id = tiles.insert_pane(CanvasScenePane::QuickLayout);
+        let layers_tabs_id = tiles.insert_tab_tile(vec![layers_id, quick_layout_id]);
+        let mut right_split = egui_tiles::Linear::new(
+            egui_tiles::LinearDir::Vertical,
+            vec![inspector_tabs_id, layers_tabs_id],
+        );
+        right_split.shares.set_share(inspector_tabs_id, 0.6);
+        right_split.shares.set_share(layers_tabs_id, 0.4);
+
+        // History is intentionally omitted from the default layout for now.
+        let right_panel_id = tiles.insert_container(right_split);
+
+        let children = vec![left_tabs_ids, canvas_id, right_panel_id];
 
         let mut linear_layout =
             egui_tiles::Linear::new(egui_tiles::LinearDir::Horizontal, children);
         linear_layout.shares.set_share(left_tabs_ids, 0.2);
-        linear_layout.shares.set_share(right_tabs_id, 0.2);
+        linear_layout.shares.set_share(right_panel_id, 0.2);
 
         Self {
             state,
@@ -158,32 +221,141 @@ impl CanvasScene {
     }
 
     pub fn set_right_sidebar_open(&mut self, open: bool) {
-        let Some(info_tile_id) = self.tree.tiles.find_pane(&CanvasScenePane::Info) else {
-            return;
-        };
-        let right_sidebar_tile_id = self
-            .tree
-            .tiles
-            .parent_of(info_tile_id)
-            .unwrap_or(info_tile_id);
-        self.tree.tiles.set_visible(right_sidebar_tile_id, open);
+        self.set_panes_visible(
+            &[
+                CanvasScenePane::Arrange,
+                CanvasScenePane::Properties,
+                CanvasScenePane::Adjustments,
+                CanvasScenePane::Layers,
+                CanvasScenePane::QuickLayout,
+            ],
+            open,
+        );
     }
 
     pub fn set_left_sidebar_open(&mut self, open: bool) {
-        let Some(gallery_tile_id) = self.tree.tiles.find_pane(&CanvasScenePane::Gallery) else {
-            return;
+        self.set_panes_visible(
+            &[
+                CanvasScenePane::Gallery,
+                CanvasScenePane::Pages,
+                CanvasScenePane::Templates,
+            ],
+            open,
+        );
+    }
+
+    fn set_panes_visible(&mut self, panes: &[CanvasScenePane], visible: bool) {
+        if let Some(root) = self.tree.root {
+            Self::set_matching_subtrees_visible(&mut self.tree.tiles, root, panes, visible);
+        }
+    }
+
+    fn set_matching_subtrees_visible(
+        tiles: &mut egui_tiles::Tiles<CanvasScenePane>,
+        tile_id: TileId,
+        panes: &[CanvasScenePane],
+        visible: bool,
+    ) -> PaneMembership {
+        let membership = match tiles.get(tile_id) {
+            Some(Tile::Pane(pane)) => PaneMembership {
+                matches: panes.contains(pane),
+                has_other_panes: !panes.contains(pane),
+            },
+            Some(Tile::Container(container)) => container
+                .children()
+                .copied()
+                .map(|child| Self::pane_membership(tiles, child, panes))
+                .fold(PaneMembership::default(), PaneMembership::merge),
+            None => PaneMembership::default(),
         };
-        let left_sidebar_tile_id = self
-            .tree
-            .tiles
-            .parent_of(gallery_tile_id)
-            .unwrap_or(gallery_tile_id);
-        self.tree.tiles.set_visible(left_sidebar_tile_id, open);
+
+        if membership.matches && !membership.has_other_panes {
+            tiles.set_visible(tile_id, visible);
+        } else if membership.matches {
+            let children = tiles
+                .get_container(tile_id)
+                .map(Container::children_vec)
+                .unwrap_or_default();
+            for child in children {
+                Self::set_matching_subtrees_visible(tiles, child, panes, visible);
+            }
+        }
+
+        membership
+    }
+
+    fn pane_membership(
+        tiles: &egui_tiles::Tiles<CanvasScenePane>,
+        tile_id: TileId,
+        panes: &[CanvasScenePane],
+    ) -> PaneMembership {
+        match tiles.get(tile_id) {
+            Some(Tile::Pane(pane)) => PaneMembership {
+                matches: panes.contains(pane),
+                has_other_panes: !panes.contains(pane),
+            },
+            Some(Tile::Container(container)) => container
+                .children()
+                .copied()
+                .map(|child| Self::pane_membership(tiles, child, panes))
+                .fold(PaneMembership::default(), PaneMembership::merge),
+            None => PaneMembership::default(),
+        }
+    }
+
+    fn ensure_non_canvas_panes_have_tabs(&mut self) {
+        let tile_ids = self.tree.tiles.tile_ids().collect::<Vec<_>>();
+
+        for tile_id in tile_ids {
+            if !matches!(
+                self.tree.tiles.get_pane(&tile_id),
+                Some(pane) if pane != &CanvasScenePane::Canvas
+            ) {
+                continue;
+            }
+
+            let parent_is_tabs = self
+                .tree
+                .tiles
+                .parent_of(tile_id)
+                .and_then(|parent_id| self.tree.tiles.get(parent_id))
+                .and_then(Tile::container_kind)
+                == Some(ContainerKind::Tabs);
+
+            if parent_is_tabs {
+                continue;
+            }
+
+            let Some(tile) = self.tree.tiles.remove(tile_id) else {
+                continue;
+            };
+            let new_tile_id = self.tree.tiles.next_free_id();
+            self.tree.tiles.insert(new_tile_id, tile);
+            self.tree.tiles.insert(
+                tile_id,
+                Tile::Container(Container::new_tabs(vec![new_tile_id])),
+            );
+        }
     }
 
     #[allow(dead_code)]
     pub fn with_state(state: CanvasSceneState) -> Self {
         Self::with_state_and_tree_id(state, "canvas_scene_tree")
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct PaneMembership {
+    matches: bool,
+    has_other_panes: bool,
+}
+
+impl PaneMembership {
+    fn merge(self, other: Self) -> Self {
+        Self {
+            matches: self.matches || other.matches,
+            has_other_panes: self.has_other_panes || other.has_other_panes,
+        }
     }
 }
 
@@ -225,6 +397,9 @@ impl Scene for CanvasScene {
 
         let mut navigator = Navigator::new();
 
+        self.state.sync_history_managers();
+        self.ensure_non_canvas_panes_have_tabs();
+
         self.tree.ui(
             &mut ViewerTreeBehavior {
                 scene_state: &mut self.state,
@@ -232,6 +407,8 @@ impl Scene for CanvasScene {
             },
             ui,
         );
+        self.state
+            .flush_pending_adjustment_history(ui.input(|input| input.pointer.primary_down()));
 
         match navigator.process_pending_request() {
             Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),
@@ -312,20 +489,16 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                                 *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
                             }
                             // Create a snapshot of the state after modification
-                            let page_snapshot = self.scene_state.selected_page().clone();
                             self.scene_state
-                                .history_manager
-                                .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
+                                .save_selected_history(CanvasHistoryKind::AddPhoto);
                         }
                     } else {
                         self.scene_state
                             .selected_page_mut()
                             .add_photo(photo.clone());
                         // Create a snapshot of the state after modification
-                        let page_snapshot = self.scene_state.selected_page().clone();
                         self.scene_state
-                            .history_manager
-                            .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
+                            .save_selected_history(CanvasHistoryKind::AddPhoto);
                     }
                 }
 
@@ -345,18 +518,32 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                 self.handle_keys(ui);
 
                 let rect = ui.max_rect();
-                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                let canvas_response = {
+                    let (page, history) = self.scene_state.selected_page_and_history_mut();
+                    Canvas::new(page, rect, history).show(ui)
+                };
 
-                match Canvas::new(page, rect, history).show(ui) {
-                    Some(CanvasResponse::EnterCropMode {
-                        target_layer,
-                        photo,
-                    }) => {
+                match canvas_response {
+                    Some(CanvasResponse::EnterCropMode { target_layer }) => {
+                        let page_id = self.scene_state.pages_state.selected_page;
+                        let Some(photo) = self
+                            .scene_state
+                            .selected_page()
+                            .layers
+                            .get(&target_layer)
+                            .and_then(|layer| match &layer.content {
+                                LayerContent::Photo(photo) => Some(photo.clone()),
+                                _ => None,
+                            })
+                        else {
+                            return UiResponse::None;
+                        };
                         let crop_scene = CropScene::new(
                             target_layer,
-                            self.scene_state.pages_state.selected_page,
+                            page_id,
                             rect,
                             photo.photo,
+                            photo.adjustments,
                             photo.crop,
                         );
                         self.navigator
@@ -368,7 +555,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     None => {}
                 }
             }
-            CanvasScenePane::Info => {
+            CanvasScenePane::Arrange => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
 
@@ -379,20 +566,75 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                let (page, history) = self.scene_state.selected_page_and_history_mut();
-                let response: egui::InnerResponse<
-                    crate::widget::canvas_info::panel::CanvasInfoResponse,
-                > = CanvasInfo {
-                    canvas_state: page,
-                    history_manager: history,
+                CanvasArrange {
+                    canvas_state: self.scene_state.selected_page_mut(),
+                }
+                .show(ui);
+            }
+            CanvasScenePane::Properties => {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
+
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No page selected");
+                    });
+                    return UiResponse::None;
+                }
+
+                CanvasProperties {
+                    canvas_state: self.scene_state.selected_page_mut(),
+                }
+                .show(ui);
+            }
+            CanvasScenePane::Adjustments => {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
+
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No page selected");
+                    });
+                    return UiResponse::None;
+                }
+
+                let response = {
+                    let pages_state = &mut self.scene_state.pages_state;
+                    let canvas_state = pages_state
+                        .pages
+                        .get_mut(&pages_state.selected_page)
+                        .unwrap();
+
+                    CanvasAdjustments {
+                        canvas_state,
+                        adjustments_state: &mut self.scene_state.adjustments_state,
+                    }
+                    .show(ui)
+                };
+
+                if response {
+                    self.scene_state.adjustments_history_pending =
+                        Some(self.scene_state.pages_state.selected_page);
+                }
+            }
+            CanvasScenePane::Layers => {
+                ui.painter()
+                    .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
+
+                if !self.scene_state.has_pages() {
+                    ui.centered_and_justified(|ui| {
+                        ui.heading("No page selected");
+                    });
+                    return UiResponse::None;
+                }
+
+                let response = CanvasLayers {
+                    canvas_state: self.scene_state.selected_page_mut(),
                 }
                 .show(ui);
 
-                if let Some(history_kind) = response.inner.history {
-                    let page_snapshot = self.scene_state.selected_page().clone();
-                    self.scene_state
-                        .history_manager
-                        .save_history(history_kind, &page_snapshot);
+                if let Some(history_kind) = response.history {
+                    self.scene_state.save_selected_history(history_kind);
                 }
             }
             CanvasScenePane::Pages => {
@@ -450,10 +692,20 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
         match pane {
             CanvasScenePane::Gallery => "Gallery".into(),
             CanvasScenePane::Canvas => "Canvas".into(),
-            CanvasScenePane::Info => "Info".into(),
+            CanvasScenePane::Arrange => "Arrange".into(),
+            CanvasScenePane::Properties => "Properties".into(),
+            CanvasScenePane::Adjustments => "Adjustments".into(),
+            CanvasScenePane::Layers => "Layers".into(),
             CanvasScenePane::Pages => "Pages".into(),
             CanvasScenePane::Templates => "Templates".into(),
             CanvasScenePane::QuickLayout => "Quick Layout".into(),
+        }
+    }
+
+    fn simplification_options(&self) -> SimplificationOptions {
+        SimplificationOptions {
+            prune_single_child_tabs: false,
+            ..Default::default()
         }
     }
 }
@@ -513,16 +765,8 @@ impl<'a> ViewerTreeBehavior<'a> {
 
                     page.update_quick_layout_order();
 
-                    let page_snapshot = self
-                        .scene_state
-                        .pages_state
-                        .pages
-                        .get(&page_id)
-                        .unwrap()
-                        .clone();
                     self.scene_state
-                        .history_manager
-                        .save_history(CanvasHistoryKind::AddPhoto, &page_snapshot);
+                        .save_history_for_page(page_id, CanvasHistoryKind::AddPhoto);
                 }
             }
         });
@@ -540,6 +784,7 @@ pub enum CanvasHistoryKind {
     EditText,
     SelectLayer,
     DeselectLayer,
+    AdjustPhoto,
     QuickLayout,
     AddShape,
 }
@@ -556,6 +801,7 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::EditText => write!(f, "Edit Text"),
             CanvasHistoryKind::SelectLayer => write!(f, "Select Layer"),
             CanvasHistoryKind::DeselectLayer => write!(f, "Deselect Layer"),
+            CanvasHistoryKind::AdjustPhoto => write!(f, "Adjust Photo"),
             CanvasHistoryKind::QuickLayout => write!(f, "Quick Layout"),
             CanvasHistoryKind::AddShape => write!(f, "Add Shape"),
         }
@@ -652,5 +898,120 @@ impl CanvasHistoryManager {
             self.save_history(kind, canvas_state);
         }
         res
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::page::Page;
+
+    #[test]
+    fn history_is_isolated_per_page() {
+        let first_page_id = next_page_id();
+        let second_page_id = next_page_id();
+        let mut state = CanvasSceneState::with_pages(
+            indexmap! {
+                first_page_id => CanvasState::new(),
+                second_page_id => CanvasState::new(),
+            },
+            first_page_id,
+        );
+
+        state
+            .pages_state
+            .pages
+            .get_mut(&first_page_id)
+            .unwrap()
+            .page = EditablePage::new(Page::with_size_inches(5.0, 7.0));
+        state.save_history_for_page(first_page_id, CanvasHistoryKind::_Page);
+        state
+            .pages_state
+            .pages
+            .get_mut(&first_page_id)
+            .unwrap()
+            .page = EditablePage::new(Page::with_size_inches(6.0, 8.0));
+        state.save_history_for_page(first_page_id, CanvasHistoryKind::_Page);
+        state
+            .pages_state
+            .pages
+            .get_mut(&second_page_id)
+            .unwrap()
+            .page = EditablePage::new(Page::with_size_inches(10.0, 12.0));
+        state.save_history_for_page(second_page_id, CanvasHistoryKind::_Page);
+
+        assert_eq!(
+            state.history_managers[&first_page_id].stack.history.len(),
+            2
+        );
+        assert_eq!(
+            state.history_managers[&second_page_id].stack.history.len(),
+            1
+        );
+
+        let first_page = state.pages_state.pages.get_mut(&first_page_id).unwrap();
+        state
+            .history_managers
+            .get_mut(&first_page_id)
+            .unwrap()
+            .undo(first_page);
+
+        assert_eq!(state.pages_state.pages[&first_page_id].page.size().x, 5.0);
+        assert_eq!(state.pages_state.pages[&second_page_id].page.size().x, 10.0);
+        assert_eq!(state.history_managers[&second_page_id].stack.index, 0);
+    }
+
+    #[test]
+    fn sidebar_toggle_collapses_default_subtree() {
+        let mut scene = CanvasScene::new();
+        let properties = scene
+            .tree
+            .tiles
+            .find_pane(&CanvasScenePane::Properties)
+            .unwrap();
+        let right_subtree = scene
+            .tree
+            .tiles
+            .parent_of(properties)
+            .and_then(|tabs| scene.tree.tiles.parent_of(tabs))
+            .unwrap();
+
+        scene.set_right_sidebar_open(false);
+        assert!(!scene.tree.tiles.is_visible(right_subtree));
+        assert!(
+            scene.tree.tiles.is_visible(
+                scene
+                    .tree
+                    .tiles
+                    .find_pane(&CanvasScenePane::Canvas)
+                    .unwrap()
+            )
+        );
+
+        scene.set_right_sidebar_open(true);
+        assert!(scene.tree.tiles.is_visible(right_subtree));
+    }
+
+    #[test]
+    fn sidebar_toggle_handles_panes_mixed_with_canvas() {
+        let mut tiles = egui_tiles::Tiles::default();
+        let canvas = tiles.insert_pane(CanvasScenePane::Canvas);
+        let arrange = tiles.insert_pane(CanvasScenePane::Arrange);
+        let mixed_tabs = tiles.insert_tab_tile(vec![canvas, arrange]);
+        let properties = tiles.insert_pane(CanvasScenePane::Properties);
+        let root = tiles.insert_horizontal_tile(vec![mixed_tabs, properties]);
+        let mut scene = CanvasScene {
+            state: CanvasSceneState::new(),
+            tree: egui_tiles::Tree::new("mixed_sidebar_tree", root, tiles),
+        };
+
+        scene.set_right_sidebar_open(false);
+        assert!(scene.tree.tiles.is_visible(canvas));
+        assert!(!scene.tree.tiles.is_visible(arrange));
+        assert!(!scene.tree.tiles.is_visible(properties));
+
+        scene.set_right_sidebar_open(true);
+        assert!(scene.tree.tiles.is_visible(arrange));
+        assert!(scene.tree.tiles.is_visible(properties));
     }
 }

@@ -1,21 +1,22 @@
 use eframe::egui::{self};
-use egui::InnerResponse;
+use egui::RichText;
 
 use crate::{
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
+    scene::canvas_scene::CanvasHistoryKind,
+    theme::color,
     widget::{
         canvas::{CanvasState, types::ToolKind},
         canvas_info::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             layers::CanvasShapeKind,
-            page_info::{PageInfo, PageInfoState},
         },
+        photo_adjustments::PhotoAdjustmentsState,
+        photo_adjustments_panel::PhotoAdjustmentsPanel,
     },
 };
 
 use super::{
-    history_info::{HistoryInfo, HistoryInfoState},
-    layers::{Layer, LayerContent, Layers, LayersResponse},
+    layers::{LayerContent, Layers, LayersResponse},
     line_edit_control::LineEditControl,
     line_tool_control::LineToolControl,
     scale_mode::{ScaleMode, ScaleModeState},
@@ -30,111 +31,190 @@ pub struct CanvasInfoResponse {
     pub history: Option<CanvasHistoryKind>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct CanvasInfo<'a> {
+#[derive(Debug)]
+pub struct CanvasArrange<'a> {
     pub canvas_state: &'a mut CanvasState,
-    pub history_manager: &'a mut CanvasHistoryManager,
 }
 
-impl<'a> CanvasInfo<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) -> InnerResponse<CanvasInfoResponse> {
-        let mut history = None;
+#[derive(Debug)]
+pub struct CanvasProperties<'a> {
+    pub canvas_state: &'a mut CanvasState,
+}
 
-        let response = ui.allocate_ui(ui.available_size(), |ui| {
-            ui.vertical(|ui| {
-                PageInfo::new(&mut PageInfoState::new(&mut self.canvas_state.page)).show(ui);
+#[derive(Debug)]
+pub struct CanvasAdjustments<'a> {
+    pub canvas_state: &'a mut CanvasState,
+    pub adjustments_state: &'a mut PhotoAdjustmentsState,
+}
 
-                AlignmentInfo::new(&mut AlignmentInfoState::new(
-                    self.canvas_state.page.size_pixels(),
-                    self.canvas_state
-                        .layers
-                        .iter_mut()
-                        .filter(|(_, layer)| layer.selected)
-                        .map(|(_, layer)| layer)
-                        .collect(),
-                ))
-                .show(ui);
+#[derive(Debug)]
+pub struct CanvasLayers<'a> {
+    pub canvas_state: &'a mut CanvasState,
+}
 
-                // TODO: Handle multi select
-                let selected_layer = self
-                    .canvas_state
+impl<'a> CanvasArrange<'a> {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        show_scrollable_panel(ui, "canvas_arrange_scroll", egui::Margin::same(12), |ui| {
+            AlignmentInfo::new(&mut AlignmentInfoState::new(
+                self.canvas_state.page.size_pixels(),
+                self.canvas_state
                     .layers
                     .iter_mut()
-                    .filter(|x| x.1.selected)
+                    .filter(|(_, layer)| layer.selected)
                     .map(|(_, layer)| layer)
-                    .next();
+                    .collect(),
+            ))
+            .show(ui);
+        });
+    }
+}
 
-                if let Some(layer) = selected_layer {
-                    if let LayerContent::TemplatePhoto {
-                        region: _,
-                        photo: _,
-                        scale_mode,
-                    } = &mut layer.content
-                    {
-                        ui.separator();
+impl<'a> CanvasProperties<'a> {
+    pub fn show(&mut self, ui: &mut egui::Ui) {
+        show_scrollable_panel(
+            ui,
+            "canvas_properties_scroll",
+            egui::Margin::same(12),
+            |ui| self.show_context_controls(ui),
+        );
+    }
 
-                        ScaleMode::new(&mut ScaleModeState::new(scale_mode)).show(ui);
-                    }
+    fn show_context_controls(&mut self, ui: &mut egui::Ui) {
+        // TODO: Handle multi select
+        let selected_layer = self
+            .canvas_state
+            .layers
+            .iter_mut()
+            .filter(|x| x.1.selected)
+            .map(|(_, layer)| layer)
+            .next();
 
-                    {
-                        TransformControl::new(TransformControlState::new(layer)).show(ui);
-
-                        ui.separator();
-
-                        if matches!(layer.content, LayerContent::Text(_)) {
-                            TextEditControl::new(layer).show(ui);
-                            ui.separator();
-                        } else if matches!(&layer.content, LayerContent::Shape(shape) if matches!(shape.kind, CanvasShapeKind::Line { .. })) {
-                            LineEditControl::new(layer).show(ui);
-                            ui.separator();
-                        } else if matches!(layer.content, LayerContent::Shape(_)) {
-                            ShapeEditControl::new(layer).show(ui);
-                            ui.separator();
-                        }
-                    }
-                } else {
-                    // No layer selected - show create mode controls based on current tool
-                    match self.canvas_state.tool_state.tool_kind() {
-                        ToolKind::Text => {
-                            TextToolControl::new(&mut self.canvas_state.text_tool_settings)
-                                .show(ui);
-                            ui.separator();
-                        }
-                        ToolKind::Rectangle => {
-                            ShapeToolControl::new(&mut self.canvas_state.rectangle_tool_settings)
-                                .show(ui);
-                            ui.separator();
-                        }
-                        ToolKind::Ellipse => {
-                            ShapeToolControl::new(&mut self.canvas_state.ellipse_tool_settings)
-                                .show(ui);
-                            ui.separator();
-                        }
-                        ToolKind::Line => {
-                            LineToolControl::new(&mut self.canvas_state.line_tool_settings).show(ui);
-                            ui.separator();
-                        }
-                        ToolKind::Select => {
-                            // No controls to show in select mode when nothing is selected
-                        }
-                    }
-                }
-
+        if let Some(layer) = selected_layer {
+            if let LayerContent::TemplatePhoto {
+                region: _,
+                photo: _,
+                scale_mode,
+            } = &mut layer.content
+            {
+                ScaleMode::new(&mut ScaleModeState::new(scale_mode)).show(ui);
                 ui.separator();
+            }
 
-                match Layers::new(&mut self.canvas_state.layers).show(ui) {
-                    LayersResponse::SelectedLayer(_) => {
-                        history = Some(CanvasHistoryKind::SelectLayer)
-                    }
-                    LayersResponse::None => {}
-                }
+            TransformControl::new(TransformControlState::new(layer)).show(ui);
 
+            if matches!(layer.content, LayerContent::Text(_)) {
                 ui.separator();
+                TextEditControl::new(layer).show(ui);
+            } else if matches!(&layer.content, LayerContent::Shape(shape) if matches!(shape.kind, CanvasShapeKind::Line { .. }))
+            {
+                ui.separator();
+                LineEditControl::new(layer).show(ui);
+            } else if matches!(layer.content, LayerContent::Shape(_)) {
+                ui.separator();
+                ShapeEditControl::new(layer).show(ui);
+            }
+        } else {
+            self.show_tool_controls(ui);
+        }
+    }
 
-                HistoryInfo::new(&mut HistoryInfoState::new(self.history_manager)).show(ui);
-            })
+    fn show_tool_controls(&mut self, ui: &mut egui::Ui) {
+        match self.canvas_state.tool_state.tool_kind() {
+            ToolKind::Text => {
+                TextToolControl::new(&mut self.canvas_state.text_tool_settings).show(ui);
+            }
+            ToolKind::Rectangle => {
+                ShapeToolControl::new(&mut self.canvas_state.rectangle_tool_settings).show(ui);
+            }
+            ToolKind::Ellipse => {
+                ShapeToolControl::new(&mut self.canvas_state.ellipse_tool_settings).show(ui);
+            }
+            ToolKind::Line => {
+                LineToolControl::new(&mut self.canvas_state.line_tool_settings).show(ui);
+            }
+            ToolKind::Select => {
+                self.show_empty_state(ui);
+            }
+        }
+    }
+
+    fn show_empty_state(&self, ui: &mut egui::Ui) {
+        ui.centered_and_justified(|ui| {
+            ui.label(
+                RichText::new("Select a layer to edit its properties").color(color::CONTROL_TEXT),
+            );
+        });
+    }
+}
+
+impl<'a> CanvasAdjustments<'a> {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> bool {
+        show_scrollable_panel(
+            ui,
+            "canvas_adjustments_scroll",
+            egui::Margin::same(12),
+            |ui| self.show_context_controls(ui),
+        )
+    }
+
+    fn show_context_controls(&mut self, ui: &mut egui::Ui) -> bool {
+        let selected_photo = self
+            .canvas_state
+            .layers
+            .iter_mut()
+            .filter(|(_, layer)| layer.selected)
+            .find_map(|(_, layer)| match &mut layer.content {
+                LayerContent::Photo(photo) => Some(photo),
+                LayerContent::TemplatePhoto {
+                    photo: Some(photo), ..
+                } => Some(photo),
+                _ => None,
+            });
+
+        if let Some(photo) = selected_photo {
+            PhotoAdjustmentsPanel::new(&photo.photo, &mut photo.adjustments, self.adjustments_state)
+                .show(ui)
+        } else {
+            ui.centered_and_justified(|ui| {
+                ui.label(
+                    RichText::new("Select a photo layer to edit its adjustments")
+                        .color(color::CONTROL_TEXT),
+                );
+            });
+            false
+        }
+    }
+}
+
+impl<'a> CanvasLayers<'a> {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> CanvasInfoResponse {
+        let mut history = None;
+
+        show_scrollable_panel(ui, "canvas_layers_scroll", egui::Margin::ZERO, |ui| {
+            match Layers::new(&mut self.canvas_state.layers).show(ui) {
+                LayersResponse::SelectedLayer(_) => history = Some(CanvasHistoryKind::SelectLayer),
+                LayersResponse::None => {}
+            }
         });
 
-        InnerResponse::new(CanvasInfoResponse { history }, response.response)
+        CanvasInfoResponse { history }
     }
+}
+
+fn show_scrollable_panel<R>(
+    ui: &mut egui::Ui,
+    id_salt: &'static str,
+    content_margin: egui::Margin,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.allocate_ui(ui.available_size(), |ui| {
+        egui::ScrollArea::vertical()
+            .id_salt(id_salt)
+            .max_height(ui.available_height())
+            .auto_shrink([false, false])
+            .content_margin(content_margin)
+            .show(ui, add_contents)
+            .inner
+    })
+    .inner
 }

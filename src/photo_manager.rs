@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, HashSet},
     io::BufWriter,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use glob::MatchOptions;
@@ -25,6 +24,7 @@ use crate::{
     app_status::{AppJob, AppJobStatus, AppStatus},
     dep, dep_mut,
     dirs::Dirs,
+    image_utils::{decode_oriented_image, path_version_key},
     model::{
         album::{Album, AlbumId},
         photo_adjustments::PhotoAdjustments,
@@ -344,11 +344,21 @@ impl PhotoManager {
         photo: &Photo,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let adjustments = self.get_photo_adjustments(&photo.path);
+        self.thumbnail_texture_for_with_adjustments(photo, &adjustments, ctx)
+    }
+
+    pub fn thumbnail_texture_for_with_adjustments(
+        &mut self,
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
         if !self.thumbnail_exists(photo) {
             return Ok(None);
         }
 
-        let adjustments = self.get_photo_adjustments(&photo.path);
+        let allow_adjustment_jobs = !ctx.input(|input| input.pointer.primary_down());
         let cache = self.get_cache_mut(ctx);
         if adjustments.is_identity() {
             Self::load_texture(
@@ -358,7 +368,13 @@ impl PhotoManager {
                 &mut cache.pending_textures,
             )
         } else {
-            Self::load_adjusted_thumbnail_texture(photo, &adjustments, ctx, cache)
+            Self::load_adjusted_thumbnail_texture(
+                photo,
+                adjustments,
+                allow_adjustment_jobs,
+                ctx,
+                cache,
+            )
         }
     }
 
@@ -402,6 +418,7 @@ impl PhotoManager {
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
         let adjustments = self.get_photo_adjustments(&photo.path);
+        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
         let cache = self.get_cache_mut(ctx);
         let protected_uri = if adjustments.is_identity() {
             uri.clone()
@@ -411,7 +428,14 @@ impl PhotoManager {
         let result = if adjustments.is_identity() {
             Self::load_full_res_texture(&uri, ctx, cache)
         } else {
-            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+            Self::load_adjusted_full_res_texture(
+                photo,
+                &adjustments,
+                max_texture_side,
+                !ctx.input(|input| input.pointer.primary_down()),
+                ctx,
+                cache,
+            )
         };
 
         Self::evict_full_res_textures(ctx, cache, &protected_uri);
@@ -419,23 +443,31 @@ impl PhotoManager {
         result
     }
 
-    pub fn texture_for_blocking(
+    pub fn texture_for_blocking_with_adjustments(
         &mut self,
         photo: &Photo,
+        adjustments: &PhotoAdjustments,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
-        let adjustments = self.get_photo_adjustments(&photo.path);
+        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
         let cache = self.get_cache_mut(ctx);
         let protected_uri = if adjustments.is_identity() {
             uri.clone()
         } else {
-            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
         };
         let result = if adjustments.is_identity() {
             Self::load_full_res_texture_blocking(&uri, ctx, cache)
         } else {
-            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+            Self::load_adjusted_full_res_texture(
+                photo,
+                adjustments,
+                max_texture_side,
+                true,
+                ctx,
+                cache,
+            )
         };
 
         Self::evict_full_res_textures(ctx, cache, &protected_uri);
@@ -443,24 +475,33 @@ impl PhotoManager {
         result
     }
 
-    pub fn texture_for_photo_with_thumbail_backup(
+    pub fn texture_for_photo_with_thumbnail_fallback(
         &mut self,
         photo: &Photo,
+        adjustments: &PhotoAdjustments,
         ctx: &Context,
     ) -> anyhow::Result<Option<SizedTexture>> {
+        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
         let uri = photo.uri();
-        let adjustments = self.get_photo_adjustments(&photo.path);
         let thumbnail_exists = self.thumbnail_exists(photo);
+        let allow_adjustment_jobs = !ctx.input(|input| input.pointer.primary_down());
         let cache = self.get_cache_mut(ctx);
         let protected_uri = if adjustments.is_identity() {
             uri.clone()
         } else {
-            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), &adjustments)
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
         };
         let full_res_result = if adjustments.is_identity() {
             Self::load_full_res_texture(&uri, ctx, cache)
         } else {
-            Self::load_adjusted_full_res_texture(photo, &adjustments, ctx, cache)
+            Self::load_adjusted_full_res_texture(
+                photo,
+                adjustments,
+                max_texture_side,
+                allow_adjustment_jobs,
+                ctx,
+                cache,
+            )
         };
         let result = match full_res_result {
             Ok(Some(tex)) => Ok(Some(tex)),
@@ -471,12 +512,55 @@ impl PhotoManager {
                 &mut cache.texture_cache,
                 &mut cache.pending_textures,
             ),
-            _ => Self::load_adjusted_thumbnail_texture(photo, &adjustments, ctx, cache),
+            _ if allow_adjustment_jobs => {
+                Self::load_adjusted_thumbnail_texture(photo, adjustments, true, ctx, cache)
+            }
+            _ => Self::load_texture(
+                &photo.thumbnail_uri(),
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            ),
         };
 
         Self::evict_full_res_textures(ctx, cache, &protected_uri);
 
         result
+    }
+
+    pub fn unadjusted_texture_for_photo_with_thumbnail_fallback(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        let uri = photo.uri();
+        let thumbnail_exists = self.thumbnail_exists(photo);
+        let cache = self.get_cache_mut(ctx);
+        let result = match Self::load_full_res_texture(&uri, ctx, cache) {
+            Ok(Some(texture)) => Ok(Some(texture)),
+            _ if !thumbnail_exists => Ok(None),
+            _ => Self::load_texture(
+                &photo.thumbnail_uri(),
+                ctx,
+                &mut cache.texture_cache,
+                &mut cache.pending_textures,
+            ),
+        };
+
+        Self::evict_full_res_textures(ctx, cache, &uri);
+        result
+    }
+
+    pub fn unadjusted_gpu_placeholder_texture_for(
+        &mut self,
+        photo: &Photo,
+        ctx: &Context,
+    ) -> anyhow::Result<Option<SizedTexture>> {
+        if !self.thumbnail_exists(photo) {
+            return Ok(None);
+        }
+
+        self.unadjusted_thumbnail_texture_for(photo, ctx)
     }
 
     #[allow(dead_code)]
@@ -666,20 +750,27 @@ impl PhotoManager {
     fn load_adjusted_full_res_texture(
         photo: &Photo,
         adjustments: &PhotoAdjustments,
+        max_texture_side: u32,
+        allow_start: bool,
         ctx: &Context,
         cache: &mut ContextCache,
     ) -> anyhow::Result<Option<SizedTexture>> {
         let uri = photo.uri();
         let source_version = path_version_key(&photo.path);
         let cache_key = adjusted_texture_cache_key(&uri, &source_version, adjustments);
+        if let Some(texture) = cache.adjusted_texture_cache.get(&cache_key).cloned() {
+            Self::touch_full_res_texture(cache, &cache_key);
+            return Ok(Some(SizedTexture::from_handle(&texture)));
+        }
+
         Self::touch_full_res_texture(cache, &cache_key);
 
         let result = Self::load_adjusted_texture(
             photo.path.clone(),
             cache_key.clone(),
             adjustments,
-            ctx.input(|input| input.max_texture_side as u32),
-            !ctx.input(|input| input.pointer.primary_down()),
+            max_texture_side,
+            allow_start,
             ctx,
             cache,
         );
@@ -694,6 +785,7 @@ impl PhotoManager {
     fn load_adjusted_thumbnail_texture(
         photo: &Photo,
         adjustments: &PhotoAdjustments,
+        allow_start: bool,
         ctx: &Context,
         cache: &mut ContextCache,
     ) -> anyhow::Result<Option<SizedTexture>> {
@@ -708,7 +800,7 @@ impl PhotoManager {
             cache_key.clone(),
             adjustments,
             0,
-            true,
+            allow_start,
             ctx,
             cache,
         );
@@ -1316,36 +1408,12 @@ fn adjusted_thumbnail_cache_key(
     )
 }
 
-fn path_version_key(path: &Path) -> String {
-    let Ok(metadata) = path.metadata() else {
-        return "missing".to_owned();
-    };
-
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-
-    format!("{}:{}", metadata.len(), modified)
-}
-
 fn adjusted_texture_image(
     source_path: PathBuf,
     adjustments: PhotoAdjustments,
     max_texture_side: u32,
 ) -> std::result::Result<AdjustedTextureImage, String> {
-    let mut image = image::open(&source_path).map_err(|error| error.to_string())?;
-    if max_texture_side > 0
-        && (image.width() > max_texture_side || image.height() > max_texture_side)
-    {
-        image = image.resize(
-            max_texture_side,
-            max_texture_side,
-            image::imageops::FilterType::Triangle,
-        );
-    }
+    let image = decode_oriented_image(&source_path, max_texture_side)?;
 
     let rgba = adjustments.apply_to_image(image);
     Ok(AdjustedTextureImage {

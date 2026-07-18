@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use fxhash::hash64;
@@ -10,7 +9,10 @@ use tokio::sync::oneshot::error::TryRecvError;
 use tokio::task::spawn_blocking;
 
 use crate::{
-    dirs::Dirs, model::photo_adjustments::PhotoAdjustments, widget::histogram::HistogramData,
+    dirs::Dirs,
+    image_utils::{decode_oriented_image, path_version_key},
+    model::photo_adjustments::PhotoAdjustments,
+    widget::histogram::HistogramData,
 };
 
 const HISTOGRAM_CACHE_CAPACITY: usize = 96;
@@ -171,21 +173,6 @@ pub(crate) fn thumbnail_path_for_photo(path: &Path) -> PathBuf {
         .with_extension(path.extension().unwrap_or_default())
 }
 
-fn path_version_key(path: &Path) -> String {
-    let Ok(metadata) = path.metadata() else {
-        return "missing".to_owned();
-    };
-
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-
-    format!("{}:{}", metadata.len(), modified)
-}
-
 fn spawn_histogram_job(
     thumbnail_path: PathBuf,
     adjustments: PhotoAdjustments,
@@ -212,7 +199,7 @@ fn compute_histogram(
     thumbnail_path: PathBuf,
     adjustments: PhotoAdjustments,
 ) -> Result<HistogramData, String> {
-    let image = image::open(thumbnail_path).map_err(|error| error.to_string())?;
+    let image = decode_oriented_image(&thumbnail_path, 0)?;
     Ok(HistogramData::from_image_with_adjustments(
         &image,
         &adjustments,

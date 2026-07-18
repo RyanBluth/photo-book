@@ -3,7 +3,6 @@ use egui::{Key, Label, Margin, RichText, Sense, Ui, Vec2};
 use std::collections::HashSet;
 
 use crate::cursor_manager::CursorManager;
-use crate::histogram_manager::{HistogramLoadResult, HistogramManager};
 use crate::model::album::AlbumId;
 use crate::model::editable_value::EditableValue;
 use crate::photo::{PhotoMetadataField, PhotoMetadataFieldLabel, Rational, SaveOnDropPhoto};
@@ -14,8 +13,8 @@ use crate::{dep, dep_mut};
 use super::{
     autocomplete::{Autocomplete, AutocompleteState},
     chip_collection::chip_collection,
-    histogram::Histogram,
-    photo_adjustments::{PhotoAdjustmentsEditor, PhotoAdjustmentsState},
+    photo_adjustments::PhotoAdjustmentsState,
+    photo_adjustments_panel::PhotoAdjustmentsPanel,
     tag_chips::TagChipsState,
 };
 
@@ -225,53 +224,14 @@ impl<'a> PhotoInfo<'a> {
         });
     }
 
-    fn show_histogram(
-        &mut self,
-        ui: &mut Ui,
-        adjustments: &crate::model::photo_adjustments::PhotoAdjustments,
-    ) {
-        let refresh_adjusted = !ui.input(|input| input.pointer.primary_down());
-        let histogram = dep_mut!(HistogramManager, |manager| manager.get(
-            &self.photo.path,
-            adjustments,
-            refresh_adjusted,
-        ));
-
-        match &histogram {
-            HistogramLoadResult::Ready(data) => {
-                ui.add(Histogram::new(data).height(82.0));
-            }
-            HistogramLoadResult::Pending(Some(data)) => {
-                ui.add(Histogram::new(data).height(82.0).loading(true));
-            }
-            HistogramLoadResult::Unavailable(error, Some(data)) => {
-                let _ = error.as_str();
-                ui.add(Histogram::new(data).height(82.0));
-            }
-            HistogramLoadResult::Pending(None) => {
-                ui.add(Histogram::unavailable().height(82.0).loading(true));
-            }
-            HistogramLoadResult::Unavailable(error, None) => {
-                let _ = error.as_str();
-                ui.add(Histogram::unavailable().height(82.0));
-            }
-        }
-    }
-
     fn show_adjustments(&mut self, ui: &mut Ui) {
         let mut adjustments = self.photo.adjustments();
-        self.show_histogram(ui, &adjustments);
-        ui.add_space(10.0);
-        let original_adjustments = crate::model::photo_adjustments::PhotoAdjustments::default();
-        let histogram = dep_mut!(HistogramManager, |manager| {
-            manager
-                .get(&self.photo.path, &original_adjustments, true)
-                .ready_data()
-                .cloned()
-        });
-        if PhotoAdjustmentsEditor::new(&mut adjustments, &mut self.state.adjustments_state)
-            .histogram(histogram.as_ref())
-            .show(ui)
+        if PhotoAdjustmentsPanel::new(
+            &self.photo,
+            &mut adjustments,
+            &mut self.state.adjustments_state,
+        )
+        .show(ui)
         {
             self.photo.set_adjustments(adjustments);
         }

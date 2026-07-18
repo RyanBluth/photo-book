@@ -2,6 +2,7 @@ pub mod selection;
 pub mod state;
 pub mod types;
 use crate::{
+    gpu_photo_adjustment::{GpuPhotoAdjustmentRenderer, GpuPhotoPaintRequest, GpuPhotoSource},
     model::scale_mode::ScaleMode,
     utils::Vec2Ext,
     widget::{
@@ -25,6 +26,7 @@ use eframe::{
 use egui::{
     Order,
     epaint::{ColorMode, PathStroke},
+    load::SizedTexture,
 };
 
 use crate::{
@@ -66,6 +68,7 @@ pub struct Canvas<'a> {
     pub state: &'a mut CanvasState,
     available_rect: Rect,
     history_manager: &'a mut CanvasHistoryManager,
+    gpu_photo_adjustments: bool,
 }
 
 impl<'a> Canvas<'a> {
@@ -78,7 +81,13 @@ impl<'a> Canvas<'a> {
             state,
             available_rect,
             history_manager,
+            gpu_photo_adjustments: true,
         }
+    }
+
+    pub fn gpu_photo_adjustments(mut self, enabled: bool) -> Self {
+        self.gpu_photo_adjustments = enabled;
+        self
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
@@ -778,6 +787,15 @@ impl<'a> Canvas<'a> {
 
         let layer_response = match &mut layer.content {
             LayerContent::Photo(photo) => {
+                let gpu_photo_adjustments = self.gpu_photo_adjustments && !is_preview;
+                let use_gpu = gpu_photo_adjustments && (!photo.adjustments.is_identity() || active);
+                let texture = Self::load_photo_texture(photo, use_gpu, ui.ctx());
+                let gpu_render_key = format!(
+                    "{}:{}:{}",
+                    self.state.canvas_id.value(),
+                    layer.id,
+                    is_preview
+                );
                 let transform_response = ui
                     .push_id(
                         format!(
@@ -787,48 +805,70 @@ impl<'a> Canvas<'a> {
                             layer.id
                         ),
                         |ui| {
-                            dep_mut!(PhotoManager, |photo_manager| {
-                                match photo_manager
-                                    .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                                {
-                                    Ok(Some(texture)) => {
-                                        let mut transform_state = layer.transform_state.clone();
-
-                                        let transform_response = TransformableWidget::new(
-                                    &mut transform_state,
-                                )
+                            let mut transform_state = layer.transform_state.clone();
+                            let transform_response = TransformableWidget::new(&mut transform_state)
                                 .show(
                                     ui,
                                     available_rect,
                                     self.state.zoom,
                                     active && !is_preview,
                                     true,
-                                    |ui: &mut Ui, transformed_rect: Rect, _transformable_state| {
-                                        let painter = ui.painter();
-                                        let mut mesh = Mesh::with_texture(texture.id);
+                                    |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                                        let gpu_result = use_gpu.then(|| {
+                                            dep!(GpuPhotoAdjustmentRenderer, |renderer| {
+                                                renderer.paint(
+                                                    ui,
+                                                    GpuPhotoPaintRequest {
+                                                        photo: &photo.photo,
+                                                        source: GpuPhotoSource::FullResolution,
+                                                        clip_rect: ui.clip_rect(),
+                                                        rect: transformed_rect,
+                                                        source_uv: photo.crop,
+                                                        rotation_radians: transformable_state
+                                                            .rotation,
+                                                        adjustments: &photo.adjustments,
+                                                        render_key: Some(&gpu_render_key),
+                                                    },
+                                                )
+                                            })
+                                        });
 
-                                        mesh.add_rect_with_uv(
-                                            transformed_rect,
-                                            photo.crop,
-                                            color::WHITE,
-                                        );
+                                        let adjusted_texture = if gpu_result
+                                            .is_some_and(|result| result.requires_cpu_fallback())
+                                            && gpu_photo_adjustments
+                                        {
+                                            Self::load_adjusted_photo_texture(photo, ui.ctx())
+                                        } else {
+                                            None
+                                        };
 
-                                        mesh.rotate(
-                                            Rot2::from_angle(layer.transform_state.rotation),
-                                            transformed_rect.center(),
-                                        );
+                                        if !gpu_result.is_some_and(|result| result.is_ready())
+                                            && adjusted_texture.is_none()
+                                            && let Some(texture) = texture
+                                        {
+                                            Self::paint_photo_texture(
+                                                ui,
+                                                texture.id,
+                                                transformed_rect,
+                                                photo.crop,
+                                                transformable_state.rotation,
+                                            );
+                                        }
 
-                                        painter.add(Shape::mesh(mesh));
+                                        if let Some(adjusted_texture) = adjusted_texture {
+                                            Self::paint_photo_texture(
+                                                ui,
+                                                adjusted_texture.id,
+                                                transformed_rect,
+                                                photo.crop,
+                                                transformable_state.rotation,
+                                            );
+                                        }
                                     },
                                 );
 
-                                        layer.transform_state = transform_state;
-
-                                        Some(transform_response)
-                                    }
-                                    _ => None,
-                                }
-                            })
+                            layer.transform_state = transform_state;
+                            Some(transform_response)
                         },
                     )
                     .inner;
@@ -953,76 +993,114 @@ impl<'a> Canvas<'a> {
                 );
 
                 if let Some(photo) = photo {
-                    dep_mut!(PhotoManager, |photo_manager| {
-                        if let Ok(Some(texture)) = photo_manager
-                            .texture_for_photo_with_thumbail_backup(&photo.photo, ui.ctx())
-                        {
-                            let photo_size = Vec2::new(
-                                photo.photo.metadata.rotated_width() as f32,
-                                photo.photo.metadata.rotated_height() as f32,
-                            );
+                    let gpu_photo_adjustments = self.gpu_photo_adjustments && !is_preview;
+                    let use_gpu =
+                        gpu_photo_adjustments && (!photo.adjustments.is_identity() || active);
+                    let texture = Self::load_photo_texture(photo, use_gpu, ui.ctx());
 
-                            let scaled_rect = match scale_mode {
-                                ScaleMode::Fit => {
-                                    if photo_size.x > photo_size.y {
-                                        Rect::from_center_size(
-                                            rect.center(),
-                                            Vec2::new(
-                                                rect.width(),
-                                                rect.width() / photo_size.x * photo_size.y,
-                                            ),
-                                        )
-                                    } else {
-                                        Rect::from_center_size(
-                                            rect.center(),
-                                            Vec2::new(
-                                                rect.height() / photo_size.y * photo_size.x,
-                                                rect.height(),
-                                            ),
-                                        )
-                                    }
-                                }
-                                ScaleMode::Fill => {
-                                    if photo_size.x > photo_size.y {
-                                        Rect::from_center_size(
-                                            rect.center(),
-                                            Vec2::new(
-                                                rect.height() / photo_size.y * photo_size.x,
-                                                rect.height(),
-                                            ),
-                                        )
-                                    } else {
-                                        Rect::from_center_size(
-                                            rect.center(),
-                                            Vec2::new(
-                                                rect.width(),
-                                                rect.width() / photo_size.x * photo_size.y,
-                                            ),
-                                        )
-                                    }
-                                }
-                                ScaleMode::Stretch => rect,
-                            };
+                    let photo_size = Vec2::new(
+                        photo.photo.metadata.rotated_width() as f32,
+                        photo.photo.metadata.rotated_height() as f32,
+                    );
 
-                            let current_clip = ui.clip_rect();
-
-                            let clipped_rect = scaled_rect.intersect(current_clip);
-                            ui.set_clip_rect(clipped_rect);
-
-                            let painter = ui.painter();
-                            let mut mesh = Mesh::with_texture(texture.id);
-
-                            mesh.add_rect_with_uv(
-                                scaled_rect.center_within(rect),
-                                Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2 { x: 1.0, y: 1.0 }),
-                                color::WHITE,
-                            );
-
-                            painter.add(Shape::mesh(mesh));
-
-                            ui.set_clip_rect(current_clip);
+                    let scaled_rect = match scale_mode {
+                        ScaleMode::Fit => {
+                            if photo_size.x > photo_size.y {
+                                Rect::from_center_size(
+                                    rect.center(),
+                                    Vec2::new(
+                                        rect.width(),
+                                        rect.width() / photo_size.x * photo_size.y,
+                                    ),
+                                )
+                            } else {
+                                Rect::from_center_size(
+                                    rect.center(),
+                                    Vec2::new(
+                                        rect.height() / photo_size.y * photo_size.x,
+                                        rect.height(),
+                                    ),
+                                )
+                            }
                         }
+                        ScaleMode::Fill => {
+                            if photo_size.x > photo_size.y {
+                                Rect::from_center_size(
+                                    rect.center(),
+                                    Vec2::new(
+                                        rect.height() / photo_size.y * photo_size.x,
+                                        rect.height(),
+                                    ),
+                                )
+                            } else {
+                                Rect::from_center_size(
+                                    rect.center(),
+                                    Vec2::new(
+                                        rect.width(),
+                                        rect.width() / photo_size.x * photo_size.y,
+                                    ),
+                                )
+                            }
+                        }
+                        ScaleMode::Stretch => rect,
+                    };
+
+                    let paint_rect = scaled_rect.center_within(rect);
+                    let source_uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+                    let current_clip = ui.clip_rect();
+                    let clipped_rect = scaled_rect.intersect(current_clip);
+                    ui.set_clip_rect(clipped_rect);
+                    let gpu_render_key = format!(
+                        "{}:{}:{}",
+                        self.state.canvas_id.value(),
+                        layer.id,
+                        is_preview
+                    );
+                    let gpu_result = use_gpu.then(|| {
+                        dep!(GpuPhotoAdjustmentRenderer, |renderer| {
+                            renderer.paint(
+                                ui,
+                                GpuPhotoPaintRequest {
+                                    photo: &photo.photo,
+                                    source: GpuPhotoSource::FullResolution,
+                                    clip_rect: clipped_rect,
+                                    rect: paint_rect,
+                                    source_uv,
+                                    rotation_radians: 0.0,
+                                    adjustments: &photo.adjustments,
+                                    render_key: Some(&gpu_render_key),
+                                },
+                            )
+                        })
                     });
+
+                    let adjusted_texture = if gpu_result
+                        .is_some_and(|result| result.requires_cpu_fallback())
+                        && gpu_photo_adjustments
+                    {
+                        Self::load_adjusted_photo_texture(photo, ui.ctx())
+                    } else {
+                        None
+                    };
+
+                    if !gpu_result.is_some_and(|result| result.is_ready())
+                        && adjusted_texture.is_none()
+                        && let Some(texture) = texture
+                    {
+                        Self::paint_photo_texture(ui, texture.id, paint_rect, source_uv, 0.0);
+                    }
+
+                    if let Some(adjusted_texture) = adjusted_texture {
+                        Self::paint_photo_texture(
+                            ui,
+                            adjusted_texture.id,
+                            paint_rect,
+                            source_uv,
+                            0.0,
+                        );
+                    }
+
+                    ui.set_clip_rect(current_clip);
                 }
 
                 if layer.selected {
@@ -1280,7 +1358,52 @@ impl<'a> Canvas<'a> {
             }
         };
 
-        return layer_response;
+        layer_response
+    }
+
+    fn paint_photo_texture(
+        ui: &Ui,
+        texture_id: egui::TextureId,
+        rect: Rect,
+        uv: Rect,
+        rotation: f32,
+    ) {
+        let mut mesh = Mesh::with_texture(texture_id);
+        mesh.add_rect_with_uv(rect, uv, color::WHITE);
+        mesh.rotate(Rot2::from_angle(rotation), rect.center());
+        ui.painter().add(Shape::mesh(mesh));
+    }
+
+    fn load_photo_texture(
+        photo: &CanvasPhoto,
+        use_gpu: bool,
+        ctx: &Context,
+    ) -> Option<SizedTexture> {
+        dep_mut!(PhotoManager, |photo_manager| {
+            if use_gpu {
+                photo_manager.unadjusted_gpu_placeholder_texture_for(&photo.photo, ctx)
+            } else if photo.adjustments.is_identity() {
+                photo_manager
+                    .unadjusted_texture_for_photo_with_thumbnail_fallback(&photo.photo, ctx)
+            } else {
+                photo_manager.texture_for_photo_with_thumbnail_fallback(
+                    &photo.photo,
+                    &photo.adjustments,
+                    ctx,
+                )
+            }
+            .ok()
+            .flatten()
+        })
+    }
+
+    fn load_adjusted_photo_texture(photo: &CanvasPhoto, ctx: &Context) -> Option<SizedTexture> {
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager
+                .texture_for_photo_with_thumbnail_fallback(&photo.photo, &photo.adjustments, ctx)
+                .ok()
+                .flatten()
+        })
     }
 
     fn draw_quick_layout_number(
@@ -1764,10 +1887,9 @@ impl<'a> Canvas<'a> {
                         }
                         ActionBarAction::Crop(layer_id) => {
                             if let Some(layer) = self.state.layers.get(&layer_id) {
-                                if let LayerContent::Photo(photo) = &layer.content {
+                                if matches!(layer.content, LayerContent::Photo(_)) {
                                     return Some(CanvasResponse::EnterCropMode {
                                         target_layer: layer_id,
-                                        photo: photo.clone(),
                                     });
                                 }
                             }

@@ -1,5 +1,6 @@
 use crate::{
     id::{LayerId, PageId},
+    model::photo_adjustments::PhotoAdjustments,
     photo::Photo,
     utils::{IdExt, RectExt},
     widget::{
@@ -26,6 +27,7 @@ pub struct CropScene {
     transform_state: TransformableState,
     photo_rect: Rect,
     photo: Photo,
+    adjustments: PhotoAdjustments,
 }
 
 impl CropScene {
@@ -34,6 +36,7 @@ impl CropScene {
         target_page: PageId,
         rect: Rect,
         photo: Photo,
+        adjustments: PhotoAdjustments,
         initial_crop: Rect,
     ) -> Self {
         let padded_available_rect: Rect =
@@ -76,6 +79,7 @@ impl CropScene {
             transform_state,
             photo_rect,
             photo,
+            adjustments,
         }
     }
 }
@@ -116,10 +120,9 @@ impl Scene for CropScene {
             target_layer: self.target_layer,
             transform_state: self.transform_state.clone(),
             photo_rect: self.photo_rect,
-            photo: self.photo.clone(),
         };
 
-        match Crop::new(&mut crop_state).show(ui) {
+        match Crop::new(&mut crop_state, &self.photo, &self.adjustments).show(ui) {
             CropResponse::Apply(crop) => {
                 SceneResponse::Pop(ScenePopResponse::Crop(CropSceneResponse::Apply {
                     layer_id: self.target_layer,

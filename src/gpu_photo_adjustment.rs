@@ -2,7 +2,6 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
-    time::UNIX_EPOCH,
 };
 
 use eframe::{
@@ -15,13 +14,19 @@ use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::task::spawn_blocking;
 
-use crate::{model::photo_adjustments::PhotoAdjustments, photo::Photo};
+use crate::{
+    image_utils::{decode_oriented_image, path_version_key},
+    model::photo_adjustments::PhotoAdjustments,
+    photo::Photo,
+    utils::RectExt,
+};
 
 const CURVE_LUT_SIZE: u32 = 256;
 const CURVE_LUT_BYTES: usize = CURVE_LUT_SIZE as usize * 4;
 const GPU_SOURCE_CACHE_CAPACITY: usize = 12;
+const GPU_RENDER_CACHE_CAPACITY: usize = 64;
 
-#[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct AdjustmentUniform {
     exposure: f32,
@@ -60,6 +65,10 @@ struct AdjustmentUniform {
     uv_min_y: f32,
     uv_span_x: f32,
     uv_span_y: f32,
+    source_uv_min_x: f32,
+    source_uv_min_y: f32,
+    source_uv_span_x: f32,
+    source_uv_span_y: f32,
 }
 
 impl AdjustmentUniform {
@@ -68,6 +77,7 @@ impl AdjustmentUniform {
         rotation_radians: f32,
         callback_rect: Rect,
         image_rect: Rect,
+        source_uv: Rect,
     ) -> Self {
         let image_size = image_rect.size();
         let uv_min = if image_size.x > 0.0 && image_size.y > 0.0 {
@@ -113,26 +123,65 @@ impl AdjustmentUniform {
             level_blue_mid: adjustments.levels.blue.mid,
             level_blue_white: adjustments.levels.blue.white,
             definition_amount: adjustments.definition.amount,
-            rotation_radians,
+            rotation_radians: -rotation_radians,
             uv_min_x: uv_min.x,
             uv_min_y: uv_min.y,
             uv_span_x: uv_max.x - uv_min.x,
             uv_span_y: uv_max.y - uv_min.y,
+            source_uv_min_x: source_uv.min.x,
+            source_uv_min_y: source_uv.min.y,
+            source_uv_span_x: source_uv.width(),
+            source_uv_span_y: source_uv.height(),
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpuPaintResult {
+    Unsupported,
+    NotVisible,
+    Pending,
+    Ready,
+}
+
+impl GpuPaintResult {
+    pub fn is_ready(self) -> bool {
+        self == Self::Ready
+    }
+
+    pub fn requires_cpu_fallback(self) -> bool {
+        self == Self::Unsupported
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GpuPhotoSource {
+    FullResolution,
+    Thumbnail,
+}
+
+pub struct GpuPhotoPaintRequest<'a> {
+    pub photo: &'a Photo,
+    pub source: GpuPhotoSource,
+    pub clip_rect: Rect,
+    pub rect: Rect,
+    pub source_uv: Rect,
+    pub rotation_radians: f32,
+    pub adjustments: &'a PhotoAdjustments,
+    pub render_key: Option<&'a str>,
 }
 
 #[derive(Debug)]
 pub struct GpuPhotoAdjustmentRenderer {
     enabled: bool,
-    source_status: Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
+    render_status: Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
 }
 
 impl Default for GpuPhotoAdjustmentRenderer {
     fn default() -> Self {
         Self {
             enabled: false,
-            source_status: Arc::new(Mutex::new(HashMap::new())),
+            render_status: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -221,7 +270,22 @@ impl GpuPhotoAdjustmentRenderer {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_main"),
-                targets: &[Some(render_state.target_format.into())],
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: render_state.target_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             }),
             primitive: wgpu::PrimitiveState::default(),
@@ -249,9 +313,10 @@ impl GpuPhotoAdjustmentRenderer {
                 pipeline,
                 bind_group_layout,
                 sampler,
-                cache: HashMap::new(),
+                sources: HashMap::new(),
+                renders: HashMap::new(),
                 pending_sources: HashMap::new(),
-                source_status: self.source_status.clone(),
+                render_status: self.render_status.clone(),
                 access_counter: 0,
             });
 
@@ -266,20 +331,20 @@ impl GpuPhotoAdjustmentRenderer {
         rect: Rect,
         adjustments: &PhotoAdjustments,
     ) -> bool {
-        if !self.enabled || !adjustments.gpu_preview_supported() || !photo.path.exists() {
-            return false;
-        }
-
-        self.try_paint_source(
+        self.paint(
             ui,
-            &photo.path,
-            photo.uri(),
-            0.0,
-            clip_rect,
-            rect,
-            adjustments,
-            ui.ctx().input(|input| input.max_texture_side as u32),
+            GpuPhotoPaintRequest {
+                photo,
+                source: GpuPhotoSource::FullResolution,
+                clip_rect,
+                rect,
+                source_uv: Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                rotation_radians: 0.0,
+                adjustments,
+                render_key: None,
+            },
         )
+        .is_ready()
     }
 
     pub fn try_paint_thumbnail(
@@ -294,81 +359,111 @@ impl GpuPhotoAdjustmentRenderer {
             return false;
         }
 
-        let Ok(path) = photo.thumbnail_path() else {
-            return false;
-        };
-        if !path.exists() {
-            return false;
-        }
-
-        self.try_paint_source(
+        self.paint(
             ui,
-            &path,
-            photo.thumbnail_uri(),
-            0.0,
-            clip_rect,
-            rect,
-            adjustments,
-            0,
+            GpuPhotoPaintRequest {
+                photo,
+                source: GpuPhotoSource::Thumbnail,
+                clip_rect,
+                rect,
+                source_uv: Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                rotation_radians: 0.0,
+                adjustments,
+                render_key: None,
+            },
         )
+        .is_ready()
     }
 
-    fn try_paint_source(
+    pub fn paint(&self, ui: &mut egui::Ui, request: GpuPhotoPaintRequest<'_>) -> GpuPaintResult {
+        if !self.enabled || !request.adjustments.gpu_preview_supported() {
+            return GpuPaintResult::Unsupported;
+        }
+
+        let (path, source_key, max_texture_side) = match request.source {
+            GpuPhotoSource::FullResolution => (
+                request.photo.path.clone(),
+                request.photo.uri(),
+                ui.ctx().input(|input| input.max_texture_side as u32),
+            ),
+            GpuPhotoSource::Thumbnail => {
+                let Ok(path) = request.photo.thumbnail_path() else {
+                    return GpuPaintResult::Unsupported;
+                };
+                (path, request.photo.thumbnail_uri(), 0)
+            }
+        };
+        if !path.exists() {
+            return GpuPaintResult::Unsupported;
+        }
+
+        self.paint_source(ui, &path, source_key, max_texture_side, request)
+    }
+
+    fn paint_source(
         &self,
         ui: &mut egui::Ui,
-        path: &PathBuf,
+        path: &Path,
         source_key: String,
-        rotation_radians: f32,
-        clip_rect: Rect,
-        rect: Rect,
-        adjustments: &PhotoAdjustments,
         max_texture_side: u32,
-    ) -> bool {
-        let callback_rect = clip_rect.intersect(rect);
+        request: GpuPhotoPaintRequest<'_>,
+    ) -> GpuPaintResult {
+        let paint_bounds = request
+            .rect
+            .rotate_bb_around_center(request.rotation_radians);
+        let callback_rect = request.clip_rect.intersect(paint_bounds);
         if !callback_rect.is_positive() {
-            return false;
+            return GpuPaintResult::NotVisible;
         }
 
         let source_key = gpu_source_cache_key(&source_key, path, max_texture_side);
-        let status = self.source_status.lock().get(&source_key).copied();
+        let render_key = match request.render_key {
+            Some(render_key) => format!("{source_key}:render:{render_key}"),
+            None => source_key.clone(),
+        };
+        let status = self.render_status.lock().get(&render_key).copied();
         if status == Some(GpuSourceStatus::Failed) {
-            return false;
+            return GpuPaintResult::Unsupported;
         }
 
         if status.is_none() {
-            self.source_status
+            self.render_status
                 .lock()
-                .insert(source_key.clone(), GpuSourceStatus::Pending);
+                .insert(render_key.clone(), GpuSourceStatus::Pending);
         }
 
         ui.painter()
             .add(Shape::Callback(egui_wgpu::Callback::new_paint_callback(
                 callback_rect,
                 PhotoAdjustmentCallback {
-                    path: path.clone(),
-                    source_key: source_key.clone(),
+                    path: path.to_path_buf(),
+                    source_key,
+                    render_key,
                     max_texture_side,
                     uniform: AdjustmentUniform::new(
-                        adjustments,
-                        rotation_radians,
+                        request.adjustments,
+                        request.rotation_radians,
                         callback_rect,
-                        rect,
+                        request.rect,
+                        request.source_uv,
                     ),
-                    curve_lut: adjustments.curve_lut_rgba8(),
+                    curve_lut: request.adjustments.curve_lut_rgba8(),
                 },
             )));
 
-        let ready = status == Some(GpuSourceStatus::Ready);
-        if !ready {
+        if status == Some(GpuSourceStatus::Ready) {
+            GpuPaintResult::Ready
+        } else {
             ui.ctx().request_repaint();
+            GpuPaintResult::Pending
         }
-        ready
     }
 }
 
 struct PhotoAdjustmentCallback {
     path: PathBuf,
     source_key: String,
+    render_key: String,
     max_texture_side: u32,
     uniform: AdjustmentUniform,
     curve_lut: [u8; CURVE_LUT_BYTES],
@@ -395,6 +490,7 @@ impl egui_wgpu::CallbackTrait for PhotoAdjustmentCallback {
                 path: &self.path,
                 max_texture_side: self.max_texture_side,
             },
+            &self.render_key,
             self.uniform,
             &self.curve_lut,
         );
@@ -411,7 +507,7 @@ impl egui_wgpu::CallbackTrait for PhotoAdjustmentCallback {
             return;
         };
 
-        resources.paint(render_pass, &self.source_key);
+        resources.paint(render_pass, &self.render_key);
     }
 }
 
@@ -419,17 +515,26 @@ struct PhotoAdjustmentRenderResources {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    cache: HashMap<String, GpuAdjustedPhoto>,
+    sources: HashMap<String, GpuSourceTexture>,
+    renders: HashMap<String, GpuAdjustedPhoto>,
     pending_sources:
         HashMap<String, oneshot::Receiver<std::result::Result<DecodedGpuSource, String>>>,
-    source_status: Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
+    render_status: Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
     access_counter: u64,
 }
 
 struct GpuSourceRequest<'a> {
     cache_key: &'a str,
-    path: &'a PathBuf,
+    path: &'a Path,
     max_texture_side: u32,
+}
+
+struct GpuRenderUpdate<'a> {
+    source_key: &'a str,
+    render_key: &'a str,
+    uniform: AdjustmentUniform,
+    curve_lut: &'a [u8; CURVE_LUT_BYTES],
+    access: u64,
 }
 
 impl PhotoAdjustmentRenderResources {
@@ -438,22 +543,31 @@ impl PhotoAdjustmentRenderResources {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         source: GpuSourceRequest<'_>,
+        render_key: &str,
         uniform: AdjustmentUniform,
-        curve_lut: &[u8],
+        curve_lut: &[u8; CURVE_LUT_BYTES],
     ) {
         self.access_counter = self.access_counter.saturating_add(1);
         let access = self.access_counter;
 
-        if let Some(photo) = self.cache.get_mut(source.cache_key) {
-            photo.last_access = access;
-            queue.write_buffer(&photo.uniform_buffer, 0, bytemuck::bytes_of(&uniform));
-            write_curve_lut(queue, &photo.curve_texture, curve_lut);
-            self.set_source_status(source.cache_key, GpuSourceStatus::Ready);
+        if self.sources.contains_key(source.cache_key) {
+            self.update_render(
+                device,
+                queue,
+                GpuRenderUpdate {
+                    source_key: source.cache_key,
+                    render_key,
+                    uniform,
+                    curve_lut,
+                    access,
+                },
+            );
+            self.set_render_status(render_key, GpuSourceStatus::Ready);
             return;
         }
 
         let Some(decoded) = self.poll_or_start_decode(&source) else {
-            self.set_source_status(source.cache_key, GpuSourceStatus::Pending);
+            self.set_render_status(render_key, GpuSourceStatus::Pending);
             return;
         };
 
@@ -461,14 +575,14 @@ impl PhotoAdjustmentRenderResources {
             Ok(decoded) => decoded,
             Err(error) => {
                 error!("Failed to prepare GPU photo adjustment source: {error}");
-                self.set_source_status(source.cache_key, GpuSourceStatus::Failed);
+                self.set_render_status(render_key, GpuSourceStatus::Failed);
                 return;
             }
         };
 
         let size = decoded.size();
         if size.width == 0 || size.height == 0 {
-            self.set_source_status(source.cache_key, GpuSourceStatus::Failed);
+            self.set_render_status(render_key, GpuSourceStatus::Failed);
             return;
         }
 
@@ -499,9 +613,70 @@ impl PhotoAdjustmentRenderResources {
         );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.sources.insert(
+            source.cache_key.to_owned(),
+            GpuSourceTexture {
+                _texture: texture,
+                view,
+                last_access: access,
+            },
+        );
+        self.update_render(
+            device,
+            queue,
+            GpuRenderUpdate {
+                source_key: source.cache_key,
+                render_key,
+                uniform,
+                curve_lut,
+                access,
+            },
+        );
+        self.evict_old_sources(source.cache_key);
+        self.set_render_status(render_key, GpuSourceStatus::Ready);
+    }
+
+    fn update_render(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        update: GpuRenderUpdate<'_>,
+    ) {
+        if let Some(source_texture) = self.sources.get_mut(update.source_key) {
+            source_texture.last_access = update.access;
+        }
+
+        let source_changed = self
+            .renders
+            .get(update.render_key)
+            .is_some_and(|photo| photo.source_key != update.source_key);
+        if source_changed {
+            self.renders.remove(update.render_key);
+        }
+
+        if let Some(photo) = self.renders.get_mut(update.render_key) {
+            photo.last_access = update.access;
+            if photo.uniform != update.uniform {
+                queue.write_buffer(
+                    &photo.uniform_buffer,
+                    0,
+                    bytemuck::bytes_of(&update.uniform),
+                );
+                photo.uniform = update.uniform;
+            }
+            if &photo.curve_lut != update.curve_lut {
+                write_curve_lut(queue, &photo.curve_texture, update.curve_lut);
+                photo.curve_lut = *update.curve_lut;
+            }
+            return;
+        }
+
+        let Some(source_texture) = self.sources.get(update.source_key) else {
+            return;
+        };
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("photo adjustment uniform buffer"),
-            contents: bytemuck::bytes_of(&uniform),
+            contents: bytemuck::bytes_of(&update.uniform),
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
         });
         let curve_texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -518,7 +693,7 @@ impl PhotoAdjustmentRenderResources {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        write_curve_lut(queue, &curve_texture, curve_lut);
+        write_curve_lut(queue, &curve_texture, update.curve_lut);
         let curve_view = curve_texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("photo adjustment bind group"),
@@ -526,7 +701,7 @@ impl PhotoAdjustmentRenderResources {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&source_texture.view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -543,20 +718,20 @@ impl PhotoAdjustmentRenderResources {
             ],
         });
 
-        self.cache.insert(
-            source.cache_key.to_string(),
+        self.renders.insert(
+            update.render_key.to_owned(),
             GpuAdjustedPhoto {
-                _texture: texture,
-                _view: view,
+                source_key: update.source_key.to_owned(),
                 curve_texture,
                 _curve_view: curve_view,
                 bind_group,
                 uniform_buffer,
-                last_access: access,
+                uniform: update.uniform,
+                curve_lut: *update.curve_lut,
+                last_access: update.access,
             },
         );
-        self.evict_old_sources(source.cache_key);
-        self.set_source_status(source.cache_key, GpuSourceStatus::Ready);
+        self.evict_old_renders(update.render_key);
     }
 
     fn poll_or_start_decode(
@@ -569,7 +744,7 @@ impl PhotoAdjustmentRenderResources {
 
         if !self.pending_sources.contains_key(source.cache_key) {
             let (sender, receiver) = oneshot::channel();
-            spawn_gpu_source_decode(source.path.clone(), source.max_texture_side, sender);
+            spawn_gpu_source_decode(source.path.to_path_buf(), source.max_texture_side, sender);
             self.pending_sources
                 .insert(source.cache_key.to_owned(), receiver);
         }
@@ -597,14 +772,14 @@ impl PhotoAdjustmentRenderResources {
         result
     }
 
-    fn set_source_status(&self, cache_key: &str, status: GpuSourceStatus) {
-        self.source_status
+    fn set_render_status(&self, render_key: &str, status: GpuSourceStatus) {
+        self.render_status
             .lock()
-            .insert(cache_key.to_owned(), status);
+            .insert(render_key.to_owned(), status);
     }
 
-    fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>, cache_key: &str) {
-        let Some(photo) = self.cache.get(cache_key) else {
+    fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>, render_key: &str) {
+        let Some(photo) = self.renders.get(render_key) else {
             return;
         };
 
@@ -615,9 +790,9 @@ impl PhotoAdjustmentRenderResources {
 
     fn evict_old_sources(&mut self, protected_key: &str) {
         let capacity = GPU_SOURCE_CACHE_CAPACITY.max(1);
-        while self.cache.len() > capacity {
+        while self.sources.len() > capacity {
             let Some(key) = self
-                .cache
+                .sources
                 .iter()
                 .filter(|(key, _)| key.as_str() != protected_key)
                 .min_by_key(|(_, photo)| photo.last_access)
@@ -626,8 +801,36 @@ impl PhotoAdjustmentRenderResources {
                 break;
             };
 
-            self.cache.remove(&key);
-            self.source_status.lock().remove(&key);
+            self.sources.remove(&key);
+            let removed_render_keys = self
+                .renders
+                .iter()
+                .filter(|(_, render)| render.source_key == key)
+                .map(|(render_key, _)| render_key.clone())
+                .collect::<Vec<_>>();
+            self.renders.retain(|_, render| render.source_key != key);
+            let mut render_status = self.render_status.lock();
+            for render_key in removed_render_keys {
+                render_status.remove(&render_key);
+            }
+        }
+    }
+
+    fn evict_old_renders(&mut self, protected_key: &str) {
+        let capacity = GPU_RENDER_CACHE_CAPACITY.max(1);
+        while self.renders.len() > capacity {
+            let Some(key) = self
+                .renders
+                .iter()
+                .filter(|(key, _)| key.as_str() != protected_key)
+                .min_by_key(|(_, render)| render.last_access)
+                .map(|(key, _)| key.clone())
+            else {
+                break;
+            };
+
+            self.renders.remove(&key);
+            self.render_status.lock().remove(&key);
         }
     }
 }
@@ -674,26 +877,7 @@ fn decode_gpu_source(
     path: PathBuf,
     max_texture_side: u32,
 ) -> std::result::Result<DecodedGpuSource, String> {
-    let file_bytes = std::fs::read(&path).map_err(|error| error.to_string())?;
-    let format = image::guess_format(&file_bytes).map_err(|error| error.to_string())?;
-    let reader = image::ImageReader::with_format(std::io::Cursor::new(file_bytes), format);
-    let mut decoder = reader.into_decoder().map_err(|error| error.to_string())?;
-    let orientation =
-        image::ImageDecoder::orientation(&mut decoder).map_err(|error| error.to_string())?;
-    let mut image =
-        image::DynamicImage::from_decoder(decoder).map_err(|error| error.to_string())?;
-    image.apply_orientation(orientation);
-
-    if max_texture_side > 0
-        && (image.width() > max_texture_side || image.height() > max_texture_side)
-    {
-        image = image.resize(
-            max_texture_side,
-            max_texture_side,
-            image::imageops::FilterType::Triangle,
-        );
-    }
-
+    let image = decode_oriented_image(&path, max_texture_side)?;
     let rgba = image.to_rgba8();
     Ok(DecodedGpuSource {
         width: rgba.width(),
@@ -711,32 +895,28 @@ fn gpu_source_cache_key(source_key: &str, path: &Path, max_texture_side: u32) ->
     )
 }
 
-fn path_version_key(path: &Path) -> String {
-    let Ok(metadata) = path.metadata() else {
-        return "missing".to_owned();
-    };
-
-    let modified = metadata
-        .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-
-    format!("{}:{}", metadata.len(), modified)
+struct GpuSourceTexture {
+    _texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    last_access: u64,
 }
 
 struct GpuAdjustedPhoto {
-    _texture: wgpu::Texture,
-    _view: wgpu::TextureView,
+    source_key: String,
     curve_texture: wgpu::Texture,
     _curve_view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
     uniform_buffer: wgpu::Buffer,
+    uniform: AdjustmentUniform,
+    curve_lut: [u8; CURVE_LUT_BYTES],
     last_access: u64,
 }
 
-fn write_curve_lut(queue: &wgpu::Queue, texture: &wgpu::Texture, curve_lut: &[u8]) {
+fn write_curve_lut(
+    queue: &wgpu::Queue,
+    texture: &wgpu::Texture,
+    curve_lut: &[u8; CURVE_LUT_BYTES],
+) {
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -756,4 +936,41 @@ fn write_curve_lut(queue: &wgpu::Queue, texture: &wgpu::Texture, curve_lut: &[u8
             depth_or_array_layers: 1,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paint_result_only_falls_back_for_unsupported_rendering() {
+        assert!(GpuPaintResult::Unsupported.requires_cpu_fallback());
+        assert!(!GpuPaintResult::NotVisible.requires_cpu_fallback());
+        assert!(!GpuPaintResult::Pending.requires_cpu_fallback());
+        assert!(!GpuPaintResult::Ready.requires_cpu_fallback());
+    }
+
+    #[test]
+    fn uniform_maps_clipped_rect_into_image_uv_space() {
+        let image_rect = Rect::from_min_max(egui::pos2(100.0, 200.0), egui::pos2(300.0, 400.0));
+        let callback_rect = Rect::from_min_max(egui::pos2(150.0, 250.0), egui::pos2(250.0, 350.0));
+        let source_uv = Rect::from_min_max(egui::pos2(0.2, 0.1), egui::pos2(0.8, 0.9));
+
+        let uniform = AdjustmentUniform::new(
+            &PhotoAdjustments::default(),
+            0.0,
+            callback_rect,
+            image_rect,
+            source_uv,
+        );
+
+        assert_eq!(uniform.uv_min_x, 0.25);
+        assert_eq!(uniform.uv_min_y, 0.25);
+        assert_eq!(uniform.uv_span_x, 0.5);
+        assert_eq!(uniform.uv_span_y, 0.5);
+        assert_eq!(uniform.source_uv_min_x, 0.2);
+        assert_eq!(uniform.source_uv_min_y, 0.1);
+        assert!((uniform.source_uv_span_x - 0.6).abs() < f32::EPSILON);
+        assert!((uniform.source_uv_span_y - 0.8).abs() < f32::EPSILON);
+    }
 }

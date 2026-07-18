@@ -6,7 +6,7 @@ use egui::{Button, ImageSource, Pos2, RichText, Ui, Vec2};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::{assets::Asset, utils::RectExt};
+use crate::{assets::Asset, theme::color, utils::RectExt};
 
 use super::layers::Layer;
 
@@ -94,20 +94,30 @@ impl<'a> AlignmentInfo<'a> {
 
     pub fn show(&mut self, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
+            ui.spacing_mut().item_spacing = Vec2::new(0.0, 14.0);
 
-            ui.label(RichText::new("Alignment").heading());
+            Self::section(ui, "Align", |ui| self.alignment(ui));
+            Self::section(ui, "Distribute", |ui| self.distribution(ui));
+        });
+    }
 
-            self.alignment(ui);
-
-            self.distribution(ui);
-
-            ui.separator();
+    fn section(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui)) {
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.label(
+                RichText::new(title)
+                    .small()
+                    .strong()
+                    .color(color::CONTROL_TEXT),
+            );
+            add_contents(ui);
         });
     }
 
     fn distribution(&mut self, ui: &mut Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+
             let distribution_actions = Distruibution::iter().filter_map(|distribution| {
                 ui.add(Button::image(distribution.icon()))
                     .on_hover_text(distribution.to_string())
@@ -233,7 +243,9 @@ impl<'a> AlignmentInfo<'a> {
     }
 
     fn alignment(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
+
             let alignment_actions = Alignment::iter().filter_map(|alignment| {
                 ui.add(Button::image(alignment.icon()))
                     .on_hover_text(alignment.to_string())
