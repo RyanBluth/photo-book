@@ -21,7 +21,10 @@ use eframe::{
         UiBuilder,
     },
     emath::Rot2,
-    epaint::{Color32, EllipseShape, FontId, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
+    epaint::{
+        Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, Tessellator, TextShape,
+        Vec2,
+    },
 };
 use egui::{
     Galley, Order,
@@ -40,7 +43,7 @@ use crate::{
     scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::TemplateRegionKind,
     theme::color,
-    utils::{RectExt, Toggle},
+    utils::{MeshExt, RectExt, Toggle},
     widget::canvas_info::layers::{
         CanvasShapeKind, Layer, LayerContent, TextHorizontalAlignment, TextVerticalAlignment,
     },
@@ -1422,25 +1425,23 @@ impl<'a> Canvas<'a> {
         // oversized galley outside the edit bounds.
         let text_pos = Self::text_origin_in_rect(&galley, rect, anchor);
 
-        // Create text shape and apply rotation
-        let mut text_shape = TextShape::new(text_pos, galley, color);
-
-        if rotation != 0.0 {
-            // Calculate the center of the bounding rect
-            let rect_center = rect.center();
-
-            // Rotate the text position around the rect center
-            let rot = Rot2::from_angle(rotation);
-            let offset_from_center = text_pos - rect_center;
-            let rotated_offset = rot * offset_from_center;
-            text_shape.pos = rect_center + rotated_offset;
-
-            // Set the angle for the text itself
+        if rotation == 0.0 {
+            let text_shape = TextShape::new(text_pos, galley, color);
+            ui.painter().with_clip_rect(rect).add(text_shape);
+        } else if rect.contains_rect(galley.mesh_bounds.translate(text_pos.to_vec2())) {
+            // Avoid custom tessellation when no glyph geometry needs clipping.
+            let rotation_transform = Rot2::from_angle(rotation);
+            let mut text_shape = TextShape::new(text_pos, galley, color);
+            text_shape.pos = rect.center() + rotation_transform * (text_pos - rect.center());
             text_shape.angle = rotation;
+            ui.painter().add(text_shape);
+        } else {
+            // egui clip rectangles are axis-aligned. Clip the tessellated text
+            // in local layer space, then rotate the already-clipped mesh.
+            let mesh =
+                Self::rotated_clipped_text_mesh(ui, &galley, text_pos, rect, rotation, color);
+            ui.painter().add(Shape::mesh(mesh));
         }
-
-        let clip_rect = rect.rotate_bb_around_center(rotation);
-        ui.painter().with_clip_rect(clip_rect).add(text_shape);
     }
 
     fn layout_text(
@@ -1464,6 +1465,33 @@ impl<'a> Canvas<'a> {
             .min;
 
         aligned_min - Vec2::new(galley.rect.left(), 0.0)
+    }
+
+    fn rotated_clipped_text_mesh(
+        ui: &Ui,
+        galley: &Arc<Galley>,
+        text_pos: Pos2,
+        clip_rect: Rect,
+        rotation: f32,
+        color: Color32,
+    ) -> Mesh {
+        let tessellation_options = ui.ctx().tessellation_options(Clone::clone);
+        let font_image_size = ui.fonts(|fonts| fonts.font_image_size());
+        let mut tessellator = Tessellator::new(
+            ui.ctx().pixels_per_point(),
+            tessellation_options,
+            font_image_size,
+            Vec::new(),
+        );
+        let mut text_mesh = Mesh::default();
+        tessellator.tessellate_text(
+            &TextShape::new(text_pos, Arc::clone(galley), color),
+            &mut text_mesh,
+        );
+
+        let mut clipped_mesh = text_mesh.clip_mesh(clip_rect);
+        clipped_mesh.rotate(Rot2::from_angle(rotation), clip_rect.center());
+        clipped_mesh
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
@@ -1851,6 +1879,41 @@ mod tests {
             assert!(galley.size().y > rect.height());
             let origin = Canvas::text_origin_in_rect(&galley, rect, egui::Align2::CENTER_CENTER);
             assert_eq!(origin.y, rect.top());
+        });
+
+        harness.run();
+    }
+
+    #[test]
+    fn rotated_text_mesh_stays_inside_rotated_bounds() {
+        let mut harness = Harness::new_ui(|ui| {
+            let rect = Rect::from_min_size(Pos2::new(25.0, 35.0), Vec2::new(100.0, 30.0));
+            let galley = Canvas::layout_text(
+                ui,
+                "one\ntwo\nthree\nfour",
+                FontId::proportional(16.0),
+                Color32::BLACK,
+                rect.width(),
+                Align::Center,
+            );
+            let origin = Canvas::text_origin_in_rect(&galley, rect, egui::Align2::CENTER_CENTER);
+            let rotation = std::f32::consts::FRAC_PI_4;
+            let mesh = Canvas::rotated_clipped_text_mesh(
+                ui,
+                &galley,
+                origin,
+                rect,
+                rotation,
+                Color32::BLACK,
+            );
+            let inverse_rotation = Rot2::from_angle(-rotation);
+            let expanded_rect = rect.expand(0.01);
+
+            assert!(!mesh.is_empty());
+            assert!(mesh.vertices.iter().all(|vertex| {
+                let unrotated = rect.center() + inverse_rotation * (vertex.pos - rect.center());
+                expanded_rect.contains(unrotated)
+            }));
         });
 
         harness.run();
