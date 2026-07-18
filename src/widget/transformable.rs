@@ -1,5 +1,6 @@
 use eframe::{
     egui::{self, CursorIcon, Response, Sense, Ui},
+    emath::Rot2,
     epaint::{Pos2, Rect, Stroke, Vec2},
 };
 use egui::{Id, LayerId, Order, StrokeKind, UiBuilder};
@@ -125,6 +126,11 @@ pub struct TransformableWidgetResponse<Inner> {
     pub double_clicked: bool,
 }
 
+fn rotated_rect_contains(rect: Rect, rotation: f32, pos: Pos2) -> bool {
+    let local_pos = rect.center() + Rot2::from_angle(-rotation) * (pos - rect.center());
+    rect.contains(local_pos)
+}
+
 impl<'a> TransformableWidget<'a> {
     const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
 
@@ -180,8 +186,6 @@ impl<'a> TransformableWidget<'a> {
 
         response.id = self.state.id;
 
-        let rect = response.rect;
-
         let middle_point = |p1: Pos2, p2: Pos2| p1 + (p2 - p1) / 2.0;
 
         let handles = [
@@ -225,6 +229,12 @@ impl<'a> TransformableWidget<'a> {
             response.id,
             Sense::click_and_drag(),
         );
+        let interact_pointer_pos = interact_response.interact_pointer_pos();
+        let pointer_on_rotated_rect = interact_pointer_pos
+            .map(|pos| {
+                rotated_rect_contains(pre_rotated_inner_content_rect, self.state.rotation, pos)
+            })
+            .unwrap_or(false);
 
         if active {
             for (handle, rotated_handle_pos) in &handles {
@@ -236,8 +246,7 @@ impl<'a> TransformableWidget<'a> {
                     self.state.active_handle = None;
                 }
 
-                if (interact_response
-                    .interact_pointer_pos()
+                if (interact_pointer_pos
                     .map(|pos| handle_rect.contains(pos))
                     .unwrap_or(false)
                     && self.state.active_handle.is_none())
@@ -426,7 +435,7 @@ impl<'a> TransformableWidget<'a> {
                             self.state.rect = new_rect;
                         }
                         (TransformHandleMode::Rotate, _, _) => {
-                            if let Some(cursor_pos) = interact_response.interact_pointer_pos() {
+                            if let Some(cursor_pos) = interact_pointer_pos {
                                 // Use the pre-rotated rect center, which is stable during rotation
                                 let center = pre_rotated_inner_content_rect.center();
 
@@ -453,11 +462,7 @@ impl<'a> TransformableWidget<'a> {
 
             if self.state.active_handle.is_none() {
                 if interact_response.is_pointer_button_down_on()
-                    && (self.state.is_moving
-                        || interact_response
-                            .interact_pointer_pos()
-                            .map(|pos| rect.contains(pos))
-                            .unwrap_or(false))
+                    && (self.state.is_moving || pointer_on_rotated_rect)
                 {
                     let delta = interact_response.drag_delta() / global_scale;
                     self.state.rect = self.state.rect.translate(delta);
@@ -478,8 +483,10 @@ impl<'a> TransformableWidget<'a> {
 
         if active {
             self.draw_bounds_with_handles(ui, &rotated_corners, &handles);
-            self.update_cursor(ui, &rotated_inner_content_rect, &handles);
+            self.update_cursor(ui, &pre_rotated_inner_content_rect, &handles);
         }
+
+        let is_transforming = self.state.is_moving || self.state.active_handle.is_some();
 
         TransformableWidgetResponse {
             _inner: inner_response,
@@ -497,40 +504,36 @@ impl<'a> TransformableWidget<'a> {
             ended_rotating: initial_active_handle.is_some()
                 && self.state.active_handle.is_none()
                 && matches!(initial_mode, TransformHandleMode::Rotate),
-            mouse_down: interact_response.is_pointer_button_down_on(),
-            _clicked: interact_response.clicked(),
-            double_clicked: interact_response.double_clicked(),
+            mouse_down: interact_response.is_pointer_button_down_on()
+                && (pointer_on_rotated_rect || is_transforming),
+            _clicked: interact_response.clicked() && pointer_on_rotated_rect,
+            double_clicked: interact_response.double_clicked() && pointer_on_rotated_rect,
         }
     }
 
     fn update_cursor(
         &self,
         ui: &mut Ui,
-        rotated_inner_content_rect: &Rect,
+        inner_content_rect: &Rect,
         handles: &[(TransformHandle, Pos2)],
     ) {
         if let Some(pos) = ui.ctx().pointer_latest_pos() {
-            for (handle, handle_pos) in handles {
-                let handle_rect = Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE);
-                if handle_rect.contains(pos) {
-                    match self.state.handle_mode {
-                        TransformHandleMode::Resize(_) => {
-                            dep_mut!(CursorManager, |cursor_manager| {
-                                cursor_manager.set_cursor(handle.cursor());
-                            });
-                        }
-                        TransformHandleMode::Rotate => {
-                            dep_mut!(CursorManager, |cursor_manager| {
-                                cursor_manager.set_cursor(CursorIcon::Crosshair);
-                            });
-                        }
-                    }
-                    break;
-                } else if rotated_inner_content_rect.contains(pos) {
-                    dep_mut!(CursorManager, |cursor_manager| {
-                        cursor_manager.set_cursor(CursorIcon::Move);
-                    });
-                }
+            let hovered_handle = handles.iter().find(|(_, handle_pos)| {
+                Rect::from_min_size(*handle_pos, Self::HANDLE_SIZE).contains(pos)
+            });
+
+            if let Some((handle, _)) = hovered_handle {
+                let cursor = match self.state.handle_mode {
+                    TransformHandleMode::Resize(_) => handle.cursor(),
+                    TransformHandleMode::Rotate => CursorIcon::Crosshair,
+                };
+                dep_mut!(CursorManager, |cursor_manager| {
+                    cursor_manager.set_cursor(cursor);
+                });
+            } else if rotated_rect_contains(*inner_content_rect, self.state.rotation, pos) {
+                dep_mut!(CursorManager, |cursor_manager| {
+                    cursor_manager.set_cursor(CursorIcon::Move);
+                });
             }
         }
     }
@@ -637,5 +640,32 @@ impl<'a> TransformableWidget<'a> {
             },
         )
         .inner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+
+    use super::*;
+
+    #[test]
+    fn rotated_rect_contains_points_inside_rotated_shape() {
+        let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 40.0));
+
+        assert!(rotated_rect_contains(
+            rect,
+            FRAC_PI_2,
+            Pos2::new(50.0, 60.0),
+        ));
+    }
+
+    #[test]
+    fn rotated_rect_excludes_empty_area_in_axis_aligned_bounds() {
+        let rect = Rect::from_min_max(Pos2::ZERO, Pos2::new(100.0, 40.0));
+        let pos = Pos2::new(95.0, -20.0);
+
+        assert!(rect.rotate_bb_around_center(FRAC_PI_4).contains(pos));
+        assert!(!rotated_rect_contains(rect, FRAC_PI_4, pos));
     }
 }
