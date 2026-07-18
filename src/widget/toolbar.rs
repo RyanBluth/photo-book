@@ -1,10 +1,7 @@
 use crate::assets::Asset;
-use crate::cursor_manager::CursorManager;
-use crate::dep_mut;
-use crate::theme::color;
 use crate::widget::canvas::types::ToolKind;
-use eframe::egui::{self, Image, Sense, Ui, Vec2};
-use egui::CursorIcon;
+use crate::widget::icon_button::IconButton;
+use eframe::egui::{self, Ui, Vec2, Widget};
 
 pub struct Toolbar {
     current_tool: ToolKind,
@@ -57,41 +54,16 @@ impl Toolbar {
     fn tool_button(
         &self,
         ui: &mut Ui,
-        icon: egui::ImageSource,
+        icon: egui::ImageSource<'static>,
         tool: ToolKind,
         tooltip: &str,
     ) -> bool {
-        let is_active = self.current_tool == tool;
-
-        let (rect, response) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::click());
-
-        let background_color = if is_active {
-            color::WHITE
-        } else if response.hovered() {
-            color::SURFACE_MUTED
-        } else {
-            ui.style().visuals.window_fill()
-        };
-
-        if response.hovered() {
-            dep_mut!(CursorManager, |cursor_manager| {
-                cursor_manager.set_cursor(CursorIcon::PointingHand)
-            });
-        }
-
-        ui.painter().rect_filled(rect, 2.0, background_color);
-
-        let tint_color = if is_active {
-            ui.style().visuals.window_fill()
-        } else {
-            color::WHITE
-        };
-
-        let image = Image::new(icon).tint(tint_color).shrink_to_fit();
-
-        ui.put(rect.shrink(2.0), image);
-
-        response.on_hover_text(tooltip).clicked()
+        IconButton::new(icon)
+            .size(Vec2::splat(28.0))
+            .active(self.current_tool == tool)
+            .ui(ui)
+            .on_hover_text(tooltip)
+            .clicked()
     }
 }
 

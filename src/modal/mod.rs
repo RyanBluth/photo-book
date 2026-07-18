@@ -21,6 +21,14 @@ pub trait Modal: Send + Any {
 pub trait ModalResponse: Send + Any {
     fn as_any(&self) -> &dyn Any;
     fn should_close(&self) -> bool;
+
+    /// The response to emit when egui dismisses the modal via its backdrop or Escape key.
+    fn cancel() -> Option<Self>
+    where
+        Self: Sized,
+    {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,5 +45,9 @@ impl ModalResponse for ModalActionResponse {
 
     fn should_close(&self) -> bool {
         true
+    }
+
+    fn cancel() -> Option<Self> {
+        Some(Self::Cancel)
     }
 }

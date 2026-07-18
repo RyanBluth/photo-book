@@ -1,12 +1,12 @@
 use std::fmt::{Display, Formatter};
 
 use eframe::egui::{self};
-use egui::{Button, ImageSource, Pos2, RichText, Ui, Vec2};
+use egui::{ImageSource, Pos2, RichText, Ui, Vec2, Widget};
 
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::{assets::Asset, theme::color, utils::RectExt};
+use crate::{assets::Asset, theme::color, utils::RectExt, widget::icon_button::IconButton};
 
 use super::layers::Layer;
 
@@ -46,7 +46,7 @@ impl Display for Alignment {
 }
 
 impl Alignment {
-    fn icon(&self) -> ImageSource<'_> {
+    fn icon(&self) -> ImageSource<'static> {
         match self {
             Alignment::Left => Asset::horizontal_align_left(),
             Alignment::CenterHorizontal => Asset::horizontal_align_center(),
@@ -74,7 +74,7 @@ impl Display for Distruibution {
 }
 
 impl Distruibution {
-    fn icon(&self) -> ImageSource<'_> {
+    fn icon(&self) -> ImageSource<'static> {
         match self {
             Distruibution::Horizontal => Asset::distribute_horizontal(),
             Distruibution::Vertical => Asset::distribute_vertical(),
@@ -119,7 +119,8 @@ impl<'a> AlignmentInfo<'a> {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
 
             let distribution_actions = Distruibution::iter().filter_map(|distribution| {
-                ui.add(Button::image(distribution.icon()))
+                IconButton::new(distribution.icon())
+                    .ui(ui)
                     .on_hover_text(distribution.to_string())
                     .clicked()
                     .then_some(distribution)
@@ -247,7 +248,8 @@ impl<'a> AlignmentInfo<'a> {
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
 
             let alignment_actions = Alignment::iter().filter_map(|alignment| {
-                ui.add(Button::image(alignment.icon()))
+                IconButton::new(alignment.icon())
+                    .ui(ui)
                     .on_hover_text(alignment.to_string())
                     .clicked()
                     .then_some(alignment)

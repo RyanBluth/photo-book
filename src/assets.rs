@@ -8,30 +8,40 @@ macro_rules! image_asset {
     };
 }
 
-pub struct Asset;
+macro_rules! icon {
+    ($name:ident, $path:literal) => {
+        pub fn $name() -> ImageSource<'static> {
+            include_image!(concat!("assets/icons/", $path))
+        }
+    };
+}
+
+pub struct Asset {}
 
 impl Asset {
-    image_asset!(resize, "assets/resize.png");
-    image_asset!(rotate, "assets/rotate.png");
-    image_asset!(larger, "assets/larger.png");
-    image_asset!(smaller, "assets/smaller.png");
-    image_asset!(add_page, "assets/add_page.png");
-    image_asset!(horizontal_align_left, "assets/horizontal_align_left.png");
-    image_asset!(
-        horizontal_align_center,
-        "assets/horizontal_align_center.png"
-    );
-    image_asset!(horizontal_align_right, "assets/horizontal_align_right.png");
-    image_asset!(vertical_align_top, "assets/vertical_align_top.png");
-    image_asset!(vertical_align_center, "assets/vertical_align_center.png");
-    image_asset!(vertical_align_bottom, "assets/vertical_align_bottom.png");
-    image_asset!(distribute_horizontal, "assets/horizontal_distribute.png");
-    image_asset!(distribute_vertical, "assets/vertical_distribute.png");
+    icon!(resize, "resize.png");
+    icon!(rotate, "rotate.png");
+    icon!(larger, "larger.png");
+    icon!(smaller, "smaller.png");
+    icon!(add_page, "add_page.png");
+    icon!(horizontal_align_left, "horizontal_align_left.png");
+    icon!(horizontal_align_center, "horizontal_align_center.png");
+    icon!(horizontal_align_right, "horizontal_align_right.png");
+    icon!(vertical_align_top, "vertical_align_top.png");
+    icon!(vertical_align_center, "vertical_align_center.png");
+    icon!(vertical_align_bottom, "vertical_align_bottom.png");
+    icon!(distribute_horizontal, "horizontal_distribute.png");
+    icon!(distribute_vertical, "vertical_distribute.png");
 
     // Toolbar icons
-    image_asset!(icon_select, "assets/icons/select.svg");
-    image_asset!(icon_text, "assets/icons/text.svg");
-    image_asset!(icon_rectangle, "assets/icons/rectangle.svg");
-    image_asset!(icon_ellipse, "assets/icons/ellipse.svg");
-    image_asset!(icon_line, "assets/icons/line.svg");
+    icon!(icon_select, "select.svg");
+    icon!(icon_text, "text.svg");
+    icon!(icon_rectangle, "rectangle.svg");
+    icon!(icon_ellipse, "ellipse.svg");
+    icon!(icon_line, "line.svg");
+
+    // Status Bar Icons
+    icon!(sidebar_right, "sidebar-right.svg");
+    icon!(sidebar_left, "sidebar-left.svg");
+    icon!(logs, "logs.svg");
 }

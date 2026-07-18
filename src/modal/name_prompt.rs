@@ -1,5 +1,7 @@
 use std::any::Any;
 
+use crate::theme::style;
+
 use super::{Modal, ModalResponse};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +17,10 @@ impl ModalResponse for NamePromptResponse {
 
     fn should_close(&self) -> bool {
         true
+    }
+
+    fn cancel() -> Option<Self> {
+        Some(Self::Cancel)
     }
 }
 
@@ -52,27 +58,29 @@ impl Modal for NamePromptModal {
 
     fn body_ui(&mut self, ui: &mut egui::Ui) {
         ui.label(&self.label);
-        let response = ui.text_edit_singleline(&mut self.name);
+        let response = ui.add_sized(
+            [ui.available_width(), ui.spacing().interact_size.y],
+            egui::TextEdit::singleline(&mut self.name),
+        );
         if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
             self.submit_requested = true;
         }
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
-        if ui.button("Cancel").clicked() {
-            return Some(NamePromptResponse::Cancel);
-        }
-
         let name = self.name.trim();
         let can_confirm = !name.is_empty();
-        let confirm_clicked = ui
-            .add_enabled(can_confirm, egui::Button::new(&self.confirm_label))
-            .clicked();
+        let confirm_clicked =
+            style::primary_button_enabled(ui, can_confirm, &self.confirm_label).clicked();
 
         if (confirm_clicked || self.submit_requested) && can_confirm {
             return Some(NamePromptResponse::Confirm {
                 name: name.to_string(),
             });
+        }
+
+        if ui.button("Cancel").clicked() {
+            return Some(NamePromptResponse::Cancel);
         }
 
         self.submit_requested = false;

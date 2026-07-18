@@ -1,6 +1,9 @@
 use std::{any::Any, path::PathBuf};
 
-use crate::modal::{Modal, ModalResponse};
+use crate::{
+    modal::{Modal, ModalResponse},
+    theme::style,
+};
 
 #[derive(Debug, Clone)]
 pub enum SaveWarningSource {
@@ -27,6 +30,10 @@ impl ModalResponse for SaveWarningResponse {
 
     fn should_close(&self) -> bool {
         true
+    }
+
+    fn cancel() -> Option<Self> {
+        Some(Self::Cancel)
     }
 }
 
@@ -56,7 +63,7 @@ impl Modal for SaveWarningModal {
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
-        if ui.button("Save").clicked() {
+        if style::primary_button(ui, "Save").clicked() {
             Some(SaveWarningResponse::Save)
         } else if ui.button("Don't Save").clicked() {
             Some(SaveWarningResponse::DontSave)
