@@ -13,18 +13,20 @@ use crate::{
         toolbar::ToolbarResponse,
     },
 };
+use std::sync::Arc;
 
 use eframe::{
     egui::{
-        self, Align, Context, CornerRadius, CursorIcon, Id, Layout, Margin, Sense, Stroke,
-        StrokeKind, Ui, UiBuilder,
+        self, Align, Context, CornerRadius, CursorIcon, Id, Sense, Stroke, StrokeKind, Ui,
+        UiBuilder,
     },
     emath::Rot2,
     epaint::{Color32, EllipseShape, FontId, Pos2, Rect, RectShape, Shape, TextShape, Vec2},
 };
 use egui::{
-    Order,
+    Galley, Order,
     epaint::{ColorMode, PathStroke},
+    text::LayoutJob,
 };
 
 use crate::{
@@ -1322,7 +1324,7 @@ impl<'a> Canvas<'a> {
         vertical_alignment: TextVerticalAlignment,
         layer_id: LayerId,
         text_edit_mode: &mut TextEditMode,
-    ) {
+    ) -> egui::Response {
         let horizontal_alignment = match horizontal_alignment {
             TextHorizontalAlignment::Left => Align::Min,
             TextHorizontalAlignment::Center => Align::Center,
@@ -1335,52 +1337,48 @@ impl<'a> Canvas<'a> {
             TextVerticalAlignment::Bottom => Align::Max,
         };
 
-        let layout = Layout {
-            main_dir: egui::Direction::TopDown,
-            main_wrap: true,
-            main_align: vertical_alignment,
-            main_justify: true,
-            cross_align: horizontal_alignment,
-            cross_justify: false,
-        };
-
-        ui.scope_builder(UiBuilder::new().layout(layout).max_rect(rect), |ui| {
+        ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
             ui.style_mut().interaction.selectable_labels = false;
 
-            let frame = egui::Frame::new()
-                .inner_margin(Margin::ZERO)
-                .outer_margin(Margin::ZERO);
+            // `TextEdit::min_size` only constrains width in egui 0.35. Use
+            // `add_sized` so the editing surface remains bounded by the layer
+            // rectangle and vertical alignment uses the same bounds as painting.
+            let text_edit_font_id = FontManager::available_font_id(ui.ctx(), font_id, font_size);
+            let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
+                Self::layout_text(
+                    ui,
+                    text.as_str(),
+                    text_edit_font_id.clone(),
+                    color,
+                    wrap_width,
+                    horizontal_alignment,
+                )
+            };
+            let text_edit = egui::TextEdit::multiline(text)
+                .id("text-edit".into())
+                .font(text_edit_font_id.clone())
+                .text_color(color)
+                .desired_width(rect.width())
+                .lock_focus(true)
+                .frame(egui::Frame::NONE)
+                .layouter(&mut layouter)
+                .horizontal_align(horizontal_alignment)
+                .vertical_align(vertical_alignment);
 
-            frame.show(ui, |ui| {
-                // Configure the text edit using the current text's properties
-                let text_edit_font_id =
-                    FontManager::available_font_id(ui.ctx(), font_id, font_size);
-                let text_edit = egui::TextEdit::multiline(text)
-                    .id("text-edit".into())
-                    .font(text_edit_font_id)
-                    .text_color(color)
-                    .min_size(rect.size())
-                    .desired_width(rect.width())
-                    .lock_focus(true)
-                    .background_color(color::TRANSPARENT)
-                    .horizontal_align(horizontal_alignment)
-                    .vertical_align(vertical_alignment);
+            let response = ui.add_sized(rect.size(), text_edit);
 
-                let response = ui.add(text_edit);
+            if *text_edit_mode == TextEditMode::BeginEditing(layer_id) {
+                *text_edit_mode = TextEditMode::Editing(layer_id);
+                response.request_focus();
+            }
 
-                if *text_edit_mode == TextEditMode::BeginEditing(layer_id) {
-                    *text_edit_mode = TextEditMode::Editing(layer_id);
-                    response.request_focus();
-                }
+            if response.lost_focus() {
+                *text_edit_mode = TextEditMode::None;
+            }
 
-                // If user presses Enter or clicks outside, exit edit mode
-                if response.lost_focus() {
-                    *text_edit_mode = TextEditMode::None;
-                }
-
-                text_edit_mode
-            });
-        });
+            response
+        })
+        .inner
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1409,21 +1407,20 @@ impl<'a> Canvas<'a> {
 
         let anchor = egui::Align2([horizontal_align, vertical_align]);
 
-        // Create the text layout with wrapping
-        let wrap_width = rect.width();
         let layout_font_id = FontManager::available_font_id(ui.ctx(), font_id, font_size);
-        let galley = ui.fonts_mut(|f| f.layout(text.to_owned(), layout_font_id, color, wrap_width));
+        let galley = Self::layout_text(
+            ui,
+            text,
+            layout_font_id,
+            color,
+            rect.width(),
+            horizontal_align,
+        );
 
-        // For rotation, we need to think about the galley (actual text) size vs the rect size
-        // The galley is positioned within the rect according to alignment
-        // Then both the galley position AND the galley itself need to rotate around rect center
-
-        // Calculate where the galley would be positioned within the unrotated rect
-        let galley_size = galley.rect.size();
-
-        // Position the galley within the rect based on alignment
-        let galley_rect_in_parent = anchor.align_size_within_rect(galley_size, rect);
-        let text_pos = galley_rect_in_parent.min;
+        // Match TextEdit's overflow behavior: once text is larger than the
+        // layer, pin it to the layer's leading edge instead of centering the
+        // oversized galley outside the edit bounds.
+        let text_pos = Self::text_origin_in_rect(&galley, rect, anchor);
 
         // Create text shape and apply rotation
         let mut text_shape = TextShape::new(text_pos, galley, color);
@@ -1442,7 +1439,31 @@ impl<'a> Canvas<'a> {
             text_shape.angle = rotation;
         }
 
-        ui.painter().add(text_shape);
+        let clip_rect = rect.rotate_bb_around_center(rotation);
+        ui.painter().with_clip_rect(clip_rect).add(text_shape);
+    }
+
+    fn layout_text(
+        ui: &Ui,
+        text: &str,
+        font_id: FontId,
+        color: Color32,
+        wrap_width: f32,
+        horizontal_alignment: Align,
+    ) -> Arc<Galley> {
+        let mut layout_job = LayoutJob::simple(text.to_owned(), font_id, color, wrap_width);
+        layout_job.halign = horizontal_alignment;
+        layout_job.keep_trailing_whitespace = true;
+        ui.fonts_mut(|fonts| fonts.layout_job(layout_job))
+    }
+
+    fn text_origin_in_rect(galley: &Galley, rect: Rect, anchor: egui::Align2) -> Pos2 {
+        let aligned_min = anchor
+            .align_size_within_rect(galley.size(), rect)
+            .intersect(rect)
+            .min;
+
+        aligned_min - Vec2::new(galley.rect.left(), 0.0)
     }
 
     fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
@@ -1758,5 +1779,80 @@ impl<'a> Canvas<'a> {
         }
 
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+
+    #[test]
+    fn editing_text_box_height_matches_layer_height() {
+        let mut harness = Harness::new_ui(|ui| {
+            let size = Vec2::new(180.0, 120.0);
+            let rect = Rect::from_min_size(ui.min_rect().min + Vec2::new(25.0, 35.0), size);
+            let mut text = "Centered text".to_owned();
+            let mut edit_mode = TextEditMode::Editing(1);
+
+            let response = Canvas::draw_editing_text(
+                ui,
+                &mut text,
+                &FontId::proportional(16.0),
+                rect,
+                16.0,
+                Color32::BLACK,
+                TextHorizontalAlignment::Center,
+                TextVerticalAlignment::Center,
+                1,
+                &mut edit_mode,
+            );
+
+            assert_eq!(response.rect, rect);
+        });
+
+        harness.run();
+    }
+
+    #[test]
+    fn centered_text_centers_each_line() {
+        let mut harness = Harness::new_ui(|ui| {
+            let galley = Canvas::layout_text(
+                ui,
+                "A much longer line\nshort",
+                FontId::proportional(16.0),
+                Color32::BLACK,
+                300.0,
+                Align::Center,
+            );
+
+            assert_eq!(galley.rows.len(), 2);
+            let first_center = galley.rows[0].rect().center().x;
+            let second_center = galley.rows[1].rect().center().x;
+            assert!((first_center - second_center).abs() < 1.01);
+        });
+
+        harness.run();
+    }
+
+    #[test]
+    fn oversized_centered_text_starts_at_bounds_top() {
+        let mut harness = Harness::new_ui(|ui| {
+            let galley = Canvas::layout_text(
+                ui,
+                "one\ntwo\nthree\nfour",
+                FontId::proportional(16.0),
+                Color32::BLACK,
+                180.0,
+                Align::Center,
+            );
+            let rect = Rect::from_min_size(Pos2::new(25.0, 35.0), Vec2::new(180.0, 30.0));
+
+            assert!(galley.size().y > rect.height());
+            let origin = Canvas::text_origin_in_rect(&galley, rect, egui::Align2::CENTER_CENTER);
+            assert_eq!(origin.y, rect.top());
+        });
+
+        harness.run();
     }
 }
