@@ -44,6 +44,7 @@ mod dependencies;
 mod dirs;
 mod error_sink;
 mod export;
+mod file_dialog;
 mod file_tree;
 mod font_manager;
 mod gpu_photo_adjustment;
@@ -359,7 +360,7 @@ impl eframe::App for PhotoBookApp {
 
         // Check for pending operations from modals
         if let Some(new_scene) = dep_mut!(session::Session, |session| {
-            session.check_modals(&self.scene_manager.root_scene)
+            session.check_modals(&self.scene_manager.root_scene, &ctx)
         }) {
             self.scene_manager.root_scene = new_scene;
         }

@@ -4496,9 +4496,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "971a75894502033d79718a00a86e03595caa1a3620e0cba1985a5fde8d2e0b66"
 dependencies = [
  "ascii",
+ "async-process",
  "block2 0.6.2",
  "dispatch2",
  "formatx",
+ "futures-channel",
+ "futures-lite",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-core-foundation",

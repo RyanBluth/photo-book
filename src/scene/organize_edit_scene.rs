@@ -15,6 +15,7 @@ use crate::{
     debug::DebugSettings,
     dep, dep_mut,
     export::Exporter,
+    file_dialog,
     modal::{
         ModalActionResponse,
         basic::BasicModal,
@@ -392,19 +393,21 @@ impl OrganizeEditScene {
                 });
             }
             MenuCommand::OpenCollection => {
-                self.load_collection(None);
+                self.load_collection(None, ctx);
             }
             MenuCommand::OpenRecent(path) => {
-                self.load_collection(Some(path));
+                self.load_collection(Some(path), ctx);
             }
             MenuCommand::Save => {
                 self.persist_active_book_state();
-                if let Err(err) = dep_mut!(Session, |session| session.save_project(&self)) {
+                if let Err(err) = dep_mut!(Session, |session| session.save_project(self, ctx))
+                    && !matches!(err, SessionError::WaitingForUserInput)
+                {
                     error!("Error saving collection: {:?}", err);
                 }
             }
             MenuCommand::Import => {
-                self.import_photos();
+                self.import_photos(ctx);
             }
             MenuCommand::Export => {
                 self.export_selected_book(ctx);
@@ -430,8 +433,8 @@ impl OrganizeEditScene {
         }
     }
 
-    fn load_collection(&mut self, path: Option<PathBuf>) {
-        match dep_mut!(Session, |session| session.load_project(self, path)) {
+    fn load_collection(&mut self, path: Option<PathBuf>, ctx: &Context) {
+        match dep_mut!(Session, |session| session.load_project(self, path, ctx)) {
             Ok(scene) => {
                 *self = scene;
                 self.show_gallery();
@@ -449,71 +452,53 @@ impl OrganizeEditScene {
         }
     }
 
-    fn import_photos(&mut self) {
-        let import_dir = native_dialog::DialogBuilder::file()
-            .add_filter("Images", &["png", "jpg", "jpeg"])
+    fn import_photos(&mut self, ctx: &Context) {
+        let dialog = native_dialog::DialogBuilder::file()
+            .add_filter("Images", ["png", "jpg", "jpeg"])
             .open_single_dir()
-            .show();
+            .spawn();
 
-        match import_dir {
+        file_dialog::spawn(dialog, ctx.clone(), |result, _| match result {
             Ok(Some(import_dir)) => {
-                info!("Imported {:?}", import_dir);
-                let _ = PhotoManager::load_directory(import_dir.clone());
+                info!("Importing {import_dir:?}");
+                if let Err(error) = PhotoManager::load_directory(import_dir) {
+                    error!("Error importing photos: {error:?}");
+                }
             }
-            Err(e) => {
-                error!("Error opening import file dialog: {:?}", e);
-            }
-            Ok(None) => {
-                info!("No import directory selected");
-            }
-        }
+            Err(error) => error!("Error opening import file dialog: {error}"),
+            Ok(None) => info!("No import directory selected"),
+        });
     }
 
     fn export_selected_book(&mut self, ctx: &Context) {
         self.persist_active_book_state();
+        let Some(book_state) = self.export_book_state() else {
+            ModalManager::push(BasicModal::new("Error", "Select a book to export", "OK"));
+            return;
+        };
+        let pages = book_state.pages_state.pages.values().cloned().collect();
 
-        let export_path = native_dialog::DialogBuilder::file()
+        let dialog = native_dialog::DialogBuilder::file()
             .set_filename("export.pdf")
             .save_single_file()
-            .show();
-
-        match export_path {
+            .spawn();
+        file_dialog::spawn(dialog, ctx.clone(), move |result, ctx| match result {
             Ok(Some(export_path)) => {
                 let directory = export_path.parent().unwrap();
                 let file_name = export_path.file_name().unwrap();
 
-                match self.export_book_state() {
-                    Some(book_state) => {
-                        dep_mut!(Exporter, |exporter| {
-                            exporter.export(
-                                ctx.clone(),
-                                book_state
-                                    .pages_state
-                                    .pages
-                                    .values()
-                                    .cloned()
-                                    .collect::<Vec<_>>(),
-                                directory.into(),
-                                file_name.to_str().unwrap(),
-                            );
-                        });
-                    }
-                    None => {
-                        ModalManager::push(BasicModal::new(
-                            "Error",
-                            "Select a book to export",
-                            "OK",
-                        ));
-                    }
-                };
+                dep_mut!(Exporter, |exporter| {
+                    exporter.export(
+                        ctx.clone(),
+                        pages,
+                        directory.into(),
+                        file_name.to_str().unwrap(),
+                    );
+                });
             }
-            Err(e) => {
-                error!("Error opening export file dialog: {:?}", e);
-            }
-            Ok(None) => {
-                info!("No export directory selected");
-            }
-        }
+            Err(error) => error!("Error opening export file dialog: {error}"),
+            Ok(None) => info!("No export directory selected"),
+        });
     }
 
     fn apply_album_filter(&mut self, album_id: String) {

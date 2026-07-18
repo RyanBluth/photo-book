@@ -1,11 +1,13 @@
 use std::path::PathBuf;
 
+use egui::Context;
 use log::error;
 
 use crate::{
     auto_persisting::AutoPersisting,
     config::{Config, ConfigModification},
     dep, dep_mut,
+    file_dialog::{self, FileDialogResult},
     modal::{
         manager::{ModalManager, TypedModalId},
         save_warning::{SaveWarningModal, SaveWarningResponse, SaveWarningSource},
@@ -26,8 +28,6 @@ pub enum PendingOperation {
 #[derive(Debug)]
 pub enum SessionError {
     _ProjectError(ProjectError),
-    DialogCancelled,
-    _DialogError(native_dialog::Error),
     WaitingForUserInput,
 }
 
@@ -37,18 +37,14 @@ impl From<ProjectError> for SessionError {
     }
 }
 
-impl From<native_dialog::Error> for SessionError {
-    fn from(err: native_dialog::Error) -> Self {
-        SessionError::_DialogError(err)
-    }
-}
-
 pub struct Session {
     pub active_project: Option<PathBuf>,
     pub project_preferences: ProjectPreferences,
     saved_project: Option<Project>,
     save_warning_modal_id: Option<TypedModalId<SaveWarningModal>>,
     pending_operation: Option<PendingOperation>,
+    file_dialog_open: bool,
+    completed_scene: Option<OrganizeEditScene>,
 }
 
 impl Session {
@@ -59,65 +55,67 @@ impl Session {
             saved_project: None,
             save_warning_modal_id: None,
             pending_operation: None,
+            file_dialog_open: false,
+            completed_scene: None,
         }
     }
 
-    pub fn check_modals(&mut self, current_scene: &OrganizeEditScene) -> Option<OrganizeEditScene> {
-        let modal_id = self.save_warning_modal_id.as_ref()?.clone();
+    pub fn check_modals(
+        &mut self,
+        current_scene: &OrganizeEditScene,
+        ctx: &Context,
+    ) -> Option<OrganizeEditScene> {
+        if let Some(scene) = self.completed_scene.take() {
+            return Some(scene);
+        }
+
+        let modal_id = self.save_warning_modal_id?;
 
         let response = dep!(ModalManager, |modal_manager| modal_manager
             .response_for(&modal_id));
 
-        match response {
-            Ok(Some(SaveWarningResponse::Save)) => {
-                if let Err(e) = self.save_project(current_scene) {
+        let scene = match response {
+            Ok(Some(SaveWarningResponse::Save)) => match self.save_project(current_scene, ctx) {
+                Ok(()) => self.execute_pending_operation(ctx),
+                Err(SessionError::WaitingForUserInput) => return None,
+                Err(e) => {
                     log::error!(
                         "Error saving project before executing pending operation: {:?}",
                         e
                     );
                     self.pending_operation = None;
-                    return None;
+                    None
                 }
-
-                let result = self.execute_pending_operation();
-
-                dep_mut!(ModalManager, |modal_manager| {
-                    modal_manager.dismiss(modal_id);
-                });
-
-                return result;
-            }
-            Ok(Some(SaveWarningResponse::DontSave)) => {
-                let result = self.execute_pending_operation();
-
-                dep_mut!(ModalManager, |modal_manager| {
-                    modal_manager.dismiss(modal_id);
-                });
-
-                return result;
-            }
+            },
+            Ok(Some(SaveWarningResponse::DontSave)) => self.execute_pending_operation(ctx),
             Ok(Some(SaveWarningResponse::Cancel)) => {
-                dep_mut!(ModalManager, |modal_manager| {
-                    modal_manager.dismiss(modal_id);
-                });
                 self.pending_operation = None;
+                None
             }
             Err(err) => {
                 error!(
                     "Error occurred while handling modal response for save warning dialog: {}",
                     err
                 );
+                return None;
             }
-            _ => {}
-        }
-        None
+            _ => return None,
+        };
+
+        self.dismiss_save_warning(modal_id);
+        scene
     }
 
     pub fn load_project(
         &mut self,
         current_scene: &OrganizeEditScene,
         path: Option<PathBuf>,
+        ctx: &Context,
     ) -> Result<OrganizeEditScene, SessionError> {
+        if self.file_dialog_open {
+            return Err(SessionError::WaitingForUserInput);
+        }
+
         if self.has_unsaved_changes(current_scene) {
             self.pending_operation = Some(PendingOperation::LoadProject(path.clone()));
             self.save_warning_modal_id = Some(ModalManager::push(SaveWarningModal::new(
@@ -126,26 +124,47 @@ impl Session {
             return Err(SessionError::WaitingForUserInput);
         }
 
-        self.load_project_internal(path)
+        self.load_project_internal(path, ctx)
     }
 
-    pub fn save_project(&mut self, scene: &OrganizeEditScene) -> Result<(), SessionError> {
+    pub fn save_project(
+        &mut self,
+        scene: &OrganizeEditScene,
+        ctx: &Context,
+    ) -> Result<(), SessionError> {
+        if self.file_dialog_open {
+            return Err(SessionError::WaitingForUserInput);
+        }
+
         let path = match &self.active_project {
             Some(p) => p.clone(),
             None => {
-                let save_path = native_dialog::DialogBuilder::file()
-                    .add_filter("Photo Book Collection", &["rpb"])
+                let project =
+                    Project::new_with_preferences(scene, self.project_preferences.clone());
+                let dialog = native_dialog::DialogBuilder::file()
+                    .add_filter("Photo Book Collection", ["rpb"])
                     .save_single_file()
-                    .show()?;
-
-                match save_path {
-                    Some(p) => p,
-                    None => return Err(SessionError::DialogCancelled),
-                }
+                    .spawn();
+                let continuation = self.pending_operation.take();
+                self.file_dialog_open = true;
+                file_dialog::spawn(dialog, ctx.clone(), move |result, ctx| {
+                    dep_mut!(Session, |session| {
+                        session.finish_save_dialog(result, project, continuation, ctx);
+                    });
+                });
+                return Err(SessionError::WaitingForUserInput);
             }
         };
 
         let project = Project::new_with_preferences(scene, self.project_preferences.clone());
+        self.save_project_to_path(path, project)
+    }
+
+    fn save_project_to_path(
+        &mut self,
+        path: PathBuf,
+        project: Project,
+    ) -> Result<(), SessionError> {
         Project::save_project(&path, &project)?;
         dep_mut!(AutoPersisting<Config>, |config| {
             let _ = config.modify(ConfigModification::AddRecentProject(path.clone()));
@@ -153,7 +172,7 @@ impl Session {
         });
 
         self.saved_project = Some(project);
-        self.active_project = Some(path.clone());
+        self.active_project = Some(path);
         Ok(())
     }
 
@@ -167,6 +186,10 @@ impl Session {
         &mut self,
         current_scene: &OrganizeEditScene,
     ) -> Result<OrganizeEditScene, SessionError> {
+        if self.file_dialog_open {
+            return Err(SessionError::WaitingForUserInput);
+        }
+
         if self.has_unsaved_changes(current_scene) {
             self.pending_operation = Some(PendingOperation::NewProject);
             self.save_warning_modal_id = Some(ModalManager::push(SaveWarningModal::new(
@@ -178,44 +201,58 @@ impl Session {
         self.new_project_internal()
     }
 
-    fn execute_pending_operation(&mut self) -> Option<OrganizeEditScene> {
-        match self.pending_operation.take() {
-            Some(PendingOperation::NewProject) => match self.new_project_internal() {
+    fn execute_pending_operation(&mut self, ctx: &Context) -> Option<OrganizeEditScene> {
+        let operation = self.pending_operation.take()?;
+        self.execute_operation(operation, ctx)
+    }
+
+    fn execute_operation(
+        &mut self,
+        operation: PendingOperation,
+        ctx: &Context,
+    ) -> Option<OrganizeEditScene> {
+        match operation {
+            PendingOperation::NewProject => match self.new_project_internal() {
                 Ok(scene) => Some(scene),
                 Err(e) => {
                     log::error!("Error creating new project: {:?}", e);
                     None
                 }
             },
-            Some(PendingOperation::LoadProject(path)) => match self.load_project_internal(path) {
+            PendingOperation::LoadProject(path) => match self.load_project_internal(path, ctx) {
                 Ok(scene) => Some(scene),
+                Err(SessionError::WaitingForUserInput) => None,
                 Err(e) => {
                     log::error!("Error loading project: {:?}", e);
                     None
                 }
             },
-            None => None,
         }
     }
 
     fn load_project_internal(
         &mut self,
         path: Option<PathBuf>,
+        ctx: &Context,
     ) -> Result<OrganizeEditScene, SessionError> {
         let path = match path {
             Some(p) => p,
             None => {
-                let open_path = native_dialog::DialogBuilder::file()
-                    .add_filter("Photo Book Collection", &["rpb"])
+                let dialog = native_dialog::DialogBuilder::file()
+                    .add_filter("Photo Book Collection", ["rpb"])
                     .open_single_file()
-                    .show()?;
-
-                match open_path {
-                    Some(p) => p,
-                    None => return Err(SessionError::DialogCancelled),
-                }
+                    .spawn();
+                self.file_dialog_open = true;
+                file_dialog::spawn(dialog, ctx.clone(), |result, _| {
+                    dep_mut!(Session, |session| session.finish_open_dialog(result));
+                });
+                return Err(SessionError::WaitingForUserInput);
             }
         };
+        self.load_project_from_path(path)
+    }
+
+    fn load_project_from_path(&mut self, path: PathBuf) -> Result<OrganizeEditScene, SessionError> {
         dep_mut!(PhotoManager, |photo_manager| {
             photo_manager.clear();
         });
@@ -232,9 +269,64 @@ impl Session {
             let _ = config.modify(ConfigModification::SetLastProject(path.clone()));
         });
 
-        self.mark_project_loaded(path.clone(), project);
+        self.mark_project_loaded(path, project);
 
         Ok(scene)
+    }
+
+    fn finish_save_dialog(
+        &mut self,
+        result: FileDialogResult,
+        project: Project,
+        continuation: Option<PendingOperation>,
+        ctx: &Context,
+    ) {
+        self.file_dialog_open = false;
+        if let Some(modal_id) = self.save_warning_modal_id {
+            self.dismiss_save_warning(modal_id);
+        }
+
+        let path = match result {
+            Ok(Some(path)) => path,
+            Ok(None) => return,
+            Err(error) => {
+                error!("Error opening save file dialog: {error}");
+                return;
+            }
+        };
+
+        if let Err(error) = self.save_project_to_path(path, project) {
+            error!("Error saving collection: {error:?}");
+            return;
+        }
+
+        if let Some(operation) = continuation {
+            self.completed_scene = self.execute_operation(operation, ctx);
+        }
+    }
+
+    fn finish_open_dialog(&mut self, result: FileDialogResult) {
+        self.file_dialog_open = false;
+
+        let path = match result {
+            Ok(Some(path)) => path,
+            Ok(None) => return,
+            Err(error) => {
+                error!("Error opening collection file dialog: {error}");
+                return;
+            }
+        };
+
+        match self.load_project_from_path(path) {
+            Ok(scene) => self.completed_scene = Some(scene),
+            Err(error) => error!("Error loading collection: {error:?}"),
+        }
+    }
+
+    fn dismiss_save_warning(&mut self, modal_id: TypedModalId<SaveWarningModal>) {
+        dep_mut!(ModalManager, |modal_manager| modal_manager
+            .dismiss(modal_id));
+        self.save_warning_modal_id = None;
     }
 
     fn new_project_internal(&mut self) -> Result<OrganizeEditScene, SessionError> {
