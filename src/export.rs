@@ -1,4 +1,4 @@
-use egui::{Pos2, Rect};
+use egui::{Context, Pos2, Rect};
 
 use skia_safe::EncodedImageFormat;
 use skia_safe::surfaces::raster_n32_premul;
@@ -22,10 +22,11 @@ use crate::{dep, dep_mut};
 use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
-use crate::photo_manager::{PhotoManager, PhotoTextureOptions};
+use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
+use crate::widget::canvas::types::CanvasPhoto;
 use crate::widget::canvas::{Canvas, CanvasState};
-use crate::widget::canvas_info::layers::LayerContent;
+use crate::widget::canvas_info::layers::{Layer, LayerContent};
 
 #[derive(Error, Debug, Clone)]
 #[allow(clippy::enum_variant_names)]
@@ -33,7 +34,6 @@ pub enum ExportError {
     #[error("Failed to create surface")]
     SurfaceCreationError,
     #[error("Error loading texture: {0}")]
-    #[allow(dead_code)]
     TextureLoadingError(String),
     #[error("Failed to encode image")]
     ImageEncodingError,
@@ -57,6 +57,18 @@ pub enum ExportTaskStatus {
 
 pub struct Exporter {
     pub tasks: Arc<Mutex<HashMap<ExportTaskId, ExportTaskStatus>>>,
+}
+
+struct AdoptedGlobalPhotoCache {
+    ctx: Context,
+}
+
+impl Drop for AdoptedGlobalPhotoCache {
+    fn drop(&mut self) {
+        dep_mut!(PhotoManager, |photo_manager| {
+            photo_manager.remove_cached_textures_for_context(&self.ctx);
+        });
+    }
 }
 
 impl Exporter {
@@ -206,39 +218,29 @@ impl Exporter {
         )
         .gpu_photo_adjustments(false);
 
-        for layer in canvas.state.layers.values() {
-            match &layer.content {
-                LayerContent::Photo(photo)
-                | LayerContent::TemplatePhoto {
-                    photo: Some(photo), ..
-                } => loop {
-                    let result = dep_mut!(PhotoManager, |photo_manager| {
-                        photo_manager.texture_for(
-                            &photo.photo,
-                            &backend.egui_ctx,
-                            PhotoTextureOptions::full_resolution()
-                                .with_adjustments(&photo.adjustments)
-                                .blocking(),
-                        )
-                    });
-                    match result {
-                        Ok(Some(_)) => break,
-                        Ok(None) => continue,
-                        Err(e) => {
-                            panic!(
-                                "Failed to load texture for {} when exporting: {:?}",
-                                photo.photo.uri(),
-                                e
-                            );
-                        }
-                    }
-                },
-                LayerContent::TemplatePhoto { photo: None, .. } => {}
-                LayerContent::Text(_) => {}
-                LayerContent::TemplateText { .. } => {}
-                LayerContent::Shape(_) => {}
-            }
+        let mut export_photo_manager = PhotoManager::new();
+        let prepared_photo_count =
+            prepare_visible_photo_textures_for_export(canvas.state.layers.values(), |photo| {
+                export_photo_manager.texture_for_export(
+                    &photo.photo,
+                    &photo.adjustments,
+                    &backend.egui_ctx,
+                )
+            })?;
+
+        let cache_adopted = dep_mut!(PhotoManager, |photo_manager| {
+            export_photo_manager
+                .transfer_cached_textures_for_context_to(&backend.egui_ctx, photo_manager)
+        });
+        if prepared_photo_count > 0 && !cache_adopted {
+            return Err(ExportError::TextureLoadingError(
+                "Export texture preparation completed without a transferable context cache"
+                    .to_owned(),
+            ));
         }
+        let adopted_cache = cache_adopted.then(|| AdoptedGlobalPhotoCache {
+            ctx: backend.egui_ctx.clone(),
+        });
 
         if let Some(font_definitions) = dep!(FontManager, |font_manager| font_manager
             .font_definitions
@@ -271,6 +273,7 @@ impl Exporter {
             Some(usize::MAX),
         );
         backend.paint(surface.canvas());
+        drop(adopted_cache);
 
         let data = surface
             .image_snapshot()
@@ -284,10 +287,6 @@ impl Exporter {
         output_file
             .write_all(&data)
             .map_err(|e| ExportError::FileError(e.to_string()))?;
-
-        dep_mut!(PhotoManager, |pm| {
-            pm.remove_cached_textures_for_context(&backend.egui_ctx);
-        });
 
         Ok(())
     }
@@ -352,5 +351,102 @@ impl Exporter {
         output_pdf
             .write_all(&pdf_bytes)
             .map_err(|e| ExportError::FileError(e.to_string()))
+    }
+}
+
+fn prepare_visible_photo_textures_for_export<'a, T>(
+    layers: impl IntoIterator<Item = &'a Layer>,
+    mut load_texture: impl FnMut(&CanvasPhoto) -> anyhow::Result<T>,
+) -> Result<usize, ExportError> {
+    let mut loaded_count = 0;
+    for photo in layers.into_iter().filter_map(visible_photo_for_export) {
+        match load_texture(photo) {
+            Ok(_) => loaded_count += 1,
+            Err(error) => {
+                return Err(ExportError::TextureLoadingError(format!(
+                    "{}: {error}",
+                    photo.photo.uri()
+                )));
+            }
+        }
+    }
+
+    Ok(loaded_count)
+}
+
+fn visible_photo_for_export(layer: &Layer) -> Option<&CanvasPhoto> {
+    if !layer.visible {
+        return None;
+    }
+
+    match &layer.content {
+        LayerContent::Photo(photo)
+        | LayerContent::TemplatePhoto {
+            photo: Some(photo), ..
+        } => Some(photo),
+        LayerContent::TemplatePhoto { photo: None, .. }
+        | LayerContent::Text(_)
+        | LayerContent::TemplateText { .. }
+        | LayerContent::Shape(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::photo_adjustments::PhotoAdjustments;
+    use crate::photo::{MetadataCollection, Photo, PhotoMetadata};
+
+    fn photo_layer(path: &str, visible: bool) -> Layer {
+        let photo = Photo {
+            path: PathBuf::from(path),
+            metadata: PhotoMetadata {
+                fields: MetadataCollection::new(),
+            },
+            thumbnail_hash: "export-test".to_owned(),
+            last_modified: None,
+        };
+        let mut layer = Layer::new_text_layer();
+        layer.content = LayerContent::Photo(CanvasPhoto {
+            photo,
+            adjustments: PhotoAdjustments::default(),
+            crop: Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)),
+        });
+        layer.visible = visible;
+        layer
+    }
+
+    #[test]
+    fn prepares_only_visible_photo_layers_for_export() {
+        let visible = photo_layer("/visible.jpg", true);
+        let hidden = photo_layer("/hidden.jpg", false);
+        let non_photo = Layer::new_text_layer();
+        let layers = [&visible, &hidden, &non_photo];
+        let mut loaded_paths = Vec::new();
+
+        let loaded_count = prepare_visible_photo_textures_for_export(layers, |photo| {
+            loaded_paths.push(photo.photo.path.clone());
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(loaded_count, 1);
+        assert_eq!(loaded_paths, [PathBuf::from("/visible.jpg")]);
+    }
+
+    #[test]
+    fn texture_loader_errors_are_returned_as_export_errors() {
+        let layer = photo_layer("/broken.jpg", true);
+
+        let error = prepare_visible_photo_textures_for_export([&layer], |_| {
+            Err::<(), _>(anyhow::anyhow!("decode failed"))
+        })
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            ExportError::TextureLoadingError(message)
+                if message.contains("file:///broken.jpg") && message.contains("decode failed")
+        ));
     }
 }

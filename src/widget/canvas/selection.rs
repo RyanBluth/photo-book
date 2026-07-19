@@ -58,7 +58,7 @@ impl MultiSelect {
     fn selected_layer_ids(layers: &IndexMap<LayerId, Layer>) -> Vec<LayerId> {
         layers
             .iter()
-            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, layer)| layer.selected && layer.visible && !layer.locked)
             .map(|(id, _)| *id)
             .collect()
     }
@@ -69,7 +69,7 @@ impl MultiSelect {
     ) -> Vec<MultiSelectChild> {
         layers
             .iter()
-            .filter(|(_, layer)| layer.selected)
+            .filter(|(_, layer)| layer.selected && layer.visible && !layer.locked)
             .map(|(id, layer)| MultiSelectChild {
                 transformable_state: layer.transform_state.to_local_space(parent),
                 id: *id,

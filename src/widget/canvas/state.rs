@@ -283,8 +283,101 @@ impl CanvasState {
         self.layers.get(layer_id).unwrap().selected
     }
 
+    pub fn is_layer_editable(layer: &Layer) -> bool {
+        !layer.locked
+    }
+
+    pub fn is_layer_canvas_selectable(layer: &Layer) -> bool {
+        layer.visible && Self::is_layer_editable(layer)
+    }
+
+    pub fn is_selected_layer_editable(layer: &Layer) -> bool {
+        layer.selected && Self::is_layer_canvas_selectable(layer)
+    }
+
+    pub fn editable_layer(&self, layer_id: &LayerId) -> Option<&Layer> {
+        self.layers
+            .get(layer_id)
+            .filter(|layer| Self::is_layer_canvas_selectable(layer))
+    }
+
+    pub fn editable_layer_mut(&mut self, layer_id: &LayerId) -> Option<&mut Layer> {
+        self.layers
+            .get_mut(layer_id)
+            .filter(|layer| Self::is_layer_canvas_selectable(layer))
+    }
+
+    pub fn are_layers_canvas_editable(&self, layer_ids: &[LayerId]) -> bool {
+        layer_ids
+            .iter()
+            .all(|layer_id| self.editable_layer(layer_id).is_some())
+    }
+
+    pub fn selected_editable_layers_iter(&self) -> impl Iterator<Item = &Layer> {
+        self.layers
+            .values()
+            .filter(|layer| Self::is_selected_layer_editable(layer))
+    }
+
     pub fn selected_layers_iter_mut(&mut self) -> impl Iterator<Item = &mut Layer> {
-        self.layers.values_mut().filter(|layer| layer.selected)
+        self.layers
+            .values_mut()
+            .filter(|layer| Self::is_selected_layer_editable(layer))
+    }
+
+    pub fn selected_editable_layer_ids(&self) -> Vec<LayerId> {
+        self.layers
+            .iter()
+            .filter(|(_, layer)| Self::is_selected_layer_editable(layer))
+            .map(|(layer_id, _)| *layer_id)
+            .collect()
+    }
+
+    pub fn select_layers_intersecting(&mut self, selection_box: Rect) {
+        for layer in self.layers.values_mut() {
+            layer.selected = Self::is_layer_canvas_selectable(layer)
+                && layer.transform_state.rect.intersects(selection_box);
+        }
+    }
+
+    pub fn delete_selected_editable_layers(&mut self) -> bool {
+        let original_len = self.layers.len();
+        self.layers
+            .retain(|_, layer| !Self::is_selected_layer_editable(layer));
+        let deleted = self.layers.len() != original_len;
+        if deleted {
+            self.update_quick_layout_order();
+        }
+        deleted
+    }
+
+    pub fn replace_selected_template_photo(&mut self, photo: Photo) -> bool {
+        let selected_layer_ids = self
+            .layers
+            .iter()
+            .filter(|(_, layer)| {
+                Self::is_selected_layer_editable(layer)
+                    && matches!(layer.content, LayerContent::TemplatePhoto { .. })
+            })
+            .map(|(layer_id, _)| *layer_id)
+            .collect::<Vec<_>>();
+
+        let [layer_id] = selected_layer_ids.as_slice() else {
+            return false;
+        };
+        let Some(layer) = self.editable_layer_mut(layer_id) else {
+            return false;
+        };
+        let LayerContent::TemplatePhoto {
+            photo: canvas_photo,
+            ..
+        } = &mut layer.content
+        else {
+            return false;
+        };
+
+        *canvas_photo = Some(CanvasPhoto::new(photo));
+        true
     }
 
     pub fn add_photo(&mut self, photo: Photo) {
@@ -346,5 +439,103 @@ impl TextEditMode {
             TextEditMode::None => false,
             TextEditMode::BeginEditing(id) | TextEditMode::Editing(id) => id == layer_id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::photo::{MetadataCollection, PhotoMetadata, PhotoMetadataField};
+
+    fn shape_layer(rect: Rect, selected: bool, visible: bool, locked: bool) -> Layer {
+        let mut layer =
+            Layer::new_rectangle_shape_layer_with_settings(&ShapeToolSettings::default(), rect);
+        layer.selected = selected;
+        layer.visible = visible;
+        layer.locked = locked;
+        layer
+    }
+
+    fn state_with_layers(layers: Vec<Layer>) -> CanvasState {
+        CanvasState::with_layers(
+            layers.into_iter().map(|layer| (layer.id, layer)).collect(),
+            EditablePage::new(Page::default()),
+            None,
+            Vec::new(),
+        )
+    }
+
+    fn test_photo(name: &str) -> Photo {
+        let mut fields = MetadataCollection::new();
+        fields.insert(PhotoMetadataField::Width(400));
+        fields.insert(PhotoMetadataField::Height(300));
+        fields.insert(PhotoMetadataField::RotatedWidth(400));
+        fields.insert(PhotoMetadataField::RotatedHeight(300));
+        Photo::with_metadata(PathBuf::from(name), PhotoMetadata { fields })
+    }
+
+    #[test]
+    fn marquee_selects_only_visible_unlocked_layers() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let editable = shape_layer(rect, false, true, false);
+        let hidden = shape_layer(rect, true, false, false);
+        let locked = shape_layer(rect, true, true, true);
+        let editable_id = editable.id;
+        let hidden_id = hidden.id;
+        let locked_id = locked.id;
+        let mut state = state_with_layers(vec![editable, hidden, locked]);
+
+        state.select_layers_intersecting(rect);
+
+        assert!(state.layers[&editable_id].selected);
+        assert!(!state.layers[&hidden_id].selected);
+        assert!(!state.layers[&locked_id].selected);
+    }
+
+    #[test]
+    fn deleting_selection_preserves_hidden_and_locked_layers() {
+        let rect = Rect::from_min_size(Pos2::ZERO, Vec2::splat(100.0));
+        let editable = shape_layer(rect, true, true, false);
+        let hidden = shape_layer(rect, true, false, false);
+        let locked = shape_layer(rect, true, true, true);
+        let unselected = shape_layer(rect, false, true, false);
+        let editable_id = editable.id;
+        let hidden_id = hidden.id;
+        let locked_id = locked.id;
+        let unselected_id = unselected.id;
+        let mut state = state_with_layers(vec![editable, hidden, locked, unselected]);
+
+        assert!(state.delete_selected_editable_layers());
+
+        assert!(!state.layers.contains_key(&editable_id));
+        assert!(state.layers.contains_key(&hidden_id));
+        assert!(state.layers.contains_key(&locked_id));
+        assert!(state.layers.contains_key(&unselected_id));
+        assert!(state.editable_layer(&hidden_id).is_none());
+        assert!(state.editable_layer(&locked_id).is_none());
+    }
+
+    #[test]
+    fn template_photo_replacement_requires_an_editable_selection() {
+        let mut state = CanvasState::with_template(crate::template::BUILT_IN[0].clone());
+        let layer_id = *state.layers.keys().next().unwrap();
+        let layer = state.layers.get_mut(&layer_id).unwrap();
+        layer.selected = true;
+        layer.locked = true;
+
+        assert!(!state.replace_selected_template_photo(test_photo("blocked.jpg")));
+        assert!(matches!(
+            &state.layers[&layer_id].content,
+            LayerContent::TemplatePhoto { photo: None, .. }
+        ));
+
+        state.layers.get_mut(&layer_id).unwrap().locked = false;
+        assert!(state.replace_selected_template_photo(test_photo("replacement.jpg")));
+        assert!(matches!(
+            &state.layers[&layer_id].content,
+            LayerContent::TemplatePhoto { photo: Some(_), .. }
+        ));
     }
 }

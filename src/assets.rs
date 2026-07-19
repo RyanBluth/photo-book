@@ -40,6 +40,12 @@ impl Asset {
     icon!(icon_ellipse, "ellipse.svg");
     icon!(icon_line, "line.svg");
 
+    // Material Symbols (outlined, 20px)
+    icon!(material_visibility, "material_visibility.svg");
+    icon!(material_visibility_off, "material_visibility_off.svg");
+    icon!(material_lock, "material_lock.svg");
+    icon!(material_lock_open, "material_lock_open.svg");
+
     // Status Bar Icons
     icon!(sidebar_right, "sidebar-right.svg");
     icon!(sidebar_left, "sidebar-left.svg");

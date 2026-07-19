@@ -57,12 +57,7 @@ impl<'a> CanvasArrange<'a> {
         show_scrollable_panel(ui, "canvas_arrange_scroll", egui::Margin::same(12), |ui| {
             AlignmentInfo::new(&mut AlignmentInfoState::new(
                 self.canvas_state.page.size_pixels(),
-                self.canvas_state
-                    .layers
-                    .iter_mut()
-                    .filter(|(_, layer)| layer.selected)
-                    .map(|(_, layer)| layer)
-                    .collect(),
+                self.canvas_state.selected_layers_iter_mut().collect(),
             ))
             .show(ui);
         });
@@ -81,13 +76,7 @@ impl<'a> CanvasProperties<'a> {
 
     fn show_context_controls(&mut self, ui: &mut egui::Ui) {
         // TODO: Handle multi select
-        let selected_layer = self
-            .canvas_state
-            .layers
-            .iter_mut()
-            .filter(|x| x.1.selected)
-            .map(|(_, layer)| layer)
-            .next();
+        let selected_layer = self.canvas_state.selected_layers_iter_mut().next();
 
         if let Some(layer) = selected_layer {
             if let LayerContent::TemplatePhoto {
@@ -160,10 +149,8 @@ impl<'a> CanvasAdjustments<'a> {
     fn show_context_controls(&mut self, ui: &mut egui::Ui) -> bool {
         let selected_photo = self
             .canvas_state
-            .layers
-            .iter_mut()
-            .filter(|(_, layer)| layer.selected)
-            .find_map(|(_, layer)| match &mut layer.content {
+            .selected_layers_iter_mut()
+            .find_map(|layer| match &mut layer.content {
                 LayerContent::Photo(photo) => Some(photo),
                 LayerContent::TemplatePhoto {
                     photo: Some(photo), ..
@@ -193,6 +180,7 @@ impl<'a> CanvasLayers<'a> {
         show_scrollable_panel(ui, "canvas_layers_scroll", egui::Margin::ZERO, |ui| {
             match Layers::new(&mut self.canvas_state.layers).show(ui) {
                 LayersResponse::SelectedLayer(_) => history = Some(CanvasHistoryKind::SelectLayer),
+                LayersResponse::Changed => history = Some(CanvasHistoryKind::EditLayer),
                 LayersResponse::None => {}
             }
         });

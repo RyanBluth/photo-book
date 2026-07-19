@@ -214,6 +214,16 @@ impl<'a> Canvas<'a> {
         // We collect the ids into a map to avoid borrowing issues
         // TODO: Is there a better way?
         for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
+            let (visible, locked) = self
+                .state
+                .layers
+                .get(&layer_id)
+                .map(|layer| (layer.visible, layer.locked))
+                .unwrap_or((false, false));
+            if !visible {
+                continue;
+            }
+
             if let Some(transform_response) = self.draw_layer(&layer_id, false, page_rect, ui) {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
@@ -229,7 +239,7 @@ impl<'a> Canvas<'a> {
                     && self.state.is_layer_selected(&layer_id)
                 {
                     self.deselect_all_photos();
-                } else if transform_response.mouse_down && primary_pointer_pressed {
+                } else if !locked && transform_response.mouse_down && primary_pointer_pressed {
                     self.select_layer(&layer_id, ui.ctx());
                 }
 
@@ -249,7 +259,7 @@ impl<'a> Canvas<'a> {
         self.draw_tool(ui, page_rect);
 
         // Add action bar at the bottom
-        if self.state.layers.values().any(|layer| layer.selected)
+        if self.state.selected_editable_layers_iter().next().is_some()
             && let Some(response) = self.show_action_bar(ui)
         {
             return Some(response);
@@ -304,7 +314,8 @@ impl<'a> Canvas<'a> {
         if primary_pointer_pressed && self.available_rect.contains(mouse_pos) {
             Some(match tool {
                 IdleTool::Select => {
-                    let is_layer_selected = self.state.layers.values().any(|layer| layer.selected);
+                    let is_layer_selected =
+                        self.state.selected_editable_layers_iter().next().is_some();
                     if is_layer_selected {
                         return None;
                     }
@@ -344,9 +355,7 @@ impl<'a> Canvas<'a> {
             ActiveTool::Select { start_pos } => {
                 let selection_box =
                     self.screen_to_page_rect(page_rect, Rect::from_two_pos(*start_pos, mouse_pos));
-                for layer in self.state.layers.values_mut() {
-                    layer.selected = layer.transform_state.rect.intersects(selection_box);
-                }
+                self.state.select_layers_intersecting(selection_box);
 
                 ToolState::Idle(IdleTool::Select)
             }
@@ -556,7 +565,14 @@ impl<'a> Canvas<'a> {
         self.state.zoom = zoom;
 
         for layer_id in self.state.layers.keys().copied().collect::<Vec<LayerId>>() {
-            self.draw_layer(&layer_id, true, page_rect, ui);
+            if self
+                .state
+                .layers
+                .get(&layer_id)
+                .is_some_and(|layer| layer.visible)
+            {
+                self.draw_layer(&layer_id, true, page_rect, ui);
+            }
         }
 
         self.state.zoom = current_zoom;
@@ -593,13 +609,7 @@ impl<'a> Canvas<'a> {
     }
 
     fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
-        let selected_layer_ids = self
-            .state
-            .layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .map(|(id, _)| id)
-            .collect::<Vec<_>>();
+        let selected_layer_ids = self.state.selected_editable_layer_ids();
 
         if selected_layer_ids.len() > 1 {
             if let Some(multi_select) = &mut self.state.multi_select {
@@ -671,7 +681,8 @@ impl<'a> Canvas<'a> {
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap().clone();
-        let active = layer.selected && self.state.multi_select.is_none();
+        let editable = CanvasState::is_layer_canvas_selectable(layer);
+        let active = layer.selected && editable && self.state.multi_select.is_none();
 
         match &mut layer.content {
             LayerContent::Photo(photo) => {
@@ -738,7 +749,10 @@ impl<'a> Canvas<'a> {
                 let mut transform_state = layer.transform_state.clone();
 
                 // Check if this layer is being edited
-                let is_editing = self.state.text_edit_mode.is_editing(layer_id);
+                let is_editing = editable && self.state.text_edit_mode.is_editing(layer_id);
+                if !editable && self.state.text_edit_mode.is_editing(layer_id) {
+                    self.state.text_edit_mode = TextEditMode::None;
+                }
 
                 // Make a mutable copy of the text content that we can modify
                 let mut text_content = text.clone();
@@ -799,7 +813,7 @@ impl<'a> Canvas<'a> {
                     );
 
                 // Double-click to enter edit mode
-                if transform_response.double_clicked && !is_editing {
+                if editable && transform_response.double_clicked && !is_editing {
                     self.state.text_edit_mode = TextEditMode::BeginEditing(*layer_id);
                 }
 
@@ -946,7 +960,10 @@ impl<'a> Canvas<'a> {
                 );
 
                 // Check if this layer is being edited
-                let is_editing = self.state.text_edit_mode.is_editing(layer_id);
+                let is_editing = editable && self.state.text_edit_mode.is_editing(layer_id);
+                if !editable && self.state.text_edit_mode.is_editing(layer_id) {
+                    self.state.text_edit_mode = TextEditMode::None;
+                }
 
                 // Create a mutable copy of the text content to work with
                 let mut text_content = text.clone();
@@ -1003,7 +1020,7 @@ impl<'a> Canvas<'a> {
                 }
 
                 // Update the layer content if the text has changed
-                if text.text != text_content.text {
+                if editable && text.text != text_content.text {
                     let mut updated_layer = layer.clone();
                     if let LayerContent::TemplateText { region: _, text } =
                         &mut updated_layer.content
@@ -1014,7 +1031,7 @@ impl<'a> Canvas<'a> {
                 }
 
                 // Double-click to enter edit mode
-                if response.double_clicked() && !is_editing {
+                if editable && response.double_clicked() && !is_editing {
                     self.state.text_edit_mode = TextEditMode::BeginEditing(*layer_id);
                 }
 
@@ -1407,13 +1424,10 @@ impl<'a> Canvas<'a> {
 
             // Delete the selected photo
             if input.key_pressed(egui::Key::Delete) {
-                self.state.layers.retain(|_, layer| !layer.selected);
-
-                // Remove any layers that are in the quick layout order but are no longer in the layers map
-                self.state.update_quick_layout_order();
-
-                self.history_manager
-                    .save_history(CanvasHistoryKind::DeletePhoto, self.state);
+                if self.state.delete_selected_editable_layers() {
+                    self.history_manager
+                        .save_history(CanvasHistoryKind::DeletePhoto, self.state);
+                }
             }
 
             // Move the selected photo
@@ -1555,13 +1569,7 @@ impl<'a> Canvas<'a> {
     }
 
     fn show_action_bar(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
-        let selected_layers: Vec<LayerId> = self
-            .state
-            .layers
-            .iter()
-            .filter(|(_, layer)| layer.selected)
-            .map(|(id, _)| *id)
-            .collect();
+        let selected_layers = self.state.selected_editable_layer_ids();
 
         let mut actions = vec![];
 
@@ -1635,6 +1643,9 @@ impl<'a> Canvas<'a> {
             {
                 match action {
                     ActionBarAction::SwapCenters(id1, id2) => {
+                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
+                            return None;
+                        }
                         let original_child_a_rect =
                             self.state.layers.get(&id1).unwrap().transform_state.rect;
 
@@ -1658,9 +1669,15 @@ impl<'a> Canvas<'a> {
                             .set_center(original_child_a_rect.center());
                     }
                     ActionBarAction::SwapCentersAndBounds(id1, id2) => {
+                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
+                            return None;
+                        }
                         self.state.swap_layer_centers_and_bounds(id1, id2);
                     }
                     ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
+                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
+                            return None;
+                        }
                         if let Some(ref layout) = self.state.last_quick_layout.clone() {
                             let first_id_index = self
                                 .state
@@ -1684,7 +1701,7 @@ impl<'a> Canvas<'a> {
                         }
                     }
                     ActionBarAction::Crop(layer_id) => {
-                        if let Some(layer) = self.state.layers.get(&layer_id)
+                        if let Some(layer) = self.state.editable_layer(&layer_id)
                             && matches!(layer.content, LayerContent::Photo(_))
                         {
                             return Some(CanvasResponse::EnterCropMode {

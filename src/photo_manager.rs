@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
     io::BufWriter,
     path::{Path, PathBuf},
+    time::{Duration, Instant},
 };
 
 use glob::MatchOptions;
@@ -50,6 +51,8 @@ const FULL_RES_PRELOAD_START_BUDGET: usize = 4;
 const FULL_RES_PRELOAD_READY_BUDGET: usize = 2;
 const FULL_RES_CACHE_CAPACITY: usize = 20;
 const ADJUSTED_THUMBNAIL_CACHE_CAPACITY: usize = 512;
+const EXPORT_TEXTURE_LOAD_TIMEOUT: Duration = Duration::from_secs(60);
+const EXPORT_TEXTURE_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PhotoTextureResolution {
@@ -70,7 +73,6 @@ pub struct PhotoTextureOptions<'a> {
     resolution: PhotoTextureResolution,
     adjustments: PhotoTextureAdjustments<'a>,
     thumbnail_fallback: bool,
-    blocking: bool,
 }
 
 impl Default for PhotoTextureOptions<'_> {
@@ -86,7 +88,6 @@ impl<'a> PhotoTextureOptions<'a> {
             resolution: PhotoTextureResolution::Full,
             adjustments: PhotoTextureAdjustments::Stored,
             thumbnail_fallback: false,
-            blocking: false,
         }
     }
 
@@ -113,12 +114,6 @@ impl<'a> PhotoTextureOptions<'a> {
     /// Returns a thumbnail while the full-resolution texture is still loading.
     pub fn with_thumbnail_fallback(mut self) -> Self {
         self.thumbnail_fallback = true;
-        self
-    }
-
-    /// Polls egui's image loader until an unadjusted texture is ready.
-    pub fn blocking(mut self) -> Self {
-        self.blocking = true;
         self
     }
 }
@@ -202,6 +197,26 @@ impl PhotoManager {
 
     pub fn remove_cached_textures_for_context(&mut self, ctx: &Context) {
         self.caches.retain(|(context, _)| context != ctx);
+    }
+
+    /// Moves the complete texture cache for `ctx` into `destination`.
+    ///
+    /// This is useful when a local export manager prepares textures without holding the global
+    /// manager lock, then needs the resulting handles to be visible to normal render paths.
+    /// Any existing destination cache for the same context is replaced.
+    pub fn transfer_cached_textures_for_context_to(
+        &mut self,
+        ctx: &Context,
+        destination: &mut Self,
+    ) -> bool {
+        let Some(index) = self.caches.iter().position(|(context, _)| context == ctx) else {
+            return false;
+        };
+
+        let (context, cache) = self.caches.swap_remove(index);
+        destination.remove_cached_textures_for_context(ctx);
+        destination.caches.push((context, cache));
+        true
     }
 
     fn get_cache_mut(&mut self, ctx: &Context) -> &mut ContextCache {
@@ -412,7 +427,9 @@ impl PhotoManager {
         }
     }
 
-    /// Loads a texture according to `options`, returning `None` while asynchronous work is pending.
+    /// Loads a texture according to `options`.
+    ///
+    /// Returns `None` while asynchronous work is pending or a requested thumbnail is unavailable.
     pub fn texture_for(
         &mut self,
         photo: &Photo,
@@ -425,8 +442,7 @@ impl PhotoManager {
             PhotoTextureAdjustments::None => Cow::Owned(PhotoAdjustments::default()),
         };
         let adjustments = adjustments.as_ref();
-        let allow_adjustment_jobs =
-            options.blocking || !ctx.input(|input| input.pointer.primary_down());
+        let allow_adjustment_jobs = !ctx.input(|input| input.pointer.primary_down());
 
         match options.resolution {
             PhotoTextureResolution::Thumbnail => {
@@ -436,12 +452,7 @@ impl PhotoManager {
 
                 let cache = self.get_cache_mut(ctx);
                 if adjustments.is_identity() {
-                    Self::load_unadjusted_texture(
-                        &photo.thumbnail_uri(),
-                        options.blocking,
-                        ctx,
-                        cache,
-                    )
+                    Self::load_unadjusted_texture(&photo.thumbnail_uri(), ctx, cache)
                 } else {
                     Self::load_adjusted_thumbnail_texture(
                         photo,
@@ -463,11 +474,7 @@ impl PhotoManager {
                 };
                 let cache = self.get_cache_mut(ctx);
                 let full_res_result = if adjustments.is_identity() {
-                    if options.blocking {
-                        Self::load_full_res_texture_blocking(&uri, ctx, cache)
-                    } else {
-                        Self::load_full_res_texture(&uri, ctx, cache)
-                    }
+                    Self::load_full_res_texture(&uri, ctx, cache)
                 } else {
                     Self::load_adjusted_full_res_texture(
                         photo,
@@ -484,12 +491,7 @@ impl PhotoManager {
                         Ok(Some(texture)) => Ok(Some(texture)),
                         _ if !thumbnail_exists => Ok(None),
                         _ if adjustments.is_identity() || !allow_adjustment_jobs => {
-                            Self::load_unadjusted_texture(
-                                &photo.thumbnail_uri(),
-                                options.blocking,
-                                ctx,
-                                cache,
-                            )
+                            Self::load_unadjusted_texture(&photo.thumbnail_uri(), ctx, cache)
                         }
                         _ => Self::load_adjusted_thumbnail_texture(
                             photo,
@@ -507,6 +509,37 @@ impl PhotoManager {
                 result
             }
         }
+    }
+
+    /// Loads a full-resolution texture for an off-thread export and returns only when it is ready.
+    pub fn texture_for_export(
+        &mut self,
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        ctx: &Context,
+    ) -> anyhow::Result<SizedTexture> {
+        let uri = photo.uri();
+        let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
+        let protected_uri = if adjustments.is_identity() {
+            uri.clone()
+        } else {
+            adjusted_texture_cache_key(&uri, &path_version_key(&photo.path), adjustments)
+        };
+        let cache = self.get_cache_mut(ctx);
+        let result = if adjustments.is_identity() {
+            Self::load_full_res_texture_for_export(&uri, ctx, cache)
+        } else {
+            Self::load_adjusted_full_res_texture_for_export(
+                photo,
+                adjustments,
+                max_texture_side,
+                ctx,
+                cache,
+            )
+        };
+
+        Self::evict_full_res_textures(ctx, cache, &protected_uri);
+        result
     }
 
     pub fn preload_texture(&mut self, photo: &Photo, ctx: &Context) -> anyhow::Result<()> {
@@ -658,13 +691,13 @@ impl PhotoManager {
         result
     }
 
-    fn load_full_res_texture_blocking(
+    fn load_full_res_texture_for_export(
         uri: &str,
         ctx: &Context,
         cache: &mut ContextCache,
-    ) -> anyhow::Result<Option<SizedTexture>> {
+    ) -> anyhow::Result<SizedTexture> {
         Self::touch_full_res_texture(cache, uri);
-        let result = Self::load_texture_blocking(
+        let result = Self::load_texture_for_export(
             uri,
             ctx,
             &mut cache.texture_cache,
@@ -700,6 +733,34 @@ impl PhotoManager {
             adjustments,
             max_texture_side,
             allow_start,
+            ctx,
+            cache,
+        );
+
+        if result.is_err() {
+            cache.full_res_accesses.remove(&cache_key);
+        }
+
+        result
+    }
+
+    fn load_adjusted_full_res_texture_for_export(
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        max_texture_side: u32,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<SizedTexture> {
+        let uri = photo.uri();
+        let source_version = path_version_key(&photo.path);
+        let cache_key = adjusted_texture_cache_key(&uri, &source_version, adjustments);
+        Self::touch_full_res_texture(cache, &cache_key);
+
+        let result = Self::load_adjusted_texture_for_export(
+            photo.path.clone(),
+            cache_key.clone(),
+            adjustments,
+            max_texture_side,
             ctx,
             cache,
         );
@@ -790,6 +851,53 @@ impl PhotoManager {
         Ok(None)
     }
 
+    fn load_adjusted_texture_for_export(
+        source_path: PathBuf,
+        cache_key: String,
+        adjustments: &PhotoAdjustments,
+        max_texture_side: u32,
+        ctx: &Context,
+        cache: &mut ContextCache,
+    ) -> anyhow::Result<SizedTexture> {
+        if !cache.adjusted_texture_cache.contains_key(&cache_key) {
+            // Replace any asynchronous receiver: its worker may be queued on the Tokio pool
+            // currently occupied by the export caller.
+            let (sender, receiver) = oneshot::channel();
+            Self::spawn_adjusted_texture_job_on_thread(
+                source_path.clone(),
+                adjustments.clone(),
+                max_texture_side,
+                sender,
+            );
+            cache
+                .pending_adjusted_textures
+                .insert(cache_key.clone(), receiver);
+        }
+
+        let result = wait_for_texture(
+            &cache_key,
+            EXPORT_TEXTURE_LOAD_TIMEOUT,
+            EXPORT_TEXTURE_POLL_INTERVAL,
+            || {
+                Self::load_adjusted_texture(
+                    source_path.clone(),
+                    cache_key.clone(),
+                    adjustments,
+                    max_texture_side,
+                    false,
+                    ctx,
+                    cache,
+                )
+            },
+        );
+
+        if result.is_err() {
+            cache.pending_adjusted_textures.remove(&cache_key);
+        }
+
+        result
+    }
+
     fn poll_adjusted_texture(
         cache: &mut ContextCache,
         cache_key: &str,
@@ -818,9 +926,8 @@ impl PhotoManager {
         max_texture_side: u32,
         sender: oneshot::Sender<std::result::Result<AdjustedTextureImage, String>>,
     ) {
-        let load = move || adjusted_texture_image(source_path, adjustments, max_texture_side);
-
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let load = move || adjusted_texture_image(source_path, adjustments, max_texture_side);
             handle.spawn(async move {
                 let result = spawn_blocking(load)
                     .await
@@ -829,10 +936,25 @@ impl PhotoManager {
                 let _ = sender.send(result);
             });
         } else {
-            std::thread::spawn(move || {
-                let _ = sender.send(load());
-            });
+            Self::spawn_adjusted_texture_job_on_thread(
+                source_path,
+                adjustments,
+                max_texture_side,
+                sender,
+            );
         }
+    }
+
+    fn spawn_adjusted_texture_job_on_thread(
+        source_path: PathBuf,
+        adjustments: PhotoAdjustments,
+        max_texture_side: u32,
+        sender: oneshot::Sender<std::result::Result<AdjustedTextureImage, String>>,
+    ) {
+        std::thread::spawn(move || {
+            let result = adjusted_texture_image(source_path, adjustments, max_texture_side);
+            let _ = sender.send(result);
+        });
     }
 
     fn touch_full_res_texture(cache: &mut ContextCache, uri: &str) {
@@ -898,25 +1020,15 @@ impl PhotoManager {
 
     fn load_unadjusted_texture(
         uri: &str,
-        blocking: bool,
         ctx: &Context,
         cache: &mut ContextCache,
     ) -> anyhow::Result<Option<SizedTexture>> {
-        if blocking {
-            Self::load_texture_blocking(
-                uri,
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            )
-        } else {
-            Self::load_texture(
-                uri,
-                ctx,
-                &mut cache.texture_cache,
-                &mut cache.pending_textures,
-            )
-        }
+        Self::load_texture(
+            uri,
+            ctx,
+            &mut cache.texture_cache,
+            &mut cache.pending_textures,
+        )
     }
 
     fn load_texture(
@@ -957,41 +1069,24 @@ impl PhotoManager {
         }
     }
 
-    fn load_texture_blocking(
+    fn load_texture_for_export(
         uri: &str,
         ctx: &Context,
         texture_cache: &mut HashMap<String, SizedTexture>,
         pending_textures: &mut HashSet<String>,
-    ) -> anyhow::Result<Option<SizedTexture>> {
-        match texture_cache.get(uri) {
-            Some(texture) => {
-                pending_textures.remove(uri);
-                Ok(Some(*texture))
-            }
-            None => {
-                let texture = ctx.try_load_texture(
-                    uri,
-                    eframe::egui::TextureOptions::default(),
-                    eframe::egui::SizeHint::Scale(OrderedFloat::from(1.0)),
-                );
+    ) -> anyhow::Result<SizedTexture> {
+        let result = wait_for_texture(
+            uri,
+            EXPORT_TEXTURE_LOAD_TIMEOUT,
+            EXPORT_TEXTURE_POLL_INTERVAL,
+            || Self::load_texture(uri, ctx, texture_cache, pending_textures),
+        );
 
-                match texture {
-                    Ok(eframe::egui::load::TexturePoll::Pending { size: _ }) => {
-                        pending_textures.insert(uri.to_string());
-                        Ok(None)
-                    }
-                    Ok(eframe::egui::load::TexturePoll::Ready { texture }) => {
-                        pending_textures.remove(uri);
-                        texture_cache.insert(uri.to_string(), texture);
-                        Ok(Some(texture))
-                    }
-                    Err(err) => {
-                        pending_textures.remove(uri);
-                        Err(anyhow!(err))
-                    }
-                }
-            }
+        if result.is_err() {
+            pending_textures.remove(uri);
         }
+
+        result
     }
 
     fn gen_thumbnails(photo_paths: Vec<PathBuf>) -> anyhow::Result<()> {
@@ -1368,4 +1463,180 @@ fn adjusted_texture_image(
         size: [rgba.width() as usize, rgba.height() as usize],
         rgba: rgba.into_raw(),
     })
+}
+
+fn wait_for_texture<T>(
+    description: &str,
+    timeout: Duration,
+    poll_interval: Duration,
+    mut poll: impl FnMut() -> anyhow::Result<Option<T>>,
+) -> anyhow::Result<T> {
+    let started_at = Instant::now();
+
+    loop {
+        match poll() {
+            Ok(Some(texture)) => return Ok(texture),
+            Ok(None) if started_at.elapsed() < timeout => {
+                std::thread::sleep(poll_interval);
+            }
+            Ok(None) => {
+                return Err(anyhow!(
+                    "Timed out loading {description} after {:.1} seconds",
+                    timeout.as_secs_f32()
+                ));
+            }
+            Err(error) => {
+                return Err(anyhow!("Failed to load {description}: {error}"));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::photo::{MetadataCollection, PhotoMetadata};
+
+    fn test_photo_file(label: &str) -> (PathBuf, Photo) {
+        let path = std::env::temp_dir().join(format!(
+            "photobook-{label}-{}-{}.png",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        image::RgbaImage::from_pixel(2, 2, image::Rgba([20, 40, 60, 255]))
+            .save(&path)
+            .unwrap();
+        let photo = Photo {
+            path: path.clone(),
+            metadata: PhotoMetadata {
+                fields: MetadataCollection::new(),
+            },
+            thumbnail_hash: "export-texture-test".to_owned(),
+            last_modified: None,
+        };
+        (path, photo)
+    }
+
+    fn texture_test_context() -> Context {
+        let ctx = Context::default();
+        egui_extras::install_image_loaders(&ctx);
+        ctx
+    }
+
+    #[test]
+    fn export_unadjusted_full_resolution_returns_ready_texture() {
+        let (path, photo) = test_photo_file("unadjusted");
+        let ctx = texture_test_context();
+        let mut manager = PhotoManager::new();
+
+        let result = manager.texture_for_export(&photo, &PhotoAdjustments::default(), &ctx);
+        let _ = std::fs::remove_file(path);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn export_adjusted_full_resolution_returns_ready_texture() {
+        let (path, photo) = test_photo_file("adjusted");
+        let ctx = texture_test_context();
+        let mut manager = PhotoManager::new();
+        let mut adjustments = PhotoAdjustments::default();
+        adjustments.light.exposure = 0.5;
+
+        let result = manager.texture_for_export(&photo, &adjustments, &ctx);
+        let _ = std::fs::remove_file(path);
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn transferred_context_cache_reuses_adjusted_texture_without_reloading_source() {
+        let (path, photo) = test_photo_file("transferred-adjusted");
+        let ctx = texture_test_context();
+        let mut source_manager = PhotoManager::new();
+        let mut destination_manager = PhotoManager::new();
+        let mut adjustments = PhotoAdjustments::default();
+        adjustments.light.exposure = 0.5;
+
+        let loaded = source_manager
+            .texture_for_export(&photo, &adjustments, &ctx)
+            .unwrap();
+        assert!(
+            source_manager.transfer_cached_textures_for_context_to(&ctx, &mut destination_manager)
+        );
+        assert!(source_manager.caches.is_empty());
+        let transferred_cache = destination_manager
+            .caches
+            .iter()
+            .find(|(context, _)| context == &ctx)
+            .map(|(_, cache)| cache)
+            .unwrap();
+        assert!(
+            transferred_cache
+                .adjusted_texture_cache
+                .values()
+                .any(|texture| texture.id() == loaded.id)
+        );
+
+        let reused = destination_manager
+            .texture_for(
+                &photo,
+                &ctx,
+                PhotoTextureOptions::full_resolution().with_adjustments(&adjustments),
+            )
+            .unwrap()
+            .unwrap();
+        let _ = std::fs::remove_file(path);
+
+        assert_eq!(reused.id, loaded.id);
+    }
+
+    #[test]
+    fn export_texture_wait_returns_ready_value_after_pending_polls() {
+        let mut poll_count = 0;
+
+        let texture = wait_for_texture(
+            "test texture",
+            Duration::from_secs(1),
+            Duration::ZERO,
+            || {
+                poll_count += 1;
+                Ok((poll_count == 3).then_some(42))
+            },
+        )
+        .unwrap();
+
+        assert_eq!(texture, 42);
+        assert_eq!(poll_count, 3);
+    }
+
+    #[test]
+    fn export_texture_wait_propagates_loader_errors_with_context() {
+        let error = wait_for_texture::<()>(
+            "file:///broken.jpg",
+            Duration::from_secs(1),
+            Duration::ZERO,
+            || Err(anyhow!("decode failed")),
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("file:///broken.jpg"));
+        assert!(message.contains("decode failed"));
+    }
+
+    #[test]
+    fn export_texture_wait_times_out_instead_of_remaining_pending() {
+        let error = wait_for_texture::<()>(
+            "file:///pending.jpg",
+            Duration::ZERO,
+            Duration::ZERO,
+            || Ok(None),
+        )
+        .unwrap_err();
+
+        let message = error.to_string();
+        assert!(message.contains("file:///pending.jpg"));
+        assert!(message.contains("Timed out"));
+    }
 }

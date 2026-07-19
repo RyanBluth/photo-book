@@ -14,7 +14,7 @@ use crate::{
     theme::color,
     utils::{IdExt, RectExt},
     widget::{
-        canvas::{Canvas, CanvasPhoto, CanvasState, MultiSelect},
+        canvas::{Canvas, CanvasState, MultiSelect},
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::{CanvasAdjustments, CanvasArrange, CanvasLayers, CanvasProperties},
@@ -425,7 +425,9 @@ impl Scene for CanvasScene {
         }) = popped_scene_response
         {
             let page = self.state.pages_state.pages.get_mut(&page_id).unwrap();
-            let layer = page.layers.get_mut(&layer_id).unwrap();
+            let Some(layer) = page.editable_layer_mut(&layer_id) else {
+                return;
+            };
             if let LayerContent::Photo(photo) = &mut layer.content {
                 photo.crop = crop;
 
@@ -467,25 +469,11 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     let is_template = self.scene_state.selected_page().template.is_some();
 
                     if is_template {
-                        let page = self.scene_state.selected_page_mut();
-                        let mut selected_template_photos: Vec<_> = page
-                            .layers
-                            .iter_mut()
-                            .filter(|(_, layer)| {
-                                matches!(layer.content, LayerContent::TemplatePhoto { .. })
-                                    && layer.selected
-                            })
-                            .collect();
-
-                        if selected_template_photos.len() == 1 {
-                            if let LayerContent::TemplatePhoto {
-                                region: _,
-                                photo: canvas_photo,
-                                scale_mode: _,
-                            } = &mut selected_template_photos[0].1.content
-                            {
-                                *canvas_photo = Some(CanvasPhoto::new(photo.clone()));
-                            }
+                        if self
+                            .scene_state
+                            .selected_page_mut()
+                            .replace_selected_template_photo(photo.clone())
+                        {
                             // Create a snapshot of the state after modification
                             self.scene_state
                                 .save_selected_history(CanvasHistoryKind::AddPhoto);
@@ -527,8 +515,7 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                         let Some(photo) = self
                             .scene_state
                             .selected_page()
-                            .layers
-                            .get(&target_layer)
+                            .editable_layer(&target_layer)
                             .and_then(|layer| match &layer.content {
                                 LayerContent::Photo(photo) => Some(photo.clone()),
                                 _ => None,
@@ -785,6 +772,7 @@ pub enum CanvasHistoryKind {
     AdjustPhoto,
     QuickLayout,
     AddShape,
+    EditLayer,
 }
 
 impl Display for CanvasHistoryKind {
@@ -802,6 +790,7 @@ impl Display for CanvasHistoryKind {
             CanvasHistoryKind::AdjustPhoto => write!(f, "Adjust Photo"),
             CanvasHistoryKind::QuickLayout => write!(f, "Quick Layout"),
             CanvasHistoryKind::AddShape => write!(f, "Add Shape"),
+            CanvasHistoryKind::EditLayer => write!(f, "Edit Layer"),
         }
     }
 }

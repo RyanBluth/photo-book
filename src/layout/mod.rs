@@ -269,13 +269,76 @@ pub fn apply_layout_node(node: &LayoutNode, canvas_state: &mut CanvasState, gap:
         &mut slice,
     );
     for layer_id in canvas_state.quick_layout_order.iter() {
-        if let Some(rect) = regions.get(layer_id) {
-            canvas_state
-                .layers
-                .get_mut(layer_id)
-                .unwrap()
-                .transform_state
-                .rect = *rect;
+        if let Some(rect) = regions.get(layer_id)
+            && let Some(layer) = canvas_state.layers.get_mut(layer_id)
+            && CanvasState::is_layer_editable(layer)
+        {
+            layer.transform_state.rect = *rect;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use indexmap::indexmap;
+
+    use super::*;
+    use crate::{
+        model::{edit_state::EditablePage, page::Page},
+        photo::{MetadataCollection, Photo, PhotoMetadata, PhotoMetadataField},
+        widget::canvas_info::layers::Layer,
+    };
+
+    fn photo_layer(name: &str) -> Layer {
+        let mut fields = MetadataCollection::new();
+        fields.insert(PhotoMetadataField::Width(400));
+        fields.insert(PhotoMetadataField::Height(300));
+        fields.insert(PhotoMetadataField::RotatedWidth(400));
+        fields.insert(PhotoMetadataField::RotatedHeight(300));
+        Layer::with_photo(Photo::with_metadata(
+            PathBuf::from(name),
+            PhotoMetadata { fields },
+        ))
+    }
+
+    #[test]
+    fn quick_layout_does_not_move_locked_layers() {
+        let mut locked = photo_layer("locked.jpg");
+        locked.locked = true;
+        locked.transform_state.rect =
+            Rect::from_min_size(Pos2::new(17.0, 23.0), Vec2::new(111.0, 79.0));
+        let locked_id = locked.id;
+        let locked_rect = locked.transform_state.rect;
+
+        let mut editable = photo_layer("editable.jpg");
+        editable.transform_state.rect =
+            Rect::from_min_size(Pos2::new(31.0, 37.0), Vec2::new(91.0, 61.0));
+        let editable_id = editable.id;
+        let editable_rect = editable.transform_state.rect;
+
+        let mut canvas_state = CanvasState::with_layers(
+            indexmap! { locked_id => locked, editable_id => editable },
+            EditablePage::new(Page::default()),
+            None,
+            vec![locked_id, editable_id],
+        );
+
+        apply_layout_node(
+            &LayoutNode::leaf(LeafLayout::HorizontalStack, 2),
+            &mut canvas_state,
+            10.0,
+            20.0,
+        );
+
+        assert_eq!(
+            canvas_state.layers[&locked_id].transform_state.rect,
+            locked_rect
+        );
+        assert_ne!(
+            canvas_state.layers[&editable_id].transform_state.rect,
+            editable_rect
+        );
     }
 }
