@@ -5,6 +5,7 @@ pub mod line_edit_control;
 pub mod line_tool_control;
 pub mod page_info;
 pub mod panel;
+pub mod property_control;
 pub mod quick_layout;
 pub mod scale_mode;
 pub mod shape_edit_control;

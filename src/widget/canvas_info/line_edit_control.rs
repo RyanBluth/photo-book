@@ -1,4 +1,4 @@
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, Ui};
 
 use crate::utils::EditableValueTextEdit;
 
@@ -6,6 +6,7 @@ use super::layers::{
     Layer,
     LayerContent::{Photo, Shape, TemplatePhoto, TemplateText, Text},
 };
+use super::property_control::{color_field, field, field_pair, property_group};
 
 pub struct LineEditControl<'a> {
     layer: &'a mut Layer,
@@ -24,23 +25,32 @@ impl<'a> LineEditControl<'a> {
                 }
                 Shape(shape) => {
                     if let Some((stroke, _)) = &mut shape.stroke {
-                        ui.vertical(|ui| {
-                            ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 5.0);
-
-                            ui.label(RichText::new("Line").heading());
-
-                            ui.horizontal(|ui| {
-                                ui.label("Color:");
-                                ui.color_edit_button_srgba(&mut stroke.color);
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.label("Thickness:");
-                                ui.text_edit_editable_value_singleline(
-                                    &mut shape.edit_state.stroke_width,
-                                );
-                                stroke.width = shape.edit_state.stroke_width.value();
-                            });
+                        shape
+                            .edit_state
+                            .update(stroke.width, shape.fill_color, stroke.color);
+                        property_group(ui, |ui| {
+                            let (_, width) = field_pair(
+                                ui,
+                                |ui| {
+                                    field(ui, "Color", |ui| {
+                                        color_field(
+                                            ui,
+                                            &mut stroke.color,
+                                            &mut shape.edit_state.stroke_color,
+                                        );
+                                    });
+                                },
+                                |ui| {
+                                    field(ui, "Thickness", |ui| {
+                                        ui.style_mut().spacing.text_edit_width =
+                                            ui.available_width();
+                                        ui.text_edit_editable_value_singleline(
+                                            &mut shape.edit_state.stroke_width,
+                                        )
+                                    })
+                                },
+                            );
+                            stroke.width = width;
                         });
                     }
                 }

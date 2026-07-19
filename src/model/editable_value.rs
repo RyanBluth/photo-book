@@ -38,8 +38,15 @@ where
     }
 
     pub fn end_editing(&mut self) {
-        self.value = self.editable_value.parse().unwrap_or(self.value.clone());
+        if let Ok(value) = self.editable_value.parse() {
+            self.value = value;
+        }
+        self.editable_value = self.value.to_string();
         self.editing = false;
+    }
+
+    pub fn is_editing(&self) -> bool {
+        self.editing
     }
 
     pub fn value(&self) -> T {
@@ -53,5 +60,21 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.editable_value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EditableValue;
+
+    #[test]
+    fn invalid_edit_reverts_to_the_current_value() {
+        let mut editable = EditableValue::new(42.0_f32);
+        editable.begin_editing();
+        *editable.editable_value() = "not a number".to_string();
+        editable.end_editing();
+
+        assert_eq!(editable.value(), 42.0);
+        assert_eq!(editable.to_string(), "42");
     }
 }

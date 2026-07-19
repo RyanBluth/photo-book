@@ -1,9 +1,10 @@
-use eframe::egui::{RichText, Ui};
+use eframe::egui::Ui;
 use egui::{ComboBox, Stroke, StrokeKind};
 
 use crate::{theme::color, utils::EditableValueTextEdit};
 
 use super::layers::ShapeToolSettings;
+use super::property_control::{color_field, field, field_pair, property_group};
 
 pub struct ShapeToolControl<'a> {
     settings: &'a mut ShapeToolSettings,
@@ -19,22 +20,27 @@ impl<'a> ShapeToolControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 5.0);
+        let (stroke_width, stroke_color) = self
+            .settings
+            .stroke
+            .map(|(stroke, _)| (stroke.width, stroke.color))
+            .unwrap_or((1.0, color::BLACK));
+        self.settings
+            .edit_state
+            .update(stroke_width, self.settings.fill_color, stroke_color);
 
-            ui.label(RichText::new("Shape Tool Settings").heading());
-
-            ui.horizontal(|ui| {
-                ui.label("Color:");
-                ui.color_edit_button_srgba(&mut self.settings.fill_color);
+        property_group(ui, |ui| {
+            field(ui, "Fill color", |ui| {
+                color_field(
+                    ui,
+                    &mut self.settings.fill_color,
+                    &mut self.settings.edit_state.fill_color,
+                );
             });
 
             // Only show stroke kind for non-line shapes
             if !self.is_line_tool {
-                // Add dropdown for stroke kind
-                ui.horizontal(|ui| {
-                    ui.label("Stroke Kind:");
-
+                field(ui, "Stroke", |ui| {
                     let selected_label = match self.settings.stroke.map(|(_, kind)| kind) {
                         Some(StrokeKind::Inside) => "Inside",
                         Some(StrokeKind::Middle) => "Middle",
@@ -44,8 +50,9 @@ impl<'a> ShapeToolControl<'a> {
 
                     let mut current_kind = self.settings.stroke.map(|(_, kind)| kind);
 
-                    ComboBox::from_label("Stoke Kind")
+                    ComboBox::from_id_salt("shape_tool_stroke_alignment")
                         .selected_text(selected_label)
+                        .width(ui.available_width())
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut current_kind, None, "None");
                             ui.selectable_value(
@@ -87,19 +94,27 @@ impl<'a> ShapeToolControl<'a> {
             }
 
             if let Some((stroke_val, _)) = &mut self.settings.stroke {
-                ui.horizontal(|ui| {
-                    ui.label("Stroke Width:");
-                    ui.text_edit_editable_value_singleline(
-                        &mut self.settings.edit_state.stroke_width,
-                    );
-
-                    stroke_val.width = self.settings.edit_state.stroke_width.value();
-                });
-
-                ui.horizontal(|ui| {
-                    ui.label("Stroke Color:");
-                    ui.color_edit_button_srgba(&mut stroke_val.color);
-                });
+                let (stroke_width, _) = field_pair(
+                    ui,
+                    |ui| {
+                        field(ui, "Stroke width", |ui| {
+                            ui.style_mut().spacing.text_edit_width = ui.available_width();
+                            ui.text_edit_editable_value_singleline(
+                                &mut self.settings.edit_state.stroke_width,
+                            )
+                        })
+                    },
+                    |ui| {
+                        field(ui, "Stroke color", |ui| {
+                            color_field(
+                                ui,
+                                &mut stroke_val.color,
+                                &mut self.settings.edit_state.stroke_color,
+                            );
+                        });
+                    },
+                );
+                stroke_val.width = stroke_width;
             }
         });
     }

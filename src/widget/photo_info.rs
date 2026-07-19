@@ -145,6 +145,7 @@ impl<'a> PhotoInfo<'a> {
             .fill(color::SURFACE)
             .show(ui, |ui| {
                 ui.vertical(|ui| {
+                    ui.style_mut().spacing.item_spacing.y = 6.0;
                     ui.set_min_width(ui.available_width());
 
                     ui.horizontal(|ui| {
@@ -154,15 +155,13 @@ impl<'a> PhotoInfo<'a> {
                                 Label::new(RichText::new(self.camera()).size(15.0).strong())
                                     .truncate(),
                             );
-                            ui.add_space(6.0);
                             ui.add(
-                                Label::new(RichText::new(self.lens()).size(14.0).strong())
+                                Label::new(RichText::new(self.lens()).size(13.0))
                                     .truncate(),
                             );
                         });
                     });
 
-                    ui.add_space(8.0);
                     self.show_file_summary_row(ui);
 
                     Self::separator(ui);
@@ -380,8 +379,8 @@ impl<'a> PhotoInfo<'a> {
         let file_size = self.file_size().unwrap_or_else(|| "-".to_string());
 
         ui.columns(3, |columns| {
-            Self::metadata_cell(&mut columns[0], self.dimensions(), 15.0, egui::Align::LEFT);
-            Self::metadata_cell(&mut columns[1], file_size, 15.0, egui::Align::Center);
+            Self::metadata_cell(&mut columns[0], self.dimensions(), 13.0, egui::Align::LEFT);
+            Self::metadata_cell(&mut columns[1], file_size, 13.0, egui::Align::Center);
             Self::metadata_cell(
                 &mut columns[2],
                 self.file_type_badge(),

@@ -1,8 +1,9 @@
-use eframe::egui::{RichText, Ui};
+use eframe::egui::Ui;
 
 use crate::utils::EditableValueTextEdit;
 
 use super::layers::LineToolSettings;
+use super::property_control::{color_field, field, field_pair, property_group};
 
 pub struct LineToolControl<'a> {
     settings: &'a mut LineToolSettings,
@@ -14,21 +15,33 @@ impl<'a> LineToolControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 5.0);
-
-            ui.label(RichText::new("Line Tool Settings").heading());
-
-            ui.horizontal(|ui| {
-                ui.label("Color:");
-                ui.color_edit_button_srgba(&mut self.settings.color);
-            });
-
-            ui.horizontal(|ui| {
-                ui.label("Thickness:");
-                ui.text_edit_editable_value_singleline(&mut self.settings.edit_state.stroke_width);
-                self.settings.width = self.settings.edit_state.stroke_width.value();
-            });
+        self.settings.edit_state.update(
+            self.settings.width,
+            self.settings.color,
+            self.settings.color,
+        );
+        property_group(ui, |ui| {
+            let (_, width) = field_pair(
+                ui,
+                |ui| {
+                    field(ui, "Color", |ui| {
+                        color_field(
+                            ui,
+                            &mut self.settings.color,
+                            &mut self.settings.edit_state.stroke_color,
+                        );
+                    });
+                },
+                |ui| {
+                    field(ui, "Thickness", |ui| {
+                        ui.style_mut().spacing.text_edit_width = ui.available_width();
+                        ui.text_edit_editable_value_singleline(
+                            &mut self.settings.edit_state.stroke_width,
+                        )
+                    })
+                },
+            );
+            self.settings.width = width;
         });
     }
 }

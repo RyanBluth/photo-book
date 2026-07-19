@@ -10,7 +10,7 @@ use crate::{
     dep_mut,
     history::HistoricallyEqual,
     id::{LayerId, next_layer_id},
-    model::{self, editable_value::EditableValue},
+    model::{self, editable_value::EditableValue, hex_color::HexColor},
     photo::Photo,
     photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
     template::TemplateRegion,
@@ -60,17 +60,20 @@ impl LayerTransformEditState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasTextEditState {
     pub font_size: EditableValue<f32>,
+    pub color: EditableValue<HexColor>,
 }
 
 impl CanvasTextEditState {
-    pub fn new(font_size: f32) -> Self {
+    pub fn new(font_size: f32, color: Color32) -> Self {
         Self {
             font_size: EditableValue::new(font_size),
+            color: EditableValue::new(HexColor(color)),
         }
     }
 
-    pub fn update(&mut self, font_size: f32) {
+    pub fn update(&mut self, font_size: f32, color: Color32) {
         self.font_size.update_if_not_active(font_size);
+        self.color.update_if_not_active(HexColor(color));
     }
 }
 
@@ -112,7 +115,7 @@ impl CanvasText {
             text,
             font_size,
             font_id: font_family,
-            edit_state: CanvasTextEditState::new(font_size),
+            edit_state: CanvasTextEditState::new(font_size, color),
             color,
             horizontal_alignment,
             vertical_alignment,
@@ -188,17 +191,24 @@ impl CanvasShape {
 #[derive(Debug, Clone, PartialEq)]
 pub struct CanvasShapeEditState {
     pub stroke_width: EditableValue<f32>,
+    pub fill_color: EditableValue<HexColor>,
+    pub stroke_color: EditableValue<HexColor>,
 }
 
 impl CanvasShapeEditState {
-    pub fn new(stroke_width: f32) -> Self {
+    pub fn new(stroke_width: f32, fill_color: Color32, stroke_color: Color32) -> Self {
         Self {
             stroke_width: EditableValue::new(stroke_width),
+            fill_color: EditableValue::new(HexColor(fill_color)),
+            stroke_color: EditableValue::new(HexColor(stroke_color)),
         }
     }
 
-    pub fn update(&mut self, stroke_width: f32) {
+    pub fn update(&mut self, stroke_width: f32, fill_color: Color32, stroke_color: Color32) {
         self.stroke_width.update_if_not_active(stroke_width);
+        self.fill_color.update_if_not_active(HexColor(fill_color));
+        self.stroke_color
+            .update_if_not_active(HexColor(stroke_color));
     }
 }
 
@@ -206,6 +216,8 @@ impl Default for CanvasShapeEditState {
     fn default() -> Self {
         Self {
             stroke_width: EditableValue::new(1.0),
+            fill_color: EditableValue::new(HexColor(color::BLACK)),
+            stroke_color: EditableValue::new(HexColor(color::BLACK)),
         }
     }
 }
@@ -229,7 +241,7 @@ impl Default for TextToolSettings {
             color: color::BLACK,
             horizontal_alignment: TextHorizontalAlignment::Left,
             vertical_alignment: TextVerticalAlignment::Top,
-            edit_state: CanvasTextEditState::new(24.0),
+            edit_state: CanvasTextEditState::new(24.0, color::BLACK),
         }
     }
 }

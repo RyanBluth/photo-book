@@ -5,11 +5,11 @@ use eframe::{
     emath::Rot2,
     epaint::{Mesh, Pos2, Rect, Vec2, Vertex},
 };
-use egui::{Align, Id, InnerResponse, Layout, Sense, Ui};
+use egui::{Align, Id, InnerResponse, Layout, Response, Sense, TextBuffer, TextEdit, Ui};
 
 use crate::{
     cursor_manager::CursorManager, dep_mut, model::editable_value::EditableValue,
-    sizing_manager::SizingManager,
+    sizing_manager::SizingManager, theme::style,
 };
 
 pub fn partition_iterator<T>(iter: impl Iterator<Item = T>, partitions: usize) -> Vec<Vec<T>> {
@@ -517,17 +517,43 @@ impl EditableValueTextEdit for Ui {
         T: FromStr,
         T: Clone,
     {
-        let text_edit_response = self.text_edit_singleline(value.editable_value());
+        let text_edit_response = self.styled_text_edit_singleline(value.editable_value());
 
         if text_edit_response.gained_focus() {
             value.begin_editing();
-        } else if text_edit_response.lost_focus() {
+        } else if value.is_editing() && !text_edit_response.has_focus() {
             value.end_editing();
 
             return value.value().clone();
         }
 
         value.value()
+    }
+}
+
+pub trait StyledTextEdit {
+    fn styled_text_edit_singleline<S: TextBuffer>(&mut self, text: &mut S) -> Response;
+
+    fn styled_text_edit_singleline_with<'text, S: TextBuffer>(
+        &mut self,
+        text: &'text mut S,
+        configure: impl FnOnce(TextEdit<'text>) -> TextEdit<'text>,
+    ) -> Response;
+}
+
+impl StyledTextEdit for Ui {
+    fn styled_text_edit_singleline<S: TextBuffer>(&mut self, text: &mut S) -> Response {
+        self.styled_text_edit_singleline_with(text, |text_edit| text_edit)
+    }
+
+    fn styled_text_edit_singleline_with<'text, S: TextBuffer>(
+        &mut self,
+        text: &'text mut S,
+        configure: impl FnOnce(TextEdit<'text>) -> TextEdit<'text>,
+    ) -> Response {
+        self.add(configure(
+            TextEdit::singleline(text).margin(style::TEXT_EDIT_MARGIN),
+        ))
     }
 }
 
@@ -628,7 +654,26 @@ impl ExifDateTimeExt for exif::DateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::Color32;
+    use egui::{Color32, ComboBox};
+    use egui_kittest::Harness;
+
+    #[test]
+    fn styled_text_inputs_match_dropdown_height() {
+        let mut value = String::new();
+        let mut harness = Harness::new_ui(|ui| {
+            ui.spacing_mut().button_padding = egui::vec2(12.0, 6.0);
+            ui.spacing_mut().interact_size.y = style::CONTROL_HEIGHT;
+
+            let text_edit = ui.styled_text_edit_singleline(&mut value);
+            let combo_box = ComboBox::from_id_salt("height_test")
+                .selected_text("Value")
+                .show_ui(ui, |_| {});
+
+            assert_eq!(text_edit.rect.height(), combo_box.response.rect.height());
+        });
+
+        harness.run();
+    }
 
     #[test]
     fn clip_mesh_constrains_vertices_to_rect() {

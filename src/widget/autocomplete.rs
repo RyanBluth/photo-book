@@ -2,7 +2,9 @@
 
 use std::{fmt::Debug, hash::Hash};
 
-use egui::{Id, Key, Modifiers, Popup, Response, ScrollArea, TextEdit, Ui, Widget, WidgetText};
+use egui::{Id, Key, Modifiers, Popup, Response, ScrollArea, Ui, Widget, WidgetText};
+
+use crate::utils::StyledTextEdit;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AutocompleteState {
@@ -104,17 +106,19 @@ impl<'a, S: AsRef<str>> Autocomplete<'a, S> {
 
     pub fn show(self, ui: &mut Ui) -> AutocompleteResponse {
         let popup_id = self.id.with("popup");
-        let mut text_edit = TextEdit::singleline(self.text).id(self.id);
-
-        if let Some(hint_text) = self.hint_text {
-            text_edit = text_edit.hint_text(hint_text);
-        }
-
-        if let Some(desired_width) = self.desired_width {
-            text_edit = text_edit.desired_width(desired_width);
-        }
-
-        let mut response = text_edit.show(ui).response.response;
+        let text_edit_id = self.id;
+        let hint_text = self.hint_text;
+        let desired_width = self.desired_width;
+        let mut response = ui.styled_text_edit_singleline_with(self.text, |mut text_edit| {
+            text_edit = text_edit.id(text_edit_id);
+            if let Some(hint_text) = hint_text {
+                text_edit = text_edit.hint_text(hint_text);
+            }
+            if let Some(desired_width) = desired_width {
+                text_edit = text_edit.desired_width(desired_width);
+            }
+            text_edit
+        });
         let mut text_changed = response.changed();
         let mut selected_text = None;
         let mut submitted_text = None;

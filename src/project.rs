@@ -1215,12 +1215,13 @@ impl From<AppCanvasText> for CanvasText {
 
 impl From<CanvasText> for AppCanvasText {
     fn from(text: CanvasText) -> Self {
+        let color = text.color.into();
         Self {
             text: text.text,
             font_size: text.font_size,
             font_id: text.font_id.into(),
-            color: text.color.into(),
-            edit_state: CanvasTextEditState::new(text.font_size),
+            color,
+            edit_state: CanvasTextEditState::new(text.font_size, color),
             horizontal_alignment: text.horizontal_alignment.into(),
             vertical_alignment: text.vertical_alignment.into(),
         }
@@ -1248,20 +1249,19 @@ impl From<AppCanvasShape> for CanvasShape {
 
 impl From<CanvasShape> for AppCanvasShape {
     fn from(shape: CanvasShape) -> Self {
+        let fill_color = shape.fill_color.into();
+        let stroke: Option<(egui::Stroke, egui::StrokeKind)> = shape
+            .stroke
+            .map(|(stroke, kind)| (stroke.into(), kind.into()));
+        let (stroke_width, stroke_color) = stroke
+            .map(|(stroke, _)| (stroke.width, stroke.color))
+            .unwrap_or((1.0, crate::theme::color::BLACK));
+
         Self {
             kind: shape.kind.into(),
-            fill_color: shape.fill_color.into(),
-            stroke: shape
-                .stroke
-                .as_ref()
-                .map(|(stroke, kind)| (stroke.clone().into(), kind.clone().into())),
-            edit_state: CanvasShapeEditState::new(
-                shape
-                    .stroke
-                    .as_ref()
-                    .map(|(stroke, _)| stroke.width)
-                    .unwrap_or(1.0),
-            ),
+            fill_color,
+            stroke,
+            edit_state: CanvasShapeEditState::new(stroke_width, fill_color, stroke_color),
         }
     }
 }

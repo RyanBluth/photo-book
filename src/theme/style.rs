@@ -1,16 +1,19 @@
 use egui::{
-    Color32, Context, CornerRadius, Frame, Response, RichText, Shadow, Stroke, Ui, WidgetText, vec2,
+    Color32, Context, CornerRadius, Frame, Margin, Response, RichText, Shadow, Stroke, Ui,
+    WidgetText, vec2,
 };
 
 use super::color;
 
 pub const DIALOG_MIN_WIDTH: f32 = 400.0;
+pub(crate) const CONTROL_HEIGHT: f32 = 31.0;
+pub(crate) const TEXT_EDIT_MARGIN: Margin = Margin::symmetric(12, 8);
 
 /// Apply the application-wide egui styling.
 pub fn apply(ctx: &Context) {
     ctx.global_style_mut(|style| {
         style.spacing.button_padding = vec2(12.0, 6.0);
-        style.spacing.interact_size.y = 30.0;
+        style.spacing.interact_size.y = CONTROL_HEIGHT;
 
         let widgets = &mut style.visuals.widgets;
         widgets.inactive.weak_bg_fill = color::SURFACE;

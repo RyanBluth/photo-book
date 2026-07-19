@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use crate::theme::style;
+use crate::{theme::style, utils::StyledTextEdit};
 
 use super::{Modal, ModalResponse};
 
@@ -58,10 +58,12 @@ impl Modal for NamePromptModal {
 
     fn body_ui(&mut self, ui: &mut egui::Ui) {
         ui.label(&self.label);
-        let response = ui.add_sized(
-            [ui.available_width(), ui.spacing().interact_size.y],
-            egui::TextEdit::singleline(&mut self.name),
-        );
+        let response = ui
+            .scope(|ui| {
+                ui.style_mut().spacing.text_edit_width = ui.available_width();
+                ui.styled_text_edit_singleline(&mut self.name)
+            })
+            .inner;
         if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
             self.submit_requested = true;
         }

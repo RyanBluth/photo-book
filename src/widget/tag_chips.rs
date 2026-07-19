@@ -2,7 +2,7 @@ use egui::{Key, Response, Ui};
 use std::collections::HashSet;
 
 use super::chip_collection::chip_collection;
-use crate::model::editable_value::EditableValue;
+use crate::{model::editable_value::EditableValue, utils::StyledTextEdit};
 
 /// State for the tag chips widget
 #[derive(Debug, Clone, PartialEq)]
@@ -163,7 +163,7 @@ impl<'a> TagChips<'a> {
                         ui.label("Add tag:");
 
                         let response =
-                            ui.text_edit_singleline(self.state.tag_input.editable_value());
+                            ui.styled_text_edit_singleline(self.state.tag_input.editable_value());
 
                         if response.gained_focus() {
                             self.state.tag_input.begin_editing();

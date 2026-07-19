@@ -1,4 +1,4 @@
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{self, Ui};
 use egui::{ComboBox, Stroke, StrokeKind};
 
 use crate::{theme::color, utils::EditableValueTextEdit};
@@ -7,6 +7,7 @@ use super::layers::{
     CanvasShapeKind, Layer,
     LayerContent::{Photo, Shape, TemplatePhoto, TemplateText, Text},
 };
+use super::property_control::{color_field, field, field_pair, property_group};
 
 pub struct ShapeEditControl<'a> {
     layer: &'a mut Layer,
@@ -18,35 +19,33 @@ impl<'a> ShapeEditControl<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) {
-        let _response: egui::InnerResponse<()> = ui.allocate_ui(ui.available_size(), |ui| {
-            match &mut self.layer.content {
+        let _response: egui::InnerResponse<()> =
+            ui.allocate_ui(ui.available_size(), |ui| match &mut self.layer.content {
                 Photo(_) | TemplatePhoto { .. } | Text(_) | TemplateText { .. } => {
                     ui.label("No shape layer selected");
                 }
                 Shape(shape) => {
                     let is_line = matches!(shape.kind, CanvasShapeKind::Line { .. });
+                    let (stroke_width, stroke_color) = shape
+                        .stroke
+                        .map(|(stroke, _)| (stroke.width, stroke.color))
+                        .unwrap_or((1.0, color::BLACK));
+                    shape
+                        .edit_state
+                        .update(stroke_width, shape.fill_color, stroke_color);
 
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing = egui::Vec2::new(10.0, 5.0);
-
-                        ui.label(RichText::new("Shape").heading());
-
-                        ui.horizontal(|ui| {
-                            ui.label("Shape Type:");
-                            ui.label(format!("{:?}", shape.kind));
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Color:");
-                            ui.color_edit_button_srgba(&mut shape.fill_color);
+                    property_group(ui, |ui| {
+                        field(ui, "Fill color", |ui| {
+                            color_field(
+                                ui,
+                                &mut shape.fill_color,
+                                &mut shape.edit_state.fill_color,
+                            );
                         });
 
                         // Only show stroke kind for non-line shapes
                         if !is_line {
-                            // Add dropdown for stroke kind
-                            ui.horizontal(|ui| {
-                                ui.label("Stroke Kind:");
-
+                            field(ui, "Stroke", |ui| {
                                 let selected_label = match shape.stroke.map(|(_, kind)| kind) {
                                     Some(StrokeKind::Inside) => "Inside",
                                     Some(StrokeKind::Middle) => "Middle",
@@ -62,8 +61,9 @@ impl<'a> ShapeEditControl<'a> {
                                     .map(|(stroke, _)| stroke.color)
                                     .unwrap_or(color::BLACK);
 
-                                ComboBox::from_label("Stoke Kind")
+                                ComboBox::from_id_salt("shape_stroke_alignment")
                                     .selected_text(selected_label)
+                                    .width(ui.available_width())
                                     .show_ui(ui, |ui| {
                                         ui.selectable_value(&mut current_kind, None, "None");
                                         ui.selectable_value(
@@ -102,23 +102,31 @@ impl<'a> ShapeEditControl<'a> {
                         }
 
                         if let Some((stroke_val, _)) = &mut shape.stroke {
-                            ui.horizontal(|ui| {
-                                ui.label("Stroke Width:");
-                                ui.text_edit_editable_value_singleline(
-                                    &mut shape.edit_state.stroke_width,
-                                );
-
-                                stroke_val.width = shape.edit_state.stroke_width.value();
-                            });
-
-                            ui.horizontal(|ui| {
-                                ui.label("Stroke Color:");
-                                ui.color_edit_button_srgba(&mut stroke_val.color);
-                            });
+                            let (stroke_width, _) = field_pair(
+                                ui,
+                                |ui| {
+                                    field(ui, "Stroke width", |ui| {
+                                        ui.style_mut().spacing.text_edit_width =
+                                            ui.available_width();
+                                        ui.text_edit_editable_value_singleline(
+                                            &mut shape.edit_state.stroke_width,
+                                        )
+                                    })
+                                },
+                                |ui| {
+                                    field(ui, "Stroke color", |ui| {
+                                        color_field(
+                                            ui,
+                                            &mut stroke_val.color,
+                                            &mut shape.edit_state.stroke_color,
+                                        );
+                                    });
+                                },
+                            );
+                            stroke_val.width = stroke_width;
                         }
                     });
                 }
-            }
-        });
+            });
     }
 }
