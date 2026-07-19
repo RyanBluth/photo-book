@@ -24,6 +24,7 @@ use crate::{
 use super::{gallery_image::GalleryImage, spacer::Spacer};
 
 const BAR_INNER_PADDING: i8 = 8;
+const BASE_COLUMN_SIZE: f32 = 256.0;
 
 #[derive(Debug, Clone)]
 pub struct ImageGalleryState {
@@ -125,10 +126,17 @@ impl<'a> ImageGallery<'a> {
                 add_child_ui(ui, table_rect, "image_gallery_table_area", |ui| {
                     ui.spacing_mut().item_spacing = Vec2::splat(spacing);
 
-                    let column_width: f32 = 256.0 * state.scale;
-                    let row_height = 256.0 * state.scale;
-                    let num_columns: usize =
-                        (table_size.x / (column_width + spacing)).floor().max(1.0) as usize;
+                    // TableBuilder reserves this space for its vertical scrollbar. Account for it
+                    // when fitting a column so the thumbnail itself is never clipped in a narrow
+                    // gallery pane.
+                    let available_table_width =
+                        (table_size.x - ui.spacing().scroll.allocated_width()).max(0.0);
+                    let rendered_scale = scale_to_fit_column(state.scale, available_table_width);
+                    let column_width = BASE_COLUMN_SIZE * rendered_scale;
+                    let row_height = column_width;
+                    let num_columns: usize = (available_table_width / (column_width + spacing))
+                        .floor()
+                        .max(1.0) as usize;
 
                     let spacer_width = (table_size.x
                         - ((column_width + ui.spacing().item_spacing.x) * num_columns as f32)
@@ -478,6 +486,10 @@ fn add_scale_controls(ui: &mut Ui, scale: &mut f32) {
         });
 }
 
+fn scale_to_fit_column(preferred_scale: f32, available_width: f32) -> f32 {
+    preferred_scale.min(available_width / BASE_COLUMN_SIZE)
+}
+
 fn scroll_to_row_index(
     scroll_to_path: &PathBuf,
     num_columns: usize,
@@ -522,4 +534,26 @@ struct RowMetadata {
     is_title: bool,
     section: String,
     row_index_in_section: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BASE_COLUMN_SIZE, scale_to_fit_column};
+
+    #[test]
+    fn keeps_preferred_scale_when_a_column_fits() {
+        assert_eq!(scale_to_fit_column(1.0, BASE_COLUMN_SIZE), 1.0);
+        assert_eq!(scale_to_fit_column(0.5, BASE_COLUMN_SIZE), 0.5);
+    }
+
+    #[test]
+    fn reduces_scale_to_fit_a_single_column() {
+        assert_eq!(scale_to_fit_column(1.0, 192.0), 0.75);
+        assert_eq!(scale_to_fit_column(0.5, 64.0), 0.25);
+    }
+
+    #[test]
+    fn caps_enlarged_columns_at_the_available_width() {
+        assert_eq!(scale_to_fit_column(1.5, 320.0), 1.25);
+    }
 }
