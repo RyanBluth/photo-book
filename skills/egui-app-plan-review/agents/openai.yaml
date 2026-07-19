@@ -1,0 +1,4 @@
+interface:
+  display_name: "egui App Plan & Review"
+  short_description: "Plan and review production egui applications"
+  default_prompt: "Use $egui-app-plan-review to plan or review this egui application change."
