@@ -26,7 +26,7 @@ impl MultiSelect {
         let selected_ids = Self::selected_layer_ids(layers);
         let rect = Self::compute_rect(layers, &selected_ids);
         let transformable_state = TransformableState::new(rect);
-        let selected_layers = Self::selected_children(layers, &transformable_state);
+        let selected_layers = Self::selected_children(layers);
 
         Self {
             transformable_state,
@@ -41,8 +41,9 @@ impl MultiSelect {
             .iter()
             .copied()
             .eq(self.selected_layers.iter().map(|child| child.id));
+        let child_geometry_changed = !selection_changed && !self.matches_layers(layers);
 
-        if !selection_changed {
+        if !selection_changed && !child_geometry_changed {
             return;
         }
 
@@ -52,7 +53,24 @@ impl MultiSelect {
         let rect = Self::compute_rect(layers, &selected_layer_ids);
         self.transformable_state = TransformableState::new(rect);
 
-        self.selected_layers = Self::selected_children(layers, &self.transformable_state);
+        self.selected_layers = Self::selected_children(layers);
+    }
+
+    /// Records the child geometry represented by the current group transform.
+    /// Call this after applying a group transform so later external edits can
+    /// invalidate and rebuild the cached group bounds.
+    pub(crate) fn sync_children(&mut self, layers: &IndexMap<LayerId, Layer>) {
+        self.selected_layers = Self::selected_children(layers);
+    }
+
+    pub(crate) fn matches_layers(&self, layers: &IndexMap<LayerId, Layer>) -> bool {
+        self.selected_layers.iter().all(|child| {
+            layers.get(&child.id).is_some_and(|layer| {
+                child
+                    .transformable_state
+                    .historically_equal_to(&layer.transform_state)
+            })
+        })
     }
 
     fn selected_layer_ids(layers: &IndexMap<LayerId, Layer>) -> Vec<LayerId> {
@@ -63,15 +81,12 @@ impl MultiSelect {
             .collect()
     }
 
-    fn selected_children(
-        layers: &IndexMap<LayerId, Layer>,
-        parent: &TransformableState,
-    ) -> Vec<MultiSelectChild> {
+    fn selected_children(layers: &IndexMap<LayerId, Layer>) -> Vec<MultiSelectChild> {
         layers
             .iter()
             .filter(|(_, layer)| layer.selected && layer.visible && !layer.locked)
             .map(|(id, layer)| MultiSelectChild {
-                transformable_state: layer.transform_state.to_local_space(parent),
+                transformable_state: layer.transform_state.persistent_clone(),
                 id: *id,
             })
             .collect()
@@ -210,6 +225,36 @@ mod tests {
 
         assert_eq!(multi_select.transformable_state.rect, transformed_rect);
         assert_eq!(multi_select.transformable_state.rotation, FRAC_PI_4);
+    }
+
+    #[test]
+    fn external_child_geometry_change_rebuilds_group_bounds() {
+        let first = selected_layer(
+            Rect::from_min_max(Pos2::new(0.0, 0.0), Pos2::new(100.0, 40.0)),
+            0.0,
+        );
+        let first_id = first.id;
+        let second = selected_layer(
+            Rect::from_min_max(Pos2::new(120.0, 20.0), Pos2::new(180.0, 80.0)),
+            0.0,
+        );
+        let mut layers = IndexMap::from([(first.id, first), (second.id, second)]);
+        let mut multi_select = MultiSelect::new(&layers);
+        multi_select.transformable_state.rotation = FRAC_PI_4;
+
+        layers[&first_id].transform_state.rect = layers[&first_id]
+            .transform_state
+            .rect
+            .translate(Vec2::new(80.0, 30.0));
+        multi_select.update_selected(&layers);
+
+        let selected_ids = MultiSelect::selected_layer_ids(&layers);
+        assert_eq!(
+            multi_select.transformable_state.rect,
+            MultiSelect::compute_rect(&layers, &selected_ids)
+        );
+        assert_eq!(multi_select.transformable_state.rotation, 0.0);
+        assert!(multi_select.matches_layers(&layers));
     }
 
     #[test]

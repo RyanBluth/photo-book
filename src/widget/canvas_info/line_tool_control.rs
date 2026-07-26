@@ -25,7 +25,7 @@ impl<'a> LineToolControl<'a> {
                 ui,
                 |ui| {
                     field(ui, "Color", |ui| {
-                        color_field(
+                        let _ = color_field(
                             ui,
                             &mut self.settings.color,
                             &mut self.settings.edit_state.stroke_color,

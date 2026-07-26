@@ -23,9 +23,7 @@ use crate::modal::basic::BasicModal;
 use crate::modal::manager::{ModalManager, TypedModalId};
 use crate::modal::progress::ProgressModal;
 use crate::photo_manager::PhotoManager;
-use crate::scene::canvas_scene::CanvasHistoryManager;
-use crate::widget::canvas::types::CanvasPhoto;
-use crate::widget::canvas::{Canvas, CanvasState};
+use crate::widget::canvas::{Canvas, CanvasHistoryManager, CanvasState, types::CanvasPhoto};
 use crate::widget::canvas_info::layers::{Layer, LayerContent};
 
 #[derive(Error, Debug, Clone)]

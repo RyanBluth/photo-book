@@ -155,10 +155,7 @@ impl<'a> PhotoInfo<'a> {
                                 Label::new(RichText::new(self.camera()).size(15.0).strong())
                                     .truncate(),
                             );
-                            ui.add(
-                                Label::new(RichText::new(self.lens()).size(13.0))
-                                    .truncate(),
-                            );
+                            ui.add(Label::new(RichText::new(self.lens()).size(13.0)).truncate());
                         });
                     });
 
@@ -234,6 +231,7 @@ impl<'a> PhotoInfo<'a> {
             &mut self.state.adjustments_state,
         )
         .show(ui)
+        .changed
         {
             self.photo.set_adjustments(adjustments);
         }

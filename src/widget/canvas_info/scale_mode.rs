@@ -3,7 +3,7 @@ use egui::Vec2;
 
 use strum::IntoEnumIterator;
 
-use crate::model;
+use crate::{model, widget::edit_response::EditResponse};
 
 #[derive(Debug, PartialEq)]
 pub struct ScaleModeState<'a> {
@@ -26,7 +26,8 @@ impl<'a> ScaleMode<'a> {
         ScaleMode { state }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
+        let previous = *self.state.scale_mode;
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(10.0, 5.0);
 
@@ -44,5 +45,6 @@ impl<'a> ScaleMode<'a> {
                 }
             });
         });
+        EditResponse::discrete(*self.state.scale_mode != previous)
     }
 }

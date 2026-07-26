@@ -38,11 +38,17 @@ where
     }
 
     pub fn end_editing(&mut self) {
-        if let Ok(value) = self.editable_value.parse() {
-            self.value = value;
-        }
+        self.update_from_editable();
         self.editable_value = self.value.to_string();
         self.editing = false;
+    }
+
+    /// Applies the current edit buffer when it contains a valid value without
+    /// ending the edit or rewriting the user's text.
+    pub(crate) fn update_from_editable(&mut self) -> Option<T> {
+        let value = self.editable_value.parse().ok()?;
+        self.value = value;
+        Some(self.value.clone())
     }
 
     pub fn is_editing(&self) -> bool {

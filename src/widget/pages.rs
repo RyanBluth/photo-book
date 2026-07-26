@@ -7,8 +7,8 @@ use indexmap::IndexMap;
 use crate::{
     assets::Asset,
     id::{PageId, next_page_id},
-    scene::canvas_scene::CanvasHistoryManager,
     theme,
+    widget::canvas::CanvasHistoryManager,
 };
 
 use super::{
@@ -18,7 +18,7 @@ use super::{
 
 pub enum PagesResponse {
     None,
-    SelectPage,
+    SelectPage(PageId),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -224,18 +224,19 @@ impl<'a> Pages<'a> {
             {
                 self.state.pages.shift_remove_index(index);
                 // Select the previous page, or the first page if we deleted the first one
-                self.state.selected_page = *self
-                    .state
-                    .pages
-                    .get_index(index.saturating_sub(1))
-                    .unwrap()
-                    .0;
+                clicked_page = Some(
+                    *self
+                        .state
+                        .pages
+                        .get_index(index.saturating_sub(1))
+                        .unwrap()
+                        .0,
+                );
             }
         });
 
         if let Some(page) = clicked_page {
-            self.state.selected_page = page;
-            PagesResponse::SelectPage
+            PagesResponse::SelectPage(page)
         } else {
             PagesResponse::None
         }

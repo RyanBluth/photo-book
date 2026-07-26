@@ -10,6 +10,7 @@ use crate::{
     theme::color,
     widget::{
         adjustment_slider::AdjustmentSlider,
+        edit_response::EditResponse,
         histogram::{BIN_COUNT, HistogramData},
     },
 };
@@ -103,8 +104,8 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
         self
     }
 
-    pub fn show(mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    pub fn show(mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
 
         ui.horizontal(|ui| {
             ui.label(RichText::new("Adjust").small().strong());
@@ -117,23 +118,23 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
                     .clicked()
                 {
                     *self.adjustments = PhotoAdjustments::default();
-                    changed = true;
+                    response |= EditResponse::discrete(true);
                 }
             });
         });
 
-        changed |= self.show_light(ui);
-        changed |= self.show_color(ui);
-        changed |= self.show_curve(ui);
-        changed |= self.show_black_white(ui);
-        changed |= self.show_detail(ui);
-        changed |= self.show_levels(ui);
+        response |= self.show_light(ui);
+        response |= self.show_color(ui);
+        response |= self.show_curve(ui);
+        response |= self.show_black_white(ui);
+        response |= self.show_detail(ui);
+        response |= self.show_levels(ui);
 
-        changed
+        response
     }
 
-    fn show_light(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_light(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         CollapsingHeader::new(section_title(
             "Light",
             self.adjustments.light != Default::default(),
@@ -151,48 +152,51 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
                     && let Some(histogram) = self.histogram
                 {
                     self.adjustments.light = auto_light(histogram);
-                    changed = true;
+                    response |= EditResponse::discrete(true);
                 }
 
-                changed |=
-                    reset_section_button(ui, self.adjustments.light != Default::default(), || {
+                response |= EditResponse::discrete(reset_section_button(
+                    ui,
+                    self.adjustments.light != Default::default(),
+                    || {
                         self.adjustments.light = Default::default();
-                    });
+                    },
+                ));
             });
-            changed |= adjustment_slider(ui, "Brilliance", &mut self.adjustments.light.brilliance);
-            changed |= adjustment_slider(ui, "Exposure", &mut self.adjustments.light.exposure);
-            changed |= adjustment_slider(ui, "Highlights", &mut self.adjustments.light.highlights);
-            changed |= adjustment_slider(ui, "Shadows", &mut self.adjustments.light.shadows);
-            changed |= adjustment_slider(ui, "Brightness", &mut self.adjustments.light.brightness);
-            changed |= adjustment_slider(ui, "Contrast", &mut self.adjustments.light.contrast);
-            changed |=
+            response |= adjustment_slider(ui, "Brilliance", &mut self.adjustments.light.brilliance);
+            response |= adjustment_slider(ui, "Exposure", &mut self.adjustments.light.exposure);
+            response |= adjustment_slider(ui, "Highlights", &mut self.adjustments.light.highlights);
+            response |= adjustment_slider(ui, "Shadows", &mut self.adjustments.light.shadows);
+            response |= adjustment_slider(ui, "Brightness", &mut self.adjustments.light.brightness);
+            response |= adjustment_slider(ui, "Contrast", &mut self.adjustments.light.contrast);
+            response |=
                 adjustment_slider(ui, "Black Point", &mut self.adjustments.light.black_point);
         });
-        changed
+        response
     }
 
-    fn show_color(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_color(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         let is_active = self.adjustments.color != Default::default()
             || self.adjustments.white_balance != Default::default();
         CollapsingHeader::new(section_title("Color", is_active))
             .id_salt("photo_adjustments_color")
             .default_open(false)
             .show(ui, |ui| {
-                changed |= reset_section_button(ui, is_active, || {
+                response |= EditResponse::discrete(reset_section_button(ui, is_active, || {
                     self.adjustments.color = Default::default();
                     self.adjustments.white_balance = Default::default();
-                });
-                changed |=
+                }));
+                response |=
                     adjustment_slider(ui, "Saturation", &mut self.adjustments.color.saturation);
-                changed |= adjustment_slider(ui, "Vibrance", &mut self.adjustments.color.vibrance);
-                changed |= adjustment_slider(ui, "Cast", &mut self.adjustments.color.cast);
+                response |= adjustment_slider(ui, "Vibrance", &mut self.adjustments.color.vibrance);
+                response |= adjustment_slider(ui, "Cast", &mut self.adjustments.color.cast);
             });
-        changed
+        response
     }
 
-    fn show_black_white(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_black_white(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         let is_active = self.adjustments.black_white.intensity != 0.0
             || self.adjustments.black_white.neutrals != 0.0
             || self.adjustments.black_white.tone != 0.0
@@ -201,24 +205,24 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
             .id_salt("photo_adjustments_black_white")
             .default_open(false)
             .show(ui, |ui| {
-                changed |= reset_section_button(ui, is_active, || {
+                response |= EditResponse::discrete(reset_section_button(ui, is_active, || {
                     self.adjustments.black_white.intensity = 0.0;
                     self.adjustments.black_white.neutrals = 0.0;
                     self.adjustments.black_white.tone = 0.0;
                     self.adjustments.black_white.grain = 0.0;
-                });
-                changed |=
+                }));
+                response |=
                     positive_slider(ui, "Intensity", &mut self.adjustments.black_white.intensity);
-                changed |=
+                response |=
                     adjustment_slider(ui, "Neutrals", &mut self.adjustments.black_white.neutrals);
-                changed |= adjustment_slider(ui, "Tone", &mut self.adjustments.black_white.tone);
-                changed |= positive_slider(ui, "Grain", &mut self.adjustments.black_white.grain);
+                response |= adjustment_slider(ui, "Tone", &mut self.adjustments.black_white.tone);
+                response |= positive_slider(ui, "Grain", &mut self.adjustments.black_white.grain);
             });
-        changed
+        response
     }
 
-    fn show_curve(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_curve(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         CollapsingHeader::new(section_title(
             "Curve",
             self.adjustments.curves != Default::default(),
@@ -228,20 +232,20 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
             let reset_enabled = self.selected_curve() != &Curve::default();
             if curve_toolbar(ui, &mut self.state.curve_channel, reset_enabled).reset_clicked {
                 *self.selected_curve_mut() = Curve::default();
-                changed = true;
+                response |= EditResponse::discrete(true);
             }
 
             ui.add_space(8.0);
             let channel = self.state.curve_channel;
             let histogram = self.histogram;
             let curve = self.selected_curve_mut();
-            changed |= curve_editor(ui, curve, histogram, channel);
+            response |= curve_editor(ui, curve, histogram, channel);
         });
-        changed
+        response
     }
 
-    fn show_levels(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_levels(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         CollapsingHeader::new(section_title(
             "Levels",
             self.adjustments.levels != Default::default(),
@@ -249,22 +253,25 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
         .id_salt("photo_adjustments_levels")
         .default_open(false)
         .show(ui, |ui| {
-            changed |=
-                reset_section_button(ui, self.adjustments.levels != Default::default(), || {
+            response |= EditResponse::discrete(reset_section_button(
+                ui,
+                self.adjustments.levels != Default::default(),
+                || {
                     self.adjustments.levels = Default::default();
-                });
-            changed |= levels_editor(
+                },
+            ));
+            response |= levels_editor(
                 ui,
                 &mut self.adjustments.levels,
                 self.histogram,
                 &mut self.state.levels_channel,
             );
         });
-        changed
+        response
     }
 
-    fn show_detail(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = false;
+    fn show_detail(&mut self, ui: &mut Ui) -> EditResponse {
+        let mut response = EditResponse::none();
         CollapsingHeader::new(section_title(
             "Detail",
             self.adjustments.definition != Default::default(),
@@ -272,16 +279,16 @@ impl<'a> PhotoAdjustmentsEditor<'a> {
         .id_salt("photo_adjustments_detail")
         .default_open(false)
         .show(ui, |ui| {
-            changed |= reset_section_button(
+            response |= EditResponse::discrete(reset_section_button(
                 ui,
                 self.adjustments.definition != Default::default(),
                 || {
                     self.adjustments.definition = Default::default();
                 },
-            );
-            changed |= positive_slider(ui, "Sharpening", &mut self.adjustments.definition.amount);
+            ));
+            response |= positive_slider(ui, "Sharpening", &mut self.adjustments.definition.amount);
         });
-        changed
+        response
     }
 
     fn selected_curve(&self) -> &Curve {
@@ -393,11 +400,11 @@ fn auto_light(histogram: &HistogramData) -> LightAdjustments {
     }
 }
 
-fn adjustment_slider(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
+fn adjustment_slider(ui: &mut Ui, label: &str, value: &mut f32) -> EditResponse {
     slider(ui, label, value, -1.0..=1.0, 0.0)
 }
 
-fn positive_slider(ui: &mut Ui, label: &str, value: &mut f32) -> bool {
+fn positive_slider(ui: &mut Ui, label: &str, value: &mut f32) -> EditResponse {
     slider(ui, label, value, 0.0..=1.0, 0.0)
 }
 
@@ -407,12 +414,12 @@ fn slider(
     value: &mut f32,
     range: std::ops::RangeInclusive<f32>,
     default: f32,
-) -> bool {
-    AdjustmentSlider::new(label, value)
+) -> EditResponse {
+    let response = AdjustmentSlider::new(label, value)
         .range(range)
         .default(default)
-        .show(ui)
-        .changed()
+        .show(ui);
+    EditResponse::drag(&response)
 }
 
 fn levels_editor(
@@ -420,7 +427,7 @@ fn levels_editor(
     levels: &mut LevelsAdjustments,
     histogram: Option<&HistogramData>,
     channel: &mut LevelsChannel,
-) -> bool {
+) -> EditResponse {
     ComboBox::from_id_salt("levels_channel")
         .selected_text(RichText::new(channel.label()).size(14.0).strong())
         .width(ui.available_width())
@@ -445,7 +452,7 @@ fn levels_editor(
         response.rect.min + Vec2::new(2.0, 14.0),
         response.rect.max - Vec2::new(2.0, 20.0),
     );
-    let mut changed = false;
+    let mut edit_response = EditResponse::none();
 
     if ui.is_rect_visible(response.rect) {
         painter.rect_filled(plot_rect, 6.0, color::SURFACE_DARK);
@@ -495,20 +502,22 @@ fn levels_editor(
                 "white" => values.white = next.max(values.mid + 0.01).clamp(0.02, 1.0),
                 _ => {}
             }
-            changed = true;
+            let mut response = handle_response;
+            response.mark_changed();
+            edit_response |= EditResponse::drag(&response);
         }
     }
 
     if response.double_clicked() {
         *values = LevelValues::default();
-        changed = true;
+        edit_response |= EditResponse::discrete(true);
     }
 
     normalize_levels(values);
     response
         .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, "Levels editor"));
 
-    changed
+    edit_response
 }
 
 fn selected_level_values_mut(
@@ -632,10 +641,10 @@ fn curve_editor(
     curve: &mut Curve,
     histogram: Option<&HistogramData>,
     channel: CurveChannel,
-) -> bool {
+) -> EditResponse {
     normalize_curve_points(curve);
 
-    let mut changed = false;
+    let mut edit_response = EditResponse::none();
     let available_width = ui.available_width();
     let graph_size = available_width.clamp(180.0, 440.0);
     let left_padding = ((available_width - graph_size) * 0.5).max(0.0);
@@ -691,7 +700,9 @@ fn curve_editor(
                 }
 
                 curve.points[index] = next_point;
-                changed = true;
+                let mut response = point_response.clone();
+                response.mark_changed();
+                edit_response |= EditResponse::drag(&response);
             }
 
             if (point_response.double_clicked() || point_response.secondary_clicked())
@@ -699,7 +710,7 @@ fn curve_editor(
                 && index != last_index
             {
                 curve.points.remove(index);
-                changed = true;
+                edit_response |= EditResponse::discrete(true);
                 point_interacted = true;
                 break;
             }
@@ -715,10 +726,10 @@ fn curve_editor(
         {
             let point = screen_to_curve_point(plot_rect, pointer_pos);
             curve.points.push(point);
-            changed = true;
+            edit_response |= EditResponse::discrete(true);
         }
 
-        if changed {
+        if edit_response.changed {
             normalize_curve_points(curve);
         }
 
@@ -729,7 +740,7 @@ fn curve_editor(
         });
     });
 
-    changed
+    edit_response
 }
 
 fn normalize_curve_points(curve: &mut Curve) {
@@ -980,9 +991,9 @@ mod tests {
 
         let mut harness = Harness::new_ui(|ui| {
             ui.set_width(320.0);
-            let changed = PhotoAdjustmentsEditor::new(&mut adjustments, &mut state).show(ui);
+            let response = PhotoAdjustmentsEditor::new(&mut adjustments, &mut state).show(ui);
 
-            assert!(!changed);
+            assert!(!response.changed);
         });
 
         harness.run();

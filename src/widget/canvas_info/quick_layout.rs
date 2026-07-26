@@ -3,10 +3,11 @@ use egui_extras::Column;
 
 use crate::{
     layout::{LayoutNode, apply_layout_node, template},
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     utils::EguiUiExt,
+    widget::canvas::CanvasHistoryManager,
     widget::{
         canvas::{Canvas, CanvasState},
+        edit_response::EditResponse,
         spacer::Spacer,
     },
 };
@@ -15,7 +16,6 @@ use crate::{
 pub struct QuickLayoutState {
     gap: f32,
     margin: f32,
-    last_layout: Option<LayoutNode>,
 }
 
 impl QuickLayoutState {
@@ -23,7 +23,6 @@ impl QuickLayoutState {
         QuickLayoutState {
             gap: 50.0,
             margin: 100.0,
-            last_layout: None,
         }
     }
 }
@@ -32,24 +31,19 @@ impl QuickLayoutState {
 pub struct QuickLayout<'a> {
     pub state: &'a mut QuickLayoutState,
     pub canvas_state: &'a mut CanvasState,
-    pub history_manager: &'a mut CanvasHistoryManager,
 }
 
 impl<'a> QuickLayout<'a> {
-    pub fn new(
-        state: &'a mut QuickLayoutState,
-        canvas_state: &'a mut CanvasState,
-        history_manager: &'a mut CanvasHistoryManager,
-    ) -> QuickLayout<'a> {
+    pub fn new(state: &'a mut QuickLayoutState, canvas_state: &'a mut CanvasState) -> Self {
         QuickLayout {
             state,
             canvas_state,
-            history_manager,
         }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
         ui.spacing_mut().item_spacing = Vec2::splat(10.0);
+        let mut edit_response = EditResponse::none();
 
         let available_layouts = self.available_layouts();
 
@@ -58,7 +52,7 @@ impl<'a> QuickLayout<'a> {
                 ui.heading("Add photos to view available layouts.");
             });
 
-            return;
+            return edit_response;
         }
 
         ui.set_clip_rect(ui.available_rect_before_wrap());
@@ -85,18 +79,20 @@ impl<'a> QuickLayout<'a> {
 
             ui.horizontal(|ui| {
                 ui.label("Gap:");
-                ui.add(Slider::new(&mut new_gap, 0.0..=100.0));
+                let response = ui.add(Slider::new(&mut new_gap, 0.0..=100.0));
+                edit_response |= EditResponse::drag(&response);
             });
 
             ui.horizontal(|ui| {
                 ui.label("Margin:");
-                ui.add(Slider::new(&mut new_margin, 0.0..=100.0));
+                let response = ui.add(Slider::new(&mut new_margin, 0.0..=100.0));
+                edit_response |= EditResponse::drag(&response);
             });
 
-            if let Some(ref last_layout) = self.state.last_layout
-                && (new_gap != self.state.gap || new_margin != self.state.margin)
+            if (new_gap != self.state.gap || new_margin != self.state.margin)
+                && let Some(last_layout) = self.canvas_state.last_quick_layout.clone()
             {
-                apply_layout_node(last_layout, self.canvas_state, new_gap, new_margin);
+                apply_layout_node(&last_layout, self.canvas_state, new_gap, new_margin);
             }
 
             self.state.gap = new_gap;
@@ -157,11 +153,10 @@ impl<'a> QuickLayout<'a> {
                 self.state.gap,
                 self.state.margin,
             );
-            self.canvas_state.last_quick_layout = Some(selected_layout.clone());
-            self.state.last_layout = Some(selected_layout);
-            self.history_manager
-                .save_history(CanvasHistoryKind::QuickLayout, self.canvas_state);
+            self.canvas_state.last_quick_layout = Some(selected_layout);
+            edit_response |= EditResponse::discrete(true);
         }
+        edit_response
     }
 
     fn available_layouts(&self) -> Vec<LayoutNode> {

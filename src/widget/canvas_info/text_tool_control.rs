@@ -64,7 +64,7 @@ impl<'a> TextToolControl<'a> {
             self.settings.font_size = new_font_size;
 
             field(ui, "Color", |ui| {
-                color_field(
+                let _ = color_field(
                     ui,
                     &mut self.settings.color,
                     &mut self.settings.edit_state.color,

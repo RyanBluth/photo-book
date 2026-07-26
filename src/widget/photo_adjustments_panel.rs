@@ -6,6 +6,7 @@ use crate::{
     model::photo_adjustments::PhotoAdjustments,
     photo::Photo,
     widget::{
+        edit_response::EditResponse,
         histogram::Histogram,
         photo_adjustments::{PhotoAdjustmentsEditor, PhotoAdjustmentsState},
     },
@@ -30,7 +31,7 @@ impl<'a> PhotoAdjustmentsPanel<'a> {
         }
     }
 
-    pub fn show(self, ui: &mut Ui) -> bool {
+    pub fn show(self, ui: &mut Ui) -> EditResponse {
         let Self {
             photo,
             adjustments,
