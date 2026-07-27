@@ -1,3 +1,4 @@
+pub mod history;
 pub mod selection;
 pub mod state;
 pub mod types;
@@ -16,10 +17,7 @@ use crate::{
 use std::sync::Arc;
 
 use eframe::{
-    egui::{
-        self, Align, Context, CornerRadius, CursorIcon, Id, Sense, Stroke, StrokeKind, Ui,
-        UiBuilder,
-    },
+    egui::{self, Align, CornerRadius, CursorIcon, Id, Sense, Stroke, StrokeKind, Ui, UiBuilder},
     emath::Rot2,
     epaint::{
         Color32, EllipseShape, FontId, Mesh, Pos2, Rect, RectShape, Shape, Tessellator, TextShape,
@@ -38,12 +36,10 @@ use crate::{
     dep, dep_mut,
     font_manager::FontManager,
     id::LayerId,
-    layout::apply_layout_node,
     photo_renderer::{PhotoRenderOptions, PhotoRenderer},
-    scene::canvas_scene::{CanvasHistoryKind, CanvasHistoryManager},
     template::TemplateRegionKind,
     theme::color,
-    utils::{MeshExt, RectExt, Toggle},
+    utils::{MeshExt, RectExt},
     widget::canvas_info::layers::{
         CanvasShapeKind, Layer, LayerContent, TextHorizontalAlignment, TextVerticalAlignment,
     },
@@ -59,6 +55,7 @@ use super::{
 };
 
 pub use self::{
+    history::{CanvasHistoryKind, CanvasHistoryManager},
     selection::MultiSelect,
     state::CanvasState,
     types::{ActionBarAction, CanvasPhoto, CanvasResponse},
@@ -91,6 +88,20 @@ impl<'a> Canvas<'a> {
     pub fn gpu_photo_adjustments(mut self, enabled: bool) -> Self {
         self.gpu_photo_adjustments = enabled;
         self
+    }
+
+    fn add_layer(&mut self, layer: Layer, begin_text_edit: bool) {
+        let history_kind = match &layer.content {
+            LayerContent::Photo(_) | LayerContent::TemplatePhoto { .. } => {
+                CanvasHistoryKind::AddPhoto
+            }
+            LayerContent::Text(_) | LayerContent::TemplateText { .. } => CanvasHistoryKind::AddText,
+            LayerContent::Shape(_) => CanvasHistoryKind::AddShape,
+        };
+        self.history_manager
+            .apply(history_kind, self.state, |state| {
+                state.add_layer(layer, begin_text_edit);
+            });
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
@@ -230,7 +241,6 @@ impl<'a> Canvas<'a> {
                 let transform_state = &self.state.layers.get(&layer_id).unwrap().transform_state;
 
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
-                let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
 
                 if transform_response.mouse_down
                     || transform_response._clicked
@@ -249,18 +259,18 @@ impl<'a> Canvas<'a> {
                     && self.is_pointer_on_canvas(ui)
                     && self.state.is_layer_selected(&layer_id)
                 {
-                    self.deselect_all_photos();
+                    self.state.deselect_all_layers();
                 } else if !locked && transform_response.mouse_down && primary_pointer_pressed {
-                    self.select_layer(&layer_id, ui.ctx());
+                    let toggle = ui.input(|input| input.modifiers.ctrl);
+                    self.state.select_layer(layer_id, toggle);
                 }
 
-                if primary_pointer_released
-                    && (transform_response.ended_moving
-                        || transform_response.ended_resizing
-                        || transform_response.ended_rotating)
-                {
+                if transform_response.changed {
                     self.history_manager
-                        .save_history(CanvasHistoryKind::Transform, self.state);
+                        .update(CanvasHistoryKind::Transform, self.state);
+                }
+                if transform_response.ended_transforming() {
+                    self.history_manager.finish(CanvasHistoryKind::Transform);
                 }
             }
         }
@@ -377,9 +387,7 @@ impl<'a> Canvas<'a> {
                     &self.state.text_tool_settings,
                     Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
                 );
-                self.state.layers.insert(layer.id, layer.clone());
-                self.select_layer(&layer.id, ui.ctx());
-                self.state.text_edit_mode = TextEditMode::BeginEditing(layer.id);
+                self.add_layer(layer, true);
                 ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Rectangle { start_pos } => {
@@ -389,8 +397,7 @@ impl<'a> Canvas<'a> {
                     &self.state.rectangle_tool_settings,
                     Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
                 );
-                self.state.layers.insert(layer.id, layer.clone());
-                self.select_layer(&layer.id, ui.ctx());
+                self.add_layer(layer, false);
                 ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Ellipse { start_pos } => {
@@ -400,8 +407,7 @@ impl<'a> Canvas<'a> {
                     &self.state.ellipse_tool_settings,
                     Rect::from_two_pos(relative_start_pos, relative_mouse_pos),
                 );
-                self.state.layers.insert(layer.id, layer.clone());
-                self.select_layer(&layer.id, ui.ctx());
+                self.add_layer(layer, false);
                 ToolState::Idle(IdleTool::Select)
             }
             ActiveTool::Line { start_pos } => {
@@ -435,8 +441,7 @@ impl<'a> Canvas<'a> {
                     relative_end_pos,
                 );
 
-                self.state.layers.insert(layer.id, layer.clone());
-                self.select_layer(&layer.id, ui.ctx());
+                self.add_layer(layer, false);
                 ToolState::Idle(IdleTool::Select)
             }
         })
@@ -675,6 +680,7 @@ impl<'a> Canvas<'a> {
                     );
 
                 multi_select.transformable_state = transform_state;
+                multi_select.sync_children(&self.state.layers);
 
                 Some(transform_response)
             }
@@ -692,12 +698,12 @@ impl<'a> Canvas<'a> {
                 canvas_response.request_focus();
             }
 
-            if transform_response.ended_moving
-                || transform_response.ended_resizing
-                || transform_response.ended_rotating
-            {
+            if transform_response.changed {
                 self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, self.state);
+                    .update(CanvasHistoryKind::Transform, self.state);
+            }
+            if transform_response.ended_transforming() {
+                self.history_manager.finish(CanvasHistoryKind::Transform);
             }
         }
     }
@@ -859,18 +865,24 @@ impl<'a> Canvas<'a> {
                     self.state.text_edit_mode = TextEditMode::BeginEditing(*layer_id);
                 }
 
-                // Check if we exited edit mode
-                if is_editing && self.state.text_edit_mode == TextEditMode::None {
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::EditText, self.state);
-                }
+                let finished_editing =
+                    is_editing && self.state.text_edit_mode == TextEditMode::None;
 
                 layer.transform_state = transform_state;
                 let mut updated_layer = layer.clone();
                 if let LayerContent::Text(text) = &mut updated_layer.content {
                     text.text = text_content.text;
                 }
+                let text_changed = updated_layer.content != layer.content;
                 self.state.layers.insert(*layer_id, updated_layer);
+
+                if text_changed {
+                    self.history_manager
+                        .update(CanvasHistoryKind::EditText, self.state);
+                }
+                if finished_editing {
+                    self.history_manager.finish(CanvasHistoryKind::EditText);
+                }
 
                 Some(transform_response)
             }
@@ -989,6 +1001,7 @@ impl<'a> Canvas<'a> {
                     _began_moving: false,
                     _began_resizing: false,
                     _began_rotating: false,
+                    changed: false,
                     _clicked: response.clicked(),
                     double_clicked: response.double_clicked(),
                 })
@@ -1070,6 +1083,8 @@ impl<'a> Canvas<'a> {
                         text.text = text_content.text;
                     }
                     self.state.layers.insert(*layer_id, updated_layer);
+                    self.history_manager
+                        .update(CanvasHistoryKind::EditText, self.state);
                 }
 
                 // Double-click to enter edit mode
@@ -1080,8 +1095,7 @@ impl<'a> Canvas<'a> {
                 // Check for exiting edit mode
                 if is_editing && !self.state.text_edit_mode.is_editing(layer_id) {
                     self.state.text_edit_mode = TextEditMode::None;
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::EditText, self.state);
+                    self.history_manager.finish(CanvasHistoryKind::EditText);
                 }
 
                 if layer.selected {
@@ -1103,6 +1117,7 @@ impl<'a> Canvas<'a> {
                     _began_moving: false,
                     _began_resizing: false,
                     _began_rotating: false,
+                    changed: false,
                     _clicked: response.clicked(),
                     double_clicked: response.double_clicked(),
                 })
@@ -1644,24 +1659,22 @@ impl<'a> Canvas<'a> {
             return None;
         }
 
-        let ctrl = egui::Modifiers::CTRL | egui::Modifiers::COMMAND;
-        let ctrl_shift = egui::Modifiers::CTRL | egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
-
         // Match the more specific modified shortcuts first and consume every command
         // owned by the focused canvas.
-        if ui.input_mut(|input| input.consume_key(ctrl, egui::Key::Backspace)) {
+        if ui.input_mut(|input| input.consume_key(egui::Modifiers::CTRL, egui::Key::Backspace)) {
             return Some(CanvasResponse::Exit);
         }
 
         if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-            self.deselect_all_photos();
+            self.state.deselect_all_layers();
         }
 
-        if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
-            && self.state.delete_selected_editable_layers()
-        {
-            self.history_manager
-                .save_history(CanvasHistoryKind::DeletePhoto, self.state);
+        if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete)) {
+            self.history_manager.apply(
+                CanvasHistoryKind::DeleteLayers,
+                self.state,
+                CanvasState::delete_selected_editable_layers,
+            );
         }
 
         let modifiers = ui.input(|input| input.modifiers);
@@ -1674,31 +1687,44 @@ impl<'a> Canvas<'a> {
         let right = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowRight));
         let up = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowUp));
         let down = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowDown));
+        let (arrow_released, arrow_still_down) = ui.input(|input| {
+            (
+                input.key_released(egui::Key::ArrowLeft)
+                    || input.key_released(egui::Key::ArrowRight)
+                    || input.key_released(egui::Key::ArrowUp)
+                    || input.key_released(egui::Key::ArrowDown),
+                input.key_down(egui::Key::ArrowLeft)
+                    || input.key_down(egui::Key::ArrowRight)
+                    || input.key_down(egui::Key::ArrowUp)
+                    || input.key_down(egui::Key::ArrowDown),
+            )
+        });
         let distance = if modifiers.shift { 10.0 } else { 1.0 };
         let moved = left || right || up || down;
 
         if moved {
-            for layer in self.state.selected_layers_iter_mut() {
-                let delta = Vec2::new(
-                    if left {
-                        -distance
-                    } else if right {
-                        distance
-                    } else {
-                        0.0
-                    },
-                    if up {
-                        -distance
-                    } else if down {
-                        distance
-                    } else {
-                        0.0
-                    },
-                );
-                layer.transform_state.rect = layer.transform_state.rect.translate(delta);
-            }
+            let delta = Vec2::new(
+                if left {
+                    -distance
+                } else if right {
+                    distance
+                } else {
+                    0.0
+                },
+                if up {
+                    -distance
+                } else if down {
+                    distance
+                } else {
+                    0.0
+                },
+            );
+            self.state.nudge_selected_layers(delta);
             self.history_manager
-                .save_history(CanvasHistoryKind::Transform, self.state);
+                .update(CanvasHistoryKind::Transform, self.state);
+        }
+        if arrow_released && !arrow_still_down {
+            self.history_manager.finish(CanvasHistoryKind::Transform);
         }
 
         if self.state.tool_state.is_idle() {
@@ -1719,18 +1745,21 @@ impl<'a> Canvas<'a> {
         let scale = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::S));
         let rotate = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R));
         if scale || rotate {
-            for layer in self.state.selected_layers_iter_mut() {
-                layer.transform_state.handle_mode = if scale {
-                    TransformHandleMode::Resize(ResizeMode::Free)
-                } else {
-                    TransformHandleMode::Rotate
-                };
-            }
+            self.state.set_selected_handle_mode(if scale {
+                TransformHandleMode::Resize(ResizeMode::Free)
+            } else {
+                TransformHandleMode::Rotate
+            });
         }
 
-        if ui.input_mut(|input| input.consume_key(ctrl_shift, egui::Key::Z)) {
+        let redo_shortcut = egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        );
+        let undo_shortcut = egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z);
+        if ui.input_mut(|input| input.consume_shortcut(&redo_shortcut)) {
             self.history_manager.redo(self.state);
-        } else if ui.input_mut(|input| input.consume_key(ctrl, egui::Key::Z)) {
+        } else if ui.input_mut(|input| input.consume_shortcut(&undo_shortcut)) {
             self.history_manager.undo(self.state);
         }
 
@@ -1742,40 +1771,6 @@ impl<'a> Canvas<'a> {
             ui.input(|input| input.pointer.hover_pos())
                 .unwrap_or_default(),
         )
-    }
-
-    fn select_layer(&mut self, layer_id: &LayerId, ctx: &Context) {
-        if ctx.input(|input| input.modifiers.ctrl) {
-            self.state
-                .layers
-                .get_mut(layer_id)
-                .unwrap()
-                .selected
-                .toggle();
-        } else {
-            for (_, layer) in &mut self.state.layers {
-                layer.selected = layer.id == *layer_id;
-            }
-        }
-
-        if self.state.is_layer_selected(layer_id) {
-            self.state.tool_state = ToolState::Idle(IdleTool::Select);
-        }
-    }
-
-    #[allow(dead_code)]
-    fn deselect_photo(&mut self, layer_id: &LayerId) {
-        self.state.layers.get_mut(layer_id).unwrap().selected = false;
-        self.history_manager
-            .save_history(CanvasHistoryKind::DeselectLayer, self.state);
-    }
-
-    fn deselect_all_photos(&mut self) {
-        for (_, layer) in &mut self.state.layers {
-            layer.selected = false;
-        }
-        self.history_manager
-            .save_history(CanvasHistoryKind::DeselectLayer, self.state);
     }
 
     fn can_zoom(&self) -> bool {
@@ -1857,62 +1852,25 @@ impl<'a> Canvas<'a> {
             {
                 match action {
                     ActionBarAction::SwapCenters(id1, id2) => {
-                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
-                            return None;
-                        }
-                        let original_child_a_rect =
-                            self.state.layers.get(&id1).unwrap().transform_state.rect;
-
-                        let original_child_b_rect =
-                            self.state.layers.get(&id2).unwrap().transform_state.rect;
-
-                        self.state
-                            .layers
-                            .get_mut(&id1)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_b_rect.center());
-
-                        self.state
-                            .layers
-                            .get_mut(&id2)
-                            .unwrap()
-                            .transform_state
-                            .rect
-                            .set_center(original_child_a_rect.center());
+                        self.history_manager.apply(
+                            CanvasHistoryKind::Transform,
+                            self.state,
+                            |state| state.swap_layer_centers(id1, id2),
+                        );
                     }
                     ActionBarAction::SwapCentersAndBounds(id1, id2) => {
-                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
-                            return None;
-                        }
-                        self.state.swap_layer_centers_and_bounds(id1, id2);
+                        self.history_manager.apply(
+                            CanvasHistoryKind::Transform,
+                            self.state,
+                            |state| state.swap_layer_centers_and_bounds(id1, id2),
+                        );
                     }
                     ActionBarAction::SwapQuickLayoutPosition(id1, id2) => {
-                        if !self.state.are_layers_canvas_editable(&[id1, id2]) {
-                            return None;
-                        }
-                        if let Some(ref layout) = self.state.last_quick_layout.clone() {
-                            let first_id_index = self
-                                .state
-                                .quick_layout_order
-                                .iter()
-                                .position(|id| *id == id1)
-                                .unwrap();
-
-                            let second_id_index = self
-                                .state
-                                .quick_layout_order
-                                .iter()
-                                .position(|id| *id == id2)
-                                .unwrap();
-
-                            self.state
-                                .quick_layout_order
-                                .swap(first_id_index, second_id_index);
-
-                            apply_layout_node(layout, self.state, 0.0, 0.0);
-                        }
+                        self.history_manager.apply(
+                            CanvasHistoryKind::Transform,
+                            self.state,
+                            |state| state.swap_quick_layout_position(id1, id2),
+                        );
                     }
                     ActionBarAction::Crop(layer_id) => {
                         if let Some(layer) = self.state.editable_layer(&layer_id)
@@ -1924,8 +1882,6 @@ impl<'a> Canvas<'a> {
                         }
                     }
                 }
-                self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, self.state);
             }
         }
 
@@ -1937,6 +1893,43 @@ impl<'a> Canvas<'a> {
 mod tests {
     use super::*;
     use egui_kittest::Harness;
+
+    struct MultiSelectRotationHarnessState {
+        canvas: CanvasState,
+        history: CanvasHistoryManager,
+        canvas_origin: Pos2,
+    }
+
+    fn rotate_multi_select_by(
+        harness: &mut Harness<'_, MultiSelectRotationHarnessState>,
+        angle: f32,
+    ) {
+        let state = harness.state();
+        let transform = &state
+            .canvas
+            .multi_select
+            .as_ref()
+            .unwrap()
+            .transformable_state;
+        let origin = state.canvas_origin.to_vec2();
+        let center = transform.rect.center() + origin;
+        let start = transform.rect.rotated_corners(transform.rotation)[3] + origin;
+        let end = center + Rot2::from_angle(angle) * (start - center);
+
+        harness.hover_at(start);
+        harness.run();
+        harness.drag_at(start);
+        harness.run();
+        harness.hover_at(end);
+        harness.run();
+        harness.event(egui::Event::PointerButton {
+            pos: end,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: egui::Modifiers::NONE,
+        });
+        harness.run();
+    }
 
     #[test]
     fn preview_registers_no_transform_interaction() {
@@ -2176,5 +2169,115 @@ mod tests {
         });
 
         harness.run();
+    }
+
+    #[test]
+    fn consecutive_multi_select_rotations_can_each_be_undone() {
+        let mut canvas = CanvasState::new();
+        canvas.zoom = 1.0;
+        let mut first = Layer::new_rectangle_shape_layer();
+        let first_id = first.id;
+        first.transform_state.rect =
+            Rect::from_min_max(Pos2::new(100.0, 100.0), Pos2::new(150.0, 150.0));
+        let mut second = Layer::new_rectangle_shape_layer();
+        let second_id = second.id;
+        second.transform_state.rect =
+            Rect::from_min_max(Pos2::new(200.0, 200.0), Pos2::new(250.0, 250.0));
+        canvas.layers.insert(first_id, first);
+        canvas.layers.insert(second_id, second);
+        let history = CanvasHistoryManager::with_initial_state(canvas.clone());
+        canvas.layers[&first_id].selected = true;
+        canvas.layers[&second_id].selected = true;
+
+        let mut harness = Harness::new_ui_state(
+            |ui, state: &mut MultiSelectRotationHarnessState| {
+                state.canvas_origin = ui.max_rect().min;
+                let MultiSelectRotationHarnessState {
+                    canvas, history, ..
+                } = state;
+                let rect = ui.max_rect();
+                let canvas_response = ui.allocate_rect(rect, Sense::click());
+                Canvas::new(canvas, rect, history).draw_multi_select(ui, rect, &canvas_response);
+            },
+            MultiSelectRotationHarnessState {
+                canvas,
+                history,
+                canvas_origin: Pos2::ZERO,
+            },
+        );
+        harness
+            .state_mut()
+            .canvas
+            .multi_select
+            .as_mut()
+            .unwrap()
+            .transformable_state
+            .handle_mode = TransformHandleMode::Rotate;
+
+        rotate_multi_select_by(&mut harness, 0.2);
+        let first_rotation = harness.state().canvas.layers[&first_id]
+            .transform_state
+            .rotation;
+        let first_group_rotation = harness
+            .state()
+            .canvas
+            .multi_select
+            .as_ref()
+            .unwrap()
+            .transformable_state
+            .rotation;
+        rotate_multi_select_by(&mut harness, 0.2);
+
+        assert_eq!(harness.state().history.history_len(), 2);
+
+        let state = harness.state_mut();
+        state.history.undo(&mut state.canvas);
+        assert!(
+            (state.canvas.layers[&first_id].transform_state.rotation - first_rotation).abs()
+                < f32::EPSILON
+        );
+        assert!(state.canvas.layers[&first_id].selected);
+        assert!(state.canvas.layers[&second_id].selected);
+        assert!(
+            (state
+                .canvas
+                .multi_select
+                .as_ref()
+                .unwrap()
+                .transformable_state
+                .rotation
+                - first_group_rotation)
+                .abs()
+                < f32::EPSILON
+        );
+
+        state.history.undo(&mut state.canvas);
+        assert!(
+            state.canvas.layers[&first_id]
+                .transform_state
+                .rotation
+                .abs()
+                < f32::EPSILON
+        );
+        assert!(
+            state.canvas.layers[&second_id]
+                .transform_state
+                .rotation
+                .abs()
+                < f32::EPSILON
+        );
+        assert!(state.canvas.layers[&first_id].selected);
+        assert!(state.canvas.layers[&second_id].selected);
+        assert!(state.canvas.multi_select.is_some());
+        assert!(matches!(
+            state
+                .canvas
+                .multi_select
+                .as_ref()
+                .unwrap()
+                .transformable_state
+                .handle_mode,
+            TransformHandleMode::Rotate
+        ));
     }
 }

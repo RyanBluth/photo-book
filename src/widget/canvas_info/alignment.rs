@@ -6,7 +6,12 @@ use egui::{ImageSource, Pos2, RichText, Ui, Vec2, Widget};
 use strum::IntoEnumIterator;
 use strum_macros::EnumIter;
 
-use crate::{assets::Asset, theme::color, utils::RectExt, widget::icon_button::IconButton};
+use crate::{
+    assets::Asset,
+    theme::color,
+    utils::RectExt,
+    widget::{edit_response::EditResponse, icon_button::IconButton},
+};
 
 use super::layers::Layer;
 
@@ -92,13 +97,15 @@ impl<'a> AlignmentInfo<'a> {
         AlignmentInfo { state }
     }
 
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
+        let mut changed = false;
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(0.0, 14.0);
 
-            Self::section(ui, "Align", |ui| self.alignment(ui));
-            Self::section(ui, "Distribute", |ui| self.distribution(ui));
+            Self::section(ui, "Align", |ui| changed |= self.alignment(ui));
+            Self::section(ui, "Distribute", |ui| changed |= self.distribution(ui));
         });
+        EditResponse::discrete(changed)
     }
 
     fn section(ui: &mut Ui, title: &str, add_contents: impl FnOnce(&mut Ui)) {
@@ -114,8 +121,9 @@ impl<'a> AlignmentInfo<'a> {
         });
     }
 
-    fn distribution(&mut self, ui: &mut Ui) {
+    fn distribution(&mut self, ui: &mut Ui) -> bool {
         ui.horizontal_wrapped(|ui| {
+            let mut changed = false;
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
 
             let distribution_actions = Distruibution::iter().filter_map(|distribution| {
@@ -128,6 +136,7 @@ impl<'a> AlignmentInfo<'a> {
 
             for distribution in distribution_actions {
                 if self.state.layers.len() > 1 {
+                    changed = true;
                     match distribution {
                         Distruibution::Horizontal => {
                             let (min, max, width_total) = self.state.layers.iter().fold(
@@ -236,11 +245,14 @@ impl<'a> AlignmentInfo<'a> {
                     }
                 }
             }
-        });
+            changed
+        })
+        .inner
     }
 
-    fn alignment(&mut self, ui: &mut egui::Ui) {
+    fn alignment(&mut self, ui: &mut egui::Ui) -> bool {
         ui.horizontal_wrapped(|ui| {
+            let mut changed = false;
             ui.spacing_mut().item_spacing = Vec2::new(6.0, 6.0);
 
             let alignment_actions = Alignment::iter().filter_map(|alignment| {
@@ -253,6 +265,7 @@ impl<'a> AlignmentInfo<'a> {
 
             for alignment in alignment_actions {
                 if self.state.layers.len() == 1 {
+                    changed = true;
                     let layer = self.state.layers.first_mut().unwrap();
                     // Align within the page
                     match alignment {
@@ -296,6 +309,7 @@ impl<'a> AlignmentInfo<'a> {
                         }
                     }
                 } else if self.state.layers.len() > 1 {
+                    changed = true;
                     // Align within the selection
                     let mut min_x = f32::MAX;
                     let mut max_x = f32::MIN;
@@ -355,6 +369,8 @@ impl<'a> AlignmentInfo<'a> {
                     }
                 }
             }
-        });
+            changed
+        })
+        .inner
     }
 }

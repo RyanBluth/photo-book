@@ -1,20 +1,15 @@
-use std::fmt::Display;
-
-use egui::{Id, Key, Rect, Ui, Vec2};
+use egui::{Id, Key, Ui, Vec2};
 use egui_tiles::{Container, ContainerKind, SimplificationOptions, Tile, TileId, UiResponse};
 use indexmap::{IndexMap, indexmap};
 
 use crate::{
     dep, dep_mut,
     export::{ExportTaskId, ExportTaskStatus, Exporter},
-    history::{HistoricallyEqual, UndoRedoStack},
-    id::{LayerId, PageId, next_layer_id, next_page_id},
-    model::edit_state::EditablePage,
+    id::{PageId, next_page_id},
     scene::crop_scene::CropScene,
     theme::color,
-    utils::{IdExt, RectExt},
     widget::{
-        canvas::{Canvas, CanvasState, MultiSelect},
+        canvas::{Canvas, CanvasHistoryKind, CanvasHistoryManager, CanvasState},
         canvas_info::{
             layers::{Layer, LayerContent},
             panel::{CanvasAdjustments, CanvasArrange, CanvasLayers, CanvasProperties},
@@ -43,7 +38,6 @@ pub struct CanvasSceneState {
     export_task_id: Option<ExportTaskId>,
     quick_layout_state: QuickLayoutState,
     adjustments_state: PhotoAdjustmentsState,
-    adjustments_history_pending: Option<PageId>,
     pub clipboard: Option<Vec<Layer>>,
 }
 
@@ -62,7 +56,6 @@ impl CanvasSceneState {
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
             adjustments_state: PhotoAdjustmentsState::new(),
-            adjustments_history_pending: None,
             clipboard: None,
         }
     }
@@ -86,7 +79,6 @@ impl CanvasSceneState {
             export_task_id: None,
             quick_layout_state: QuickLayoutState::new(),
             adjustments_state: PhotoAdjustmentsState::new(),
-            adjustments_history_pending: None,
             clipboard: None,
         }
     }
@@ -118,6 +110,45 @@ impl CanvasSceneState {
         !self.pages_state.pages.is_empty()
     }
 
+    fn apply_page_edit<T>(
+        &mut self,
+        page_id: PageId,
+        kind: CanvasHistoryKind,
+        edit: impl FnOnce(&mut CanvasState) -> T,
+    ) -> Option<T> {
+        let page = self.pages_state.pages.get_mut(&page_id)?;
+        let history = self.history_managers.get_mut(&page_id)?;
+        Some(history.apply(kind, page, edit))
+    }
+
+    fn apply_selected_edit<T>(
+        &mut self,
+        kind: CanvasHistoryKind,
+        edit: impl FnOnce(&mut CanvasState) -> T,
+    ) -> Option<T> {
+        self.apply_page_edit(self.pages_state.selected_page, kind, edit)
+    }
+
+    fn select_page(&mut self, page_id: PageId) {
+        if page_id == self.pages_state.selected_page
+            || !self.pages_state.pages.contains_key(&page_id)
+        {
+            return;
+        }
+
+        self.finish_selected_history();
+        self.pages_state.selected_page = page_id;
+    }
+
+    fn finish_selected_history(&mut self) {
+        if let Some(history) = self
+            .history_managers
+            .get_mut(&self.pages_state.selected_page)
+        {
+            history.finish_pending();
+        }
+    }
+
     fn sync_history_managers(&mut self) {
         self.history_managers
             .retain(|page_id, _| self.pages_state.pages.contains_key(page_id));
@@ -125,28 +156,6 @@ impl CanvasSceneState {
             self.history_managers
                 .entry(*page_id)
                 .or_insert_with(|| CanvasHistoryManager::with_initial_state(page.clone()));
-        }
-    }
-
-    fn save_history_for_page(&mut self, page_id: PageId, kind: CanvasHistoryKind) {
-        let Some(page_snapshot) = self.pages_state.pages.get(&page_id).cloned() else {
-            return;
-        };
-        if let Some(history) = self.history_managers.get_mut(&page_id) {
-            history.save_history(kind, &page_snapshot);
-        }
-    }
-
-    fn save_selected_history(&mut self, kind: CanvasHistoryKind) {
-        self.save_history_for_page(self.pages_state.selected_page, kind);
-    }
-
-    fn flush_pending_adjustment_history(&mut self, pointer_down: bool) {
-        if pointer_down {
-            return;
-        }
-        if let Some(page_id) = self.adjustments_history_pending.take() {
-            self.save_history_for_page(page_id, CanvasHistoryKind::AdjustPhoto);
         }
     }
 }
@@ -248,6 +257,7 @@ impl CanvasScene {
         if let Some(root) = self.tree.root {
             Self::set_matching_subtrees_visible(&mut self.tree.tiles, root, panes, visible);
         }
+        self.finish_inactive_history_scopes();
     }
 
     fn set_matching_subtrees_visible(
@@ -342,6 +352,52 @@ impl CanvasScene {
     pub fn with_state(state: CanvasSceneState) -> Self {
         Self::with_state_and_tree_id(state, "canvas_scene_tree")
     }
+
+    fn active_history_kinds(tree: &egui_tiles::Tree<CanvasScenePane>) -> Vec<CanvasHistoryKind> {
+        tree.active_tiles()
+            .into_iter()
+            .filter_map(|tile_id| tree.tiles.get_pane(&tile_id))
+            .flat_map(CanvasScenePane::history_kinds)
+            .copied()
+            .collect()
+    }
+
+    fn finish_inactive_history_scopes(&mut self) {
+        let active_history_kinds = Self::active_history_kinds(&self.tree);
+        let selected_page = self.state.pages_state.selected_page;
+        if let Some(history) = self.state.history_managers.get_mut(&selected_page) {
+            for kind in CanvasScenePane::EDITOR_PANES
+                .iter()
+                .flat_map(CanvasScenePane::history_kinds)
+                .filter(|kind| !active_history_kinds.contains(kind))
+            {
+                history.finish(*kind);
+            }
+        }
+    }
+}
+
+impl CanvasScenePane {
+    const EDITOR_PANES: [Self; 6] = [
+        Self::Canvas,
+        Self::Arrange,
+        Self::Properties,
+        Self::Adjustments,
+        Self::Layers,
+        Self::QuickLayout,
+    ];
+
+    fn history_kinds(&self) -> &'static [CanvasHistoryKind] {
+        match self {
+            Self::Canvas => &[CanvasHistoryKind::Transform, CanvasHistoryKind::EditText],
+            Self::Arrange => &[CanvasHistoryKind::Arrange],
+            Self::Properties => &[CanvasHistoryKind::EditProperties],
+            Self::Adjustments => &[CanvasHistoryKind::AdjustPhoto],
+            Self::Layers => &[CanvasHistoryKind::EditLayers],
+            Self::QuickLayout => &[CanvasHistoryKind::QuickLayout],
+            Self::Gallery | Self::Pages | Self::Templates => &[],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -403,6 +459,7 @@ impl Scene for CanvasScene {
 
         self.state.sync_history_managers();
         self.ensure_non_canvas_panes_have_tabs();
+        self.finish_inactive_history_scopes();
 
         self.tree.ui(
             &mut ViewerTreeBehavior {
@@ -411,10 +468,13 @@ impl Scene for CanvasScene {
             },
             ui,
         );
-        self.state
-            .flush_pending_adjustment_history(ui.input(|input| input.pointer.primary_down()));
+        self.finish_inactive_history_scopes();
 
-        match navigator.process_pending_request() {
+        let navigation_request = navigator.process_pending_request();
+        if navigation_request.is_some() {
+            self.state.finish_selected_history();
+        }
+        match navigation_request {
             Some(NavigationRequest::Push(scene_state)) => SceneResponse::Push(scene_state),
             Some(NavigationRequest::Pop(response)) => SceneResponse::Pop(response),
             None => SceneResponse::None,
@@ -428,24 +488,10 @@ impl Scene for CanvasScene {
             crop,
         }) = popped_scene_response
         {
-            let page = self.state.pages_state.pages.get_mut(&page_id).unwrap();
-            let Some(layer) = page.editable_layer_mut(&layer_id) else {
-                return;
-            };
-            if let LayerContent::Photo(photo) = &mut layer.content {
-                photo.crop = crop;
-
-                let photo_rect: Rect = Rect::from_center_size(
-                    layer.transform_state.rect.center(),
-                    Vec2::new(
-                        photo.photo.metadata.rotated_width() as f32 * crop.size().x,
-                        photo.photo.metadata.rotated_height() as f32 * crop.size().y,
-                    ),
-                );
-
-                layer.transform_state.rect =
-                    photo_rect.fit_and_center_within(layer.transform_state.rect);
-            }
+            self.state
+                .apply_page_edit(page_id, CanvasHistoryKind::Crop, |page| {
+                    page.apply_crop(layer_id, crop);
+                });
         }
     }
 }
@@ -473,22 +519,15 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     let is_template = self.scene_state.selected_page().template.is_some();
 
                     if is_template {
-                        if self
-                            .scene_state
-                            .selected_page_mut()
-                            .replace_selected_template_photo(photo.clone())
-                        {
-                            // Create a snapshot of the state after modification
-                            self.scene_state
-                                .save_selected_history(CanvasHistoryKind::AddPhoto);
-                        }
+                        self.scene_state
+                            .apply_selected_edit(CanvasHistoryKind::AddPhoto, |page| {
+                                page.replace_selected_template_photo(photo.clone())
+                            });
                     } else {
                         self.scene_state
-                            .selected_page_mut()
-                            .add_photo(photo.clone());
-                        // Create a snapshot of the state after modification
-                        self.scene_state
-                            .save_selected_history(CanvasHistoryKind::AddPhoto);
+                            .apply_selected_edit(CanvasHistoryKind::AddPhoto, |page| {
+                                page.add_photo(photo.clone())
+                            });
                     }
                 }
 
@@ -555,10 +594,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                CanvasArrange {
-                    canvas_state: self.scene_state.selected_page_mut(),
-                }
-                .show(ui);
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                let response = CanvasArrange { canvas_state: page }.show(ui);
+                history.record(CanvasHistoryKind::Arrange, page, response);
             }
             CanvasScenePane::Properties => {
                 ui.painter()
@@ -571,10 +609,9 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                CanvasProperties {
-                    canvas_state: self.scene_state.selected_page_mut(),
-                }
-                .show(ui);
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                let response = CanvasProperties { canvas_state: page }.show(ui);
+                history.record(CanvasHistoryKind::EditProperties, page, response);
             }
             CanvasScenePane::Adjustments => {
                 ui.painter()
@@ -587,24 +624,21 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                let response = {
-                    let pages_state = &mut self.scene_state.pages_state;
-                    let canvas_state = pages_state
-                        .pages
-                        .get_mut(&pages_state.selected_page)
-                        .unwrap();
-
-                    CanvasAdjustments {
-                        canvas_state,
-                        adjustments_state: &mut self.scene_state.adjustments_state,
-                    }
-                    .show(ui)
-                };
-
-                if response {
-                    self.scene_state.adjustments_history_pending =
-                        Some(self.scene_state.pages_state.selected_page);
+                let page_id = self.scene_state.pages_state.selected_page;
+                let page = self
+                    .scene_state
+                    .pages_state
+                    .pages
+                    .get_mut(&page_id)
+                    .unwrap();
+                let history = self.scene_state.history_managers.get_mut(&page_id).unwrap();
+                let adjustments_state = &mut self.scene_state.adjustments_state;
+                let response = CanvasAdjustments {
+                    canvas_state: page,
+                    adjustments_state,
                 }
+                .show(ui);
+                history.record(CanvasHistoryKind::AdjustPhoto, page, response);
             }
             CanvasScenePane::Layers => {
                 ui.painter()
@@ -617,22 +651,17 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                     return UiResponse::None;
                 }
 
-                let response = CanvasLayers {
-                    canvas_state: self.scene_state.selected_page_mut(),
-                }
-                .show(ui);
-
-                if let Some(history_kind) = response.history {
-                    self.scene_state.save_selected_history(history_kind);
-                }
+                let (page, history) = self.scene_state.selected_page_and_history_mut();
+                let response = CanvasLayers { canvas_state: page }.show(ui);
+                history.record(CanvasHistoryKind::EditLayers, page, response);
             }
             CanvasScenePane::Pages => {
                 ui.painter()
                     .rect_filled(ui.max_rect(), 0.0, color::SIDE_PANEL_BACKGROUND);
 
                 match Pages::new(&mut self.scene_state.pages_state).show(ui) {
-                    PagesResponse::SelectPage => {
-                        // No need to sync canvas_state anymore
+                    PagesResponse::SelectPage(page_id) => {
+                        self.scene_state.select_page(page_id);
                     }
                     PagesResponse::None => {}
                 }
@@ -651,7 +680,8 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
                             .pages
                             .insert(new_page_id, new_canvas_state);
 
-                        self.scene_state.pages_state.selected_page = new_page_id;
+                        self.scene_state.sync_history_managers();
+                        self.scene_state.select_page(new_page_id);
                     }
                     TemplatesResponse::None => {}
                 }
@@ -669,7 +699,8 @@ impl<'a> egui_tiles::Behavior<CanvasScenePane> for ViewerTreeBehavior<'a> {
 
                 let mut quick_layout_state = self.scene_state.quick_layout_state.clone();
                 let (page, history) = self.scene_state.selected_page_and_history_mut();
-                QuickLayout::new(&mut quick_layout_state, page, history).show(ui);
+                let response = QuickLayout::new(&mut quick_layout_state, page).show(ui);
+                history.record(CanvasHistoryKind::QuickLayout, page, response);
                 self.scene_state.quick_layout_state = quick_layout_state;
             }
         }
@@ -731,176 +762,19 @@ impl<'a> ViewerTreeBehavior<'a> {
             let clipboard_content = self.scene_state.clipboard.clone();
 
             if let Some(clipboard_layers) = clipboard_content {
-                let offset = Vec2::new(20.0, 20.0);
                 let page_id = self.scene_state.pages_state.selected_page;
-                let page = self
-                    .scene_state
-                    .pages_state
-                    .pages
-                    .get_mut(&page_id)
-                    .unwrap();
-
-                for layer in clipboard_layers {
-                    let mut new_layer = layer.clone();
-                    new_layer.id = next_layer_id();
-                    new_layer.selected = true;
-                    new_layer.transform_state.id = Id::random();
-
-                    // Offset the pasted layer slightly so it's visible
-                    new_layer.transform_state.rect =
-                        new_layer.transform_state.rect.translate(offset);
-
-                    for layer in page.layers.values_mut() {
-                        layer.selected = false;
-                    }
-
-                    page.layers.insert(new_layer.id, new_layer.clone());
-                    page.quick_layout_order.push(new_layer.id);
-                }
-
-                page.update_quick_layout_order();
-
                 self.scene_state
-                    .save_history_for_page(page_id, CanvasHistoryKind::AddPhoto);
+                    .apply_page_edit(page_id, CanvasHistoryKind::Paste, |page| {
+                        page.paste_layers(clipboard_layers, Vec2::new(20.0, 20.0))
+                    });
             }
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum CanvasHistoryKind {
-    Transform,
-    AddPhoto,
-    DeletePhoto,
-    _Select,
-    _Page, // TODO Add specific cases for things within the page settings
-    AddText,
-    EditText,
-    SelectLayer,
-    DeselectLayer,
-    AdjustPhoto,
-    QuickLayout,
-    AddShape,
-    EditLayer,
-}
-
-impl Display for CanvasHistoryKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CanvasHistoryKind::Transform => write!(f, "Move"),
-            CanvasHistoryKind::AddPhoto => write!(f, "Add Photo"),
-            CanvasHistoryKind::DeletePhoto => write!(f, "Delete Photo"),
-            CanvasHistoryKind::_Select => write!(f, "Select"),
-            CanvasHistoryKind::_Page => write!(f, "Page"),
-            CanvasHistoryKind::AddText => write!(f, "Add Text"),
-            CanvasHistoryKind::EditText => write!(f, "Edit Text"),
-            CanvasHistoryKind::SelectLayer => write!(f, "Select Layer"),
-            CanvasHistoryKind::DeselectLayer => write!(f, "Deselect Layer"),
-            CanvasHistoryKind::AdjustPhoto => write!(f, "Adjust Photo"),
-            CanvasHistoryKind::QuickLayout => write!(f, "Quick Layout"),
-            CanvasHistoryKind::AddShape => write!(f, "Add Shape"),
-            CanvasHistoryKind::EditLayer => write!(f, "Edit Layer"),
-        }
-    }
-}
-
-impl HistoricallyEqual for CanvasHistory {
-    fn historically_equal_to(&self, other: &Self) -> bool {
-        self.layers.len() == other.layers.len()
-            && self
-                .layers
-                .values()
-                .zip(other.layers.values())
-                .all(|(a, b)| a.historically_equal_to(b))
-            && self.page == other.page
-            && self.multi_select == other.multi_select
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CanvasHistory {
-    layers: IndexMap<LayerId, Layer>,
-    multi_select: Option<MultiSelect>,
-    page: EditablePage,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct CanvasHistoryManager {
-    pub stack: UndoRedoStack<CanvasHistoryKind, CanvasHistory>,
-}
-
-impl CanvasHistoryManager {
-    pub fn preview() -> Self {
-        Self::with_initial_state(CanvasState::new())
-    }
-
-    pub fn with_initial_state(state: CanvasState) -> Self {
-        CanvasHistoryManager {
-            stack: UndoRedoStack::new(CanvasHistory {
-                layers: state.layers.clone(),
-                multi_select: state.multi_select.clone(),
-                page: state.page.clone(),
-            }),
-        }
-    }
-
-    pub fn _is_at_end(&self) -> bool {
-        self.stack.index == self.stack.history.len()
-    }
-
-    pub fn undo(&mut self, canvas_state: &mut CanvasState) {
-        let new_value = self.stack.undo();
-        self.apply_history(new_value, canvas_state);
-    }
-
-    pub fn redo(&mut self, canvas_state: &mut CanvasState) {
-        let new_value = self.stack.redo();
-        self.apply_history(new_value, canvas_state);
-    }
-
-    pub fn save_history(&mut self, kind: CanvasHistoryKind, canvas_state: &CanvasState) {
-        self.stack.save_history(
-            kind,
-            CanvasHistory {
-                layers: canvas_state.layers.clone(),
-                multi_select: canvas_state.multi_select.clone(),
-                page: canvas_state.page.clone(),
-            },
-        );
-    }
-
-    fn apply_history(&mut self, history: CanvasHistory, canvas_state: &mut CanvasState) {
-        canvas_state.layers = history.layers;
-        canvas_state.multi_select = history.multi_select;
-        canvas_state.page = history.page;
-    }
-
-    pub fn _apply_index(&mut self, index: usize, canvas_state: &mut CanvasState) {
-        let history = &self.stack.history[index];
-        self.apply_history(history.1.clone(), canvas_state);
-    }
-
-    pub fn _capturing_history<T>(
-        &mut self,
-        kind: CanvasHistoryKind,
-        canvas_state: &mut CanvasState,
-        perform: impl FnOnce(&mut CanvasState) -> T,
-    ) -> T {
-        let mut state_clone = canvas_state.clone();
-        let res: T = perform(&mut state_clone);
-        let changed = state_clone != *canvas_state;
-        *canvas_state = state_clone;
-        if changed {
-            self.save_history(kind, canvas_state);
-        }
-        res
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::page::Page;
 
     #[test]
     fn history_is_isolated_per_page() {
@@ -914,36 +788,18 @@ mod tests {
             first_page_id,
         );
 
-        state
-            .pages_state
-            .pages
-            .get_mut(&first_page_id)
-            .unwrap()
-            .page = EditablePage::new(Page::with_size_inches(5.0, 7.0));
-        state.save_history_for_page(first_page_id, CanvasHistoryKind::_Page);
-        state
-            .pages_state
-            .pages
-            .get_mut(&first_page_id)
-            .unwrap()
-            .page = EditablePage::new(Page::with_size_inches(6.0, 8.0));
-        state.save_history_for_page(first_page_id, CanvasHistoryKind::_Page);
-        state
-            .pages_state
-            .pages
-            .get_mut(&second_page_id)
-            .unwrap()
-            .page = EditablePage::new(Page::with_size_inches(10.0, 12.0));
-        state.save_history_for_page(second_page_id, CanvasHistoryKind::_Page);
+        state.apply_page_edit(first_page_id, CanvasHistoryKind::AddShape, |page| {
+            page.add_layer(Layer::new_rectangle_shape_layer(), false);
+        });
+        state.apply_page_edit(first_page_id, CanvasHistoryKind::AddShape, |page| {
+            page.add_layer(Layer::new_rectangle_shape_layer(), false);
+        });
+        state.apply_page_edit(second_page_id, CanvasHistoryKind::AddShape, |page| {
+            page.add_layer(Layer::new_rectangle_shape_layer(), false);
+        });
 
-        assert_eq!(
-            state.history_managers[&first_page_id].stack.history.len(),
-            2
-        );
-        assert_eq!(
-            state.history_managers[&second_page_id].stack.history.len(),
-            1
-        );
+        assert_eq!(state.history_managers[&first_page_id].history_len(), 2);
+        assert_eq!(state.history_managers[&second_page_id].history_len(), 1);
 
         let first_page = state.pages_state.pages.get_mut(&first_page_id).unwrap();
         state
@@ -952,9 +808,49 @@ mod tests {
             .unwrap()
             .undo(first_page);
 
-        assert_eq!(state.pages_state.pages[&first_page_id].page.size().x, 5.0);
-        assert_eq!(state.pages_state.pages[&second_page_id].page.size().x, 10.0);
-        assert_eq!(state.history_managers[&second_page_id].stack.index, 0);
+        assert_eq!(state.pages_state.pages[&first_page_id].layers.len(), 1);
+        assert_eq!(state.pages_state.pages[&second_page_id].layers.len(), 1);
+        assert_eq!(state.history_managers[&second_page_id].index(), 1);
+    }
+
+    #[test]
+    fn selecting_another_page_finishes_the_pending_edit() {
+        let first_page_id = next_page_id();
+        let second_page_id = next_page_id();
+        let mut state = CanvasSceneState::with_pages(
+            indexmap! {
+                first_page_id => CanvasState::new(),
+                second_page_id => CanvasState::new(),
+            },
+            first_page_id,
+        );
+
+        let (page, history) = state.selected_page_and_history_mut();
+        page.add_layer(Layer::new_rectangle_shape_layer(), false);
+        history.update(CanvasHistoryKind::EditProperties, page);
+        assert_eq!(history.history_len(), 0);
+
+        state.select_page(second_page_id);
+
+        assert_eq!(state.pages_state.selected_page, second_page_id);
+        assert_eq!(state.history_managers[&first_page_id].history_len(), 1);
+    }
+
+    #[test]
+    fn hiding_an_editor_pane_finishes_its_pending_edit() {
+        let mut scene = CanvasScene::new();
+        let (page, history) = scene.state.selected_page_and_history_mut();
+        page.add_layer(Layer::new_rectangle_shape_layer(), false);
+        history.update(CanvasHistoryKind::EditProperties, page);
+        assert_eq!(history.history_len(), 0);
+
+        scene.set_right_sidebar_open(false);
+
+        let selected_page = scene.state.pages_state.selected_page;
+        assert_eq!(
+            scene.state.history_managers[&selected_page].history_len(),
+            1
+        );
     }
 
     #[test]

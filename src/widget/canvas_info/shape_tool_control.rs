@@ -31,7 +31,7 @@ impl<'a> ShapeToolControl<'a> {
 
         property_group(ui, |ui| {
             field(ui, "Fill color", |ui| {
-                color_field(
+                let _ = color_field(
                     ui,
                     &mut self.settings.fill_color,
                     &mut self.settings.edit_state.fill_color,
@@ -106,7 +106,7 @@ impl<'a> ShapeToolControl<'a> {
                     },
                     |ui| {
                         field(ui, "Stroke color", |ui| {
-                            color_field(
+                            let _ = color_field(
                                 ui,
                                 &mut stroke_val.color,
                                 &mut self.settings.edit_state.stroke_color,

@@ -231,6 +231,7 @@ impl<'a> PhotoInfo<'a> {
             &mut self.state.adjustments_state,
         )
         .show(ui)
+        .changed
         {
             self.photo.set_adjustments(adjustments);
         }

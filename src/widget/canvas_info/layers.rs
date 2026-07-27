@@ -10,7 +10,6 @@ use strum_macros::{Display, EnumIter};
 
 use crate::{
     assets::Asset,
-    history::HistoricallyEqual,
     id::{LayerId, next_layer_id},
     model::{self, editable_value::EditableValue, hex_color::HexColor},
     photo::Photo,
@@ -331,6 +330,35 @@ pub struct Layer {
 }
 
 impl Layer {
+    /// Returns the document portion of the layer with editor-only state reset.
+    ///
+    /// History snapshots use this representation so newly added layer fields
+    /// participate in equality automatically through `Layer::PartialEq`.
+    pub(crate) fn persistent_clone(&self) -> Self {
+        let mut layer = self.clone();
+        layer.selected = false;
+        layer.transform_state = layer.transform_state.persistent_clone();
+        layer.transform_state.handle_mode = TransformHandleMode::default();
+        layer.transform_edit_state = LayerTransformEditState::from(&layer.transform_state);
+
+        match &mut layer.content {
+            LayerContent::Text(text) | LayerContent::TemplateText { text, .. } => {
+                text.edit_state = CanvasTextEditState::new(text.font_size, text.color);
+            }
+            LayerContent::Shape(shape) => {
+                let (stroke_width, stroke_color) = shape
+                    .stroke
+                    .map(|(stroke, _)| (stroke.width, stroke.color))
+                    .unwrap_or((1.0, color::BLACK));
+                shape.edit_state =
+                    CanvasShapeEditState::new(stroke_width, shape.fill_color, stroke_color);
+            }
+            LayerContent::Photo(_) | LayerContent::TemplatePhoto { .. } => {}
+        }
+
+        layer
+    }
+
     pub fn with_photo(photo: Photo) -> Self {
         let name = photo.file_name().to_string();
 
@@ -486,44 +514,7 @@ impl Layer {
     }
 }
 
-impl HistoricallyEqual for Layer {
-    fn historically_equal_to(&self, other: &Self) -> bool {
-        let layer_content_equal = match (&self.content, &other.content) {
-            (LayerContent::Photo(photo), LayerContent::Photo(other_photo)) => photo == other_photo,
-            (
-                LayerContent::TemplatePhoto {
-                    region,
-                    photo,
-                    scale_mode,
-                },
-                LayerContent::TemplatePhoto {
-                    region: other_region,
-                    photo: other_photo,
-                    scale_mode: other_scale_mode,
-                },
-            ) => region == other_region && photo == other_photo && scale_mode == other_scale_mode,
-            (LayerContent::Text(text), LayerContent::Text(other_text)) => {
-                text.text == other_text.text
-                    && text.font_size == other_text.font_size
-                    && text.font_id == other_text.font_id
-                    && text.color == other_text.color
-                    && text.horizontal_alignment == other_text.horizontal_alignment
-                    && text.vertical_alignment == other_text.vertical_alignment
-            }
-            _ => false,
-        };
-
-        layer_content_equal
-            && self.name == other.name
-            && self.visible == other.visible
-            && self.locked == other.locked
-            && self.selected == other.selected
-            && self.id == other.id
-            && self.transform_state == other.transform_state
-    }
-}
-
-#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LayersResponse {
     SelectedLayer(LayerId),
     Changed,

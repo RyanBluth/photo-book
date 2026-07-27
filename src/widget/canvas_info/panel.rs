@@ -2,7 +2,6 @@ use eframe::egui::{self};
 use egui::RichText;
 
 use crate::{
-    scene::canvas_scene::CanvasHistoryKind,
     theme::color,
     widget::{
         canvas::{CanvasState, types::ToolKind},
@@ -10,6 +9,7 @@ use crate::{
             alignment::{AlignmentInfo, AlignmentInfoState},
             layers::CanvasShapeKind,
         },
+        edit_response::EditResponse,
         photo_adjustments::PhotoAdjustmentsState,
         photo_adjustments_panel::PhotoAdjustmentsPanel,
     },
@@ -26,10 +26,6 @@ use super::{
     text_tool_control::TextToolControl,
     transform_control::{TransformControl, TransformControlState},
 };
-
-pub struct CanvasInfoResponse {
-    pub history: Option<CanvasHistoryKind>,
-}
 
 #[derive(Debug)]
 pub struct CanvasArrange<'a> {
@@ -53,57 +49,60 @@ pub struct CanvasLayers<'a> {
 }
 
 impl<'a> CanvasArrange<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
         show_scrollable_panel(ui, "canvas_arrange_scroll", egui::Margin::same(12), |ui| {
             AlignmentInfo::new(&mut AlignmentInfoState::new(
                 self.canvas_state.page.size_pixels(),
                 self.canvas_state.selected_layers_iter_mut().collect(),
             ))
-            .show(ui);
-        });
+            .show(ui)
+        })
     }
 }
 
 impl<'a> CanvasProperties<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
         show_scrollable_panel(
             ui,
             "canvas_properties_scroll",
             egui::Margin::same(12),
             |ui| self.show_context_controls(ui),
-        );
+        )
     }
 
-    fn show_context_controls(&mut self, ui: &mut egui::Ui) {
+    fn show_context_controls(&mut self, ui: &mut egui::Ui) -> EditResponse {
         // TODO: Handle multi select
         let selected_layer = self.canvas_state.selected_layers_iter_mut().next();
 
         if let Some(layer) = selected_layer {
+            let mut response = EditResponse::none();
             if let LayerContent::TemplatePhoto {
                 region: _,
                 photo: _,
                 scale_mode,
             } = &mut layer.content
             {
-                ScaleMode::new(&mut ScaleModeState::new(scale_mode)).show(ui);
+                response |= ScaleMode::new(&mut ScaleModeState::new(scale_mode)).show(ui);
                 ui.separator();
             }
 
-            TransformControl::new(TransformControlState::new(layer)).show(ui);
+            response |= TransformControl::new(TransformControlState::new(layer)).show(ui);
 
             if matches!(layer.content, LayerContent::Text(_)) {
                 ui.separator();
-                TextEditControl::new(layer).show(ui);
+                response |= TextEditControl::new(layer).show(ui);
             } else if matches!(&layer.content, LayerContent::Shape(shape) if matches!(shape.kind, CanvasShapeKind::Line { .. }))
             {
                 ui.separator();
-                LineEditControl::new(layer).show(ui);
+                response |= LineEditControl::new(layer).show(ui);
             } else if matches!(layer.content, LayerContent::Shape(_)) {
                 ui.separator();
-                ShapeEditControl::new(layer).show(ui);
+                response |= ShapeEditControl::new(layer).show(ui);
             }
+            response
         } else {
             self.show_tool_controls(ui);
+            EditResponse::none()
         }
     }
 
@@ -137,7 +136,7 @@ impl<'a> CanvasProperties<'a> {
 }
 
 impl<'a> CanvasAdjustments<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) -> bool {
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
         show_scrollable_panel(
             ui,
             "canvas_adjustments_scroll",
@@ -146,7 +145,7 @@ impl<'a> CanvasAdjustments<'a> {
         )
     }
 
-    fn show_context_controls(&mut self, ui: &mut egui::Ui) -> bool {
+    fn show_context_controls(&mut self, ui: &mut egui::Ui) -> EditResponse {
         let selected_photo = self
             .canvas_state
             .selected_layers_iter_mut()
@@ -168,24 +167,19 @@ impl<'a> CanvasAdjustments<'a> {
                         .color(color::CONTROL_TEXT),
                 );
             });
-            false
+            EditResponse::none()
         }
     }
 }
 
 impl<'a> CanvasLayers<'a> {
-    pub fn show(&mut self, ui: &mut egui::Ui) -> CanvasInfoResponse {
-        let mut history = None;
-
+    pub fn show(&mut self, ui: &mut egui::Ui) -> EditResponse {
         show_scrollable_panel(ui, "canvas_layers_scroll", egui::Margin::ZERO, |ui| {
             match Layers::new(&mut self.canvas_state.layers).show(ui) {
-                LayersResponse::SelectedLayer(_) => history = Some(CanvasHistoryKind::SelectLayer),
-                LayersResponse::Changed => history = Some(CanvasHistoryKind::EditLayer),
-                LayersResponse::None => {}
+                LayersResponse::Changed => EditResponse::discrete(true),
+                LayersResponse::SelectedLayer(_) | LayersResponse::None => EditResponse::none(),
             }
-        });
-
-        CanvasInfoResponse { history }
+        })
     }
 }
 

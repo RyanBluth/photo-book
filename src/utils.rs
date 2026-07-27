@@ -508,6 +508,22 @@ pub trait EditableValueTextEdit {
         T: Display,
         T: FromStr,
         T: Clone;
+
+    /// Shows an editable value and reports valid live changes together with
+    /// the underlying widget response.
+    fn text_edit_editable_value_singleline_live<T>(
+        &mut self,
+        value: &mut EditableValue<T>,
+    ) -> EditableValueTextResponse<T>
+    where
+        T: Display,
+        T: FromStr,
+        T: Clone;
+}
+
+pub struct EditableValueTextResponse<T> {
+    pub value: Option<T>,
+    pub response: Response,
 }
 
 impl EditableValueTextEdit for Ui {
@@ -517,17 +533,44 @@ impl EditableValueTextEdit for Ui {
         T: FromStr,
         T: Clone,
     {
+        let response = self.styled_text_edit_singleline(value.editable_value());
+        if response.gained_focus() {
+            value.begin_editing();
+        } else if value.is_editing() && !response.has_focus() {
+            value.end_editing();
+        }
+        value.value()
+    }
+
+    fn text_edit_editable_value_singleline_live<T>(
+        &mut self,
+        value: &mut EditableValue<T>,
+    ) -> EditableValueTextResponse<T>
+    where
+        T: Display,
+        T: FromStr,
+        T: Clone,
+    {
         let text_edit_response = self.styled_text_edit_singleline(value.editable_value());
 
         if text_edit_response.gained_focus() {
             value.begin_editing();
-        } else if value.is_editing() && !text_edit_response.has_focus() {
-            value.end_editing();
-
-            return value.value().clone();
         }
 
-        value.value()
+        let parsed_value = text_edit_response
+            .changed()
+            .then(|| value.update_from_editable())
+            .flatten();
+
+        let committed = value.is_editing() && !text_edit_response.has_focus();
+        if committed {
+            value.end_editing();
+        }
+
+        EditableValueTextResponse {
+            value: parsed_value,
+            response: text_edit_response,
+        }
     }
 }
 

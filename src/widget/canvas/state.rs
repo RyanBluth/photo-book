@@ -7,7 +7,7 @@ use indexmap::{IndexMap, indexmap};
 use crate::{
     dep,
     id::{LayerId, next_layer_id},
-    layout::{LayoutItem, LayoutNode},
+    layout::{LayoutItem, LayoutNode, apply_layout_node},
     model::{edit_state::EditablePage, page::Page, scale_mode::ScaleMode},
     photo::Photo,
     project_settings::ProjectSettingsManager,
@@ -332,6 +332,42 @@ impl CanvasState {
         }
     }
 
+    pub fn select_layer(&mut self, layer_id: LayerId, toggle: bool) {
+        if self.editable_layer(&layer_id).is_none() {
+            return;
+        }
+        if toggle {
+            if let Some(layer) = self.layers.get_mut(&layer_id) {
+                layer.selected = !layer.selected;
+            }
+        } else {
+            for layer in self.layers.values_mut() {
+                layer.selected = layer.id == layer_id;
+            }
+        }
+
+        if self.is_layer_selected(&layer_id) {
+            self.tool_state = ToolState::Idle(IdleTool::Select);
+        }
+    }
+
+    pub fn deselect_all_layers(&mut self) {
+        for layer in self.layers.values_mut() {
+            layer.selected = false;
+        }
+        self.multi_select = None;
+    }
+
+    pub fn add_layer(&mut self, layer: Layer, begin_text_edit: bool) {
+        let layer_id = layer.id;
+        self.layers.insert(layer_id, layer);
+        self.select_layer(layer_id, false);
+        self.update_quick_layout_order();
+        if begin_text_edit {
+            self.text_edit_mode = TextEditMode::BeginEditing(layer_id);
+        }
+    }
+
     pub fn delete_selected_editable_layers(&mut self) -> bool {
         let original_len = self.layers.len();
         self.layers
@@ -376,6 +412,118 @@ impl CanvasState {
         let layer = Layer::with_photo(photo);
         self.layers.insert(layer.id, layer);
         self.update_quick_layout_order();
+    }
+
+    pub fn paste_layers(&mut self, layers: Vec<Layer>, offset: Vec2) {
+        if layers.is_empty() {
+            return;
+        }
+
+        self.deselect_all_layers();
+        for mut layer in layers {
+            layer.id = next_layer_id();
+            layer.selected = true;
+            layer.transform_state.id = Id::random();
+            layer.transform_state.rect = layer.transform_state.rect.translate(offset);
+            layer.transform_edit_state.update(&layer.transform_state);
+            self.layers.insert(layer.id, layer);
+        }
+        self.multi_select = None;
+        self.update_quick_layout_order();
+    }
+
+    pub fn apply_crop(&mut self, layer_id: LayerId, crop: Rect) {
+        let Some(layer) = self.editable_layer_mut(&layer_id) else {
+            return;
+        };
+        let LayerContent::Photo(photo) = &mut layer.content else {
+            return;
+        };
+
+        photo.crop = crop;
+        let photo_rect = Rect::from_center_size(
+            layer.transform_state.rect.center(),
+            Vec2::new(
+                photo.photo.metadata.rotated_width() as f32 * crop.width(),
+                photo.photo.metadata.rotated_height() as f32 * crop.height(),
+            ),
+        );
+        layer.transform_state.rect = photo_rect.fit_and_center_within(layer.transform_state.rect);
+        layer.transform_edit_state.update(&layer.transform_state);
+    }
+
+    pub fn nudge_selected_layers(&mut self, delta: Vec2) {
+        if delta == Vec2::ZERO {
+            return;
+        }
+        for layer in self.selected_layers_iter_mut() {
+            layer.transform_state.rect = layer.transform_state.rect.translate(delta);
+        }
+    }
+
+    pub fn set_selected_handle_mode(&mut self, handle_mode: TransformHandleMode) {
+        for layer in self.selected_layers_iter_mut() {
+            layer.transform_state.handle_mode = handle_mode;
+        }
+    }
+
+    pub fn swap_layer_centers(&mut self, first_id: LayerId, second_id: LayerId) {
+        if !self.are_layers_canvas_editable(&[first_id, second_id]) {
+            return;
+        }
+        let Some(first_rect) = self
+            .layers
+            .get(&first_id)
+            .map(|layer| layer.transform_state.rect)
+        else {
+            return;
+        };
+        let Some(second_rect) = self
+            .layers
+            .get(&second_id)
+            .map(|layer| layer.transform_state.rect)
+        else {
+            return;
+        };
+
+        self.layers
+            .get_mut(&first_id)
+            .unwrap()
+            .transform_state
+            .rect
+            .set_center(second_rect.center());
+        self.layers
+            .get_mut(&second_id)
+            .unwrap()
+            .transform_state
+            .rect
+            .set_center(first_rect.center());
+    }
+
+    pub fn swap_quick_layout_position(&mut self, first_id: LayerId, second_id: LayerId) {
+        if !self.are_layers_canvas_editable(&[first_id, second_id]) {
+            return;
+        }
+        let Some(layout) = self.last_quick_layout.clone() else {
+            return;
+        };
+        let Some(first_index) = self
+            .quick_layout_order
+            .iter()
+            .position(|id| *id == first_id)
+        else {
+            return;
+        };
+        let Some(second_index) = self
+            .quick_layout_order
+            .iter()
+            .position(|id| *id == second_id)
+        else {
+            return;
+        };
+
+        self.quick_layout_order.swap(first_index, second_index);
+        apply_layout_node(&layout, self, 0.0, 0.0);
     }
 
     pub fn update_quick_layout_order(&mut self) {

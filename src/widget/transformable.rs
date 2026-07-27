@@ -101,6 +101,30 @@ impl TransformableState {
             id: self.id,
         }
     }
+
+    /// Returns the document state without transient widget interaction data.
+    ///
+    /// Undo/redo snapshots must not restore an active drag or resize handle.
+    pub(crate) fn persistent_clone(&self) -> Self {
+        Self {
+            rect: self.rect,
+            active_handle: None,
+            is_moving: false,
+            handle_mode: self.handle_mode,
+            rotation: self.rotation,
+            last_frame_rotation: self.rotation,
+            change_in_rotation: None,
+            id: self.id,
+        }
+    }
+
+    /// Compares only geometry that belongs to the document.
+    ///
+    /// Handle mode and active drag state are editor state and must not create
+    /// history entries or be restored by undo/redo.
+    pub(crate) fn historically_equal_to(&self, other: &Self) -> bool {
+        self.rect == other.rect && self.rotation == other.rotation && self.id == other.id
+    }
 }
 
 pub struct TransformableWidget<'a> {
@@ -122,9 +146,16 @@ pub struct TransformableWidgetResponse<Inner> {
     pub ended_moving: bool,
     pub ended_resizing: bool,
     pub ended_rotating: bool,
+    pub changed: bool,
     pub mouse_down: bool,
     pub _clicked: bool,
     pub double_clicked: bool,
+}
+
+impl<Inner> TransformableWidgetResponse<Inner> {
+    pub fn ended_transforming(&self) -> bool {
+        self.ended_moving || self.ended_resizing || self.ended_rotating
+    }
 }
 
 fn rotated_rect_contains(rect: Rect, rotation: f32, pos: Pos2) -> bool {
@@ -159,6 +190,8 @@ impl<'a> TransformableWidget<'a> {
         let initial_is_moving = self.state.is_moving;
         let initial_active_handle = self.state.active_handle;
         let initial_mode = self.state.handle_mode;
+        let initial_rect = self.state.rect;
+        let initial_rotation = self.state.rotation;
 
         self.state.last_frame_rotation = self.state.rotation;
 
@@ -505,6 +538,7 @@ impl<'a> TransformableWidget<'a> {
             ended_rotating: initial_active_handle.is_some()
                 && self.state.active_handle.is_none()
                 && matches!(initial_mode, TransformHandleMode::Rotate),
+            changed: self.state.rect != initial_rect || self.state.rotation != initial_rotation,
             mouse_down: interact_response.is_pointer_button_down_on()
                 && (pointer_on_rotated_rect || is_transforming),
             _clicked: interact_response.clicked() && pointer_on_rotated_rect,

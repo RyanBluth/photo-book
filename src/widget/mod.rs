@@ -10,6 +10,7 @@ pub mod canvas_state;
 pub mod chip;
 pub mod chip_collection;
 pub mod crop;
+pub mod edit_response;
 pub mod field_pair;
 pub mod file_tree;
 pub mod gallery_image;
