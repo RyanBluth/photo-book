@@ -94,10 +94,6 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui) -> Option<CanvasResponse> {
-        if let Some(response) = self.handle_keys(ui.ctx()) {
-            return Some(response);
-        }
-
         // Show toolbar at the top
         let toolbar_height = 40.0;
         let toolbar_rect = Rect::from_min_size(
@@ -139,6 +135,12 @@ impl<'a> Canvas<'a> {
         }
 
         let canvas_response = ui.allocate_rect(canvas_rect, Sense::click());
+        if canvas_response.clicked() {
+            canvas_response.request_focus();
+        }
+        if let Some(response) = self.handle_keys(ui, &canvas_response) {
+            return Some(response);
+        }
         let canvas_rect = canvas_response.rect;
 
         let is_pointer_on_canvas = self.is_pointer_on_canvas(ui);
@@ -230,6 +232,15 @@ impl<'a> Canvas<'a> {
                 let primary_pointer_pressed = ui.input(|input| input.pointer.primary_pressed());
                 let primary_pointer_released = ui.input(|input| input.pointer.primary_released());
 
+                if transform_response.mouse_down
+                    || transform_response._clicked
+                    || transform_response.ended_moving
+                    || transform_response.ended_resizing
+                    || transform_response.ended_rotating
+                {
+                    canvas_response.request_focus();
+                }
+
                 // If the canvas was clicked but not on the photo then deselect the photo
                 if canvas_response.clicked()
                     && !transform_state
@@ -254,7 +265,7 @@ impl<'a> Canvas<'a> {
             }
         }
 
-        self.draw_multi_select(ui, page_rect);
+        self.draw_multi_select(ui, page_rect, &canvas_response);
 
         self.draw_tool(ui, page_rect);
 
@@ -608,7 +619,7 @@ impl<'a> Canvas<'a> {
         }
     }
 
-    fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect) {
+    fn draw_multi_select(&mut self, ui: &mut Ui, rect: Rect, canvas_response: &egui::Response) {
         let selected_layer_ids = self.state.selected_editable_layer_ids();
 
         if selected_layer_ids.len() > 1 {
@@ -636,24 +647,32 @@ impl<'a> Canvas<'a> {
                     .map(|child| child.id)
                     .collect::<Vec<_>>();
 
-                let transform_response = TransformableWidget::new(&mut transform_state).show(
-                    ui,
-                    rect,
-                    self.state.zoom,
-                    true,
-                    true,
-                    |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
-                        // Apply transformation to the transformable_state of each layer in the multi select
-                        for child_id in child_ids_content {
-                            let layer: &mut Layer = self.state.layers.get_mut(&child_id).unwrap();
-                            MultiSelect::transform_child(
-                                &mut layer.transform_state,
-                                pre_transform_rect,
-                                transformable_state,
-                            );
-                        }
-                    },
-                );
+                let interaction_id = egui::Id::new((
+                    "multi-select-transform",
+                    self.state.canvas_id,
+                    &child_ids_content,
+                ));
+                let transform_response = TransformableWidget::new(&mut transform_state)
+                    .id(interaction_id)
+                    .show(
+                        ui,
+                        rect,
+                        self.state.zoom,
+                        true,
+                        true,
+                        |_ui: &mut Ui, _transformed_rect: Rect, transformable_state| {
+                            // Apply transformation to the transformable_state of each layer in the multi select
+                            for child_id in child_ids_content {
+                                let layer: &mut Layer =
+                                    self.state.layers.get_mut(&child_id).unwrap();
+                                MultiSelect::transform_child(
+                                    &mut layer.transform_state,
+                                    pre_transform_rect,
+                                    transformable_state,
+                                );
+                            }
+                        },
+                    );
 
                 multi_select.transformable_state = transform_state;
 
@@ -663,14 +682,28 @@ impl<'a> Canvas<'a> {
             None
         };
 
-        if let Some(transform_response) = transform_response
-            && (transform_response.ended_moving
+        if let Some(transform_response) = transform_response {
+            if transform_response.mouse_down
+                || transform_response._clicked
+                || transform_response.ended_moving
                 || transform_response.ended_resizing
-                || transform_response.ended_rotating)
-        {
-            self.history_manager
-                .save_history(CanvasHistoryKind::Transform, self.state);
+                || transform_response.ended_rotating
+            {
+                canvas_response.request_focus();
+            }
+
+            if transform_response.ended_moving
+                || transform_response.ended_resizing
+                || transform_response.ended_rotating
+            {
+                self.history_manager
+                    .save_history(CanvasHistoryKind::Transform, self.state);
+            }
         }
+    }
+
+    fn layer_transform_interaction_id(&self, layer_id: LayerId) -> egui::Id {
+        egui::Id::new(("layer-transform", self.state.canvas_id, layer_id))
     }
 
     fn draw_layer(
@@ -681,8 +714,14 @@ impl<'a> Canvas<'a> {
         ui: &mut Ui,
     ) -> Option<TransformableWidgetResponse<()>> {
         let layer = &mut self.state.layers.get_mut(layer_id).unwrap().clone();
+        if is_preview {
+            self.paint_preview_layer(ui, available_rect, layer);
+            return None;
+        }
+
         let editable = CanvasState::is_layer_canvas_selectable(layer);
         let active = layer.selected && editable && self.state.multi_select.is_none();
+        let transform_interaction_id = self.layer_transform_interaction_id(layer.id);
 
         match &mut layer.content {
             LayerContent::Photo(photo) => {
@@ -704,6 +743,7 @@ impl<'a> Canvas<'a> {
                         |ui| {
                             let mut transform_state = layer.transform_state.clone();
                             let transform_response = TransformableWidget::new(&mut transform_state)
+                                .id(transform_interaction_id)
                                 .show(
                                     ui,
                                     available_rect,
@@ -761,56 +801,58 @@ impl<'a> Canvas<'a> {
                 let text_edit_mode = &mut self.state.text_edit_mode;
 
                 let transform_response: TransformableWidgetResponse<()> =
-                    TransformableWidget::new(&mut transform_state).show(
-                        ui,
-                        available_rect,
-                        self.state.zoom,
-                        active && !is_preview && !is_editing, // Disable transform controls when editing
-                        true,
-                        |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                            if is_editing && !is_preview {
-                                let stroke = Stroke::new(DASH_LINE_STROKE, color::BLACK);
-                                let shape = Shape::dashed_line(
-                                    &[
-                                        transformed_rect.left_top(),
-                                        transformed_rect.right_top(),
-                                        transformed_rect.right_bottom(),
-                                        transformed_rect.left_bottom(),
-                                        transformed_rect.left_top(),
-                                    ],
-                                    stroke,
-                                    DASH_SIZE,
-                                    DASH_SIZE,
-                                );
-                                ui.painter().add(shape);
+                    TransformableWidget::new(&mut transform_state)
+                        .id(transform_interaction_id)
+                        .show(
+                            ui,
+                            available_rect,
+                            self.state.zoom,
+                            active && !is_preview && !is_editing, // Disable transform controls when editing
+                            true,
+                            |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                                if is_editing && !is_preview {
+                                    let stroke = Stroke::new(DASH_LINE_STROKE, color::BLACK);
+                                    let shape = Shape::dashed_line(
+                                        &[
+                                            transformed_rect.left_top(),
+                                            transformed_rect.right_top(),
+                                            transformed_rect.right_bottom(),
+                                            transformed_rect.left_bottom(),
+                                            transformed_rect.left_top(),
+                                        ],
+                                        stroke,
+                                        DASH_SIZE,
+                                        DASH_SIZE,
+                                    );
+                                    ui.painter().add(shape);
 
-                                Self::draw_editing_text(
-                                    ui,
-                                    &mut text_content.text,
-                                    &text_content.font_id,
-                                    transformed_rect,
-                                    text_content.font_size * self.state.zoom,
-                                    text_content.color,
-                                    text_content.horizontal_alignment,
-                                    text_content.vertical_alignment,
-                                    layer.id,
-                                    text_edit_mode,
-                                );
-                            } else {
-                                Self::draw_text(
-                                    ui,
-                                    &text_content.text,
-                                    &text_content.font_id,
-                                    transformed_rect,
-                                    text_content.font_size * self.state.zoom,
-                                    text_content.color,
-                                    text_content.horizontal_alignment,
-                                    text_content.vertical_alignment,
-                                    transformable_state.rotation,
-                                );
-                            }
-                        },
-                    );
+                                    Self::draw_editing_text(
+                                        ui,
+                                        &mut text_content.text,
+                                        &text_content.font_id,
+                                        transformed_rect,
+                                        text_content.font_size * self.state.zoom,
+                                        text_content.color,
+                                        text_content.horizontal_alignment,
+                                        text_content.vertical_alignment,
+                                        layer.id,
+                                        text_edit_mode,
+                                    );
+                                } else {
+                                    Self::draw_text(
+                                        ui,
+                                        &text_content.text,
+                                        &text_content.font_id,
+                                        transformed_rect,
+                                        text_content.font_size * self.state.zoom,
+                                        text_content.color,
+                                        text_content.horizontal_alignment,
+                                        text_content.vertical_alignment,
+                                        transformable_state.rotation,
+                                    );
+                                }
+                            },
+                        );
 
                 // Double-click to enter edit mode
                 if editable && transform_response.double_clicked && !is_editing {
@@ -1070,22 +1112,54 @@ impl<'a> Canvas<'a> {
                 let response = ui.push_id(
                     format!("shape_{}_{:?}", layer_id, canvas_shape.kind),
                     |ui| {
-                        TransformableWidget::new(&mut transform_state).show(
-                            ui,
-                            available_rect,
-                            self.state.zoom,
-                            active && !is_preview,
-                            true,
-                            |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
-                                match canvas_shape.kind {
-                                    CanvasShapeKind::Rectangle { corner_radius } => {
-                                        let rotation = transformable_state.rotation;
-                                        let shape = Shape::Rect(
-                                            RectShape::new(
-                                                transformed_rect,
-                                                CornerRadius::same(corner_radius as u8),
-                                                canvas_shape.fill_color,
-                                                canvas_shape
+                        TransformableWidget::new(&mut transform_state)
+                            .id(transform_interaction_id)
+                            .show(
+                                ui,
+                                available_rect,
+                                self.state.zoom,
+                                active && !is_preview,
+                                true,
+                                |ui: &mut Ui, transformed_rect: Rect, transformable_state| {
+                                    match canvas_shape.kind {
+                                        CanvasShapeKind::Rectangle { corner_radius } => {
+                                            let rotation = transformable_state.rotation;
+                                            let shape = Shape::Rect(
+                                                RectShape::new(
+                                                    transformed_rect,
+                                                    CornerRadius::same(corner_radius as u8),
+                                                    canvas_shape.fill_color,
+                                                    canvas_shape
+                                                        .stroke
+                                                        .map(|(stroke, _)| {
+                                                            Stroke::new(
+                                                                stroke.width * self.state.zoom,
+                                                                stroke.color,
+                                                            )
+                                                        })
+                                                        .unwrap_or(Stroke::NONE),
+                                                    canvas_shape
+                                                        .stroke
+                                                        .map(|(_, kind)| kind)
+                                                        .unwrap_or(StrokeKind::Outside),
+                                                )
+                                                .with_angle_and_pivot(
+                                                    rotation,
+                                                    transformed_rect.center(),
+                                                ),
+                                            );
+                                            ui.painter().add(shape);
+                                        }
+                                        CanvasShapeKind::Ellipse => {
+                                            let rotation = transformable_state.rotation;
+                                            let shape = Shape::Ellipse(EllipseShape {
+                                                center: transformed_rect.center(),
+                                                radius: Vec2::new(
+                                                    transformed_rect.width() / 2.0,
+                                                    transformed_rect.height() / 2.0,
+                                                ),
+                                                fill: canvas_shape.fill_color,
+                                                stroke: canvas_shape
                                                     .stroke
                                                     .map(|(stroke, _)| {
                                                         Stroke::new(
@@ -1094,96 +1168,248 @@ impl<'a> Canvas<'a> {
                                                         )
                                                     })
                                                     .unwrap_or(Stroke::NONE),
-                                                canvas_shape
-                                                    .stroke
-                                                    .map(|(_, kind)| kind)
-                                                    .unwrap_or(StrokeKind::Outside),
-                                            )
-                                            .with_angle_and_pivot(
-                                                rotation,
-                                                transformed_rect.center(),
-                                            ),
-                                        );
-                                        ui.painter().add(shape);
-                                    }
-                                    CanvasShapeKind::Ellipse => {
-                                        let rotation = transformable_state.rotation;
-                                        let shape = Shape::Ellipse(EllipseShape {
-                                            center: transformed_rect.center(),
-                                            radius: Vec2::new(
-                                                transformed_rect.width() / 2.0,
-                                                transformed_rect.height() / 2.0,
-                                            ),
-                                            fill: canvas_shape.fill_color,
-                                            stroke: canvas_shape
-                                                .stroke
-                                                .map(|(stroke, _)| {
-                                                    Stroke::new(
-                                                        stroke.width * self.state.zoom,
-                                                        stroke.color,
-                                                    )
-                                                })
-                                                .unwrap_or(Stroke::NONE),
-                                            angle: rotation,
-                                        });
-                                        ui.painter().add(shape);
-                                    }
-                                    CanvasShapeKind::Line { ref slope } => {
-                                        if let Some((stroke, _)) = canvas_shape.stroke {
-                                            let rotation = transformable_state.rotation;
-                                            let zoomed_stroke = Stroke::new(
-                                                stroke.width * self.state.zoom,
-                                                stroke.color,
-                                            );
-                                            let (rotated_start, rotated_end) = match slope {
-                                                LineSlope::Positive => (
-                                                    transformed_rect
-                                                        .left_bottom()
-                                                        .to_vec2()
-                                                        .rotate_around(
-                                                            transformed_rect.center().to_vec2(),
-                                                            rotation,
-                                                        ),
-                                                    transformed_rect
-                                                        .right_top()
-                                                        .to_vec2()
-                                                        .rotate_around(
-                                                            transformed_rect.center().to_vec2(),
-                                                            rotation,
-                                                        ),
-                                                ),
-                                                LineSlope::Negative => (
-                                                    transformed_rect
-                                                        .left_top()
-                                                        .to_vec2()
-                                                        .rotate_around(
-                                                            transformed_rect.center().to_vec2(),
-                                                            rotation,
-                                                        ),
-                                                    transformed_rect
-                                                        .right_bottom()
-                                                        .to_vec2()
-                                                        .rotate_around(
-                                                            transformed_rect.center().to_vec2(),
-                                                            rotation,
-                                                        ),
-                                                ),
-                                            };
-                                            ui.painter().line_segment(
-                                                [rotated_start.to_pos2(), rotated_end.to_pos2()],
-                                                zoomed_stroke,
-                                            );
+                                                angle: rotation,
+                                            });
+                                            ui.painter().add(shape);
+                                        }
+                                        CanvasShapeKind::Line { ref slope } => {
+                                            if let Some((stroke, _)) = canvas_shape.stroke {
+                                                let rotation = transformable_state.rotation;
+                                                let zoomed_stroke = Stroke::new(
+                                                    stroke.width * self.state.zoom,
+                                                    stroke.color,
+                                                );
+                                                let (rotated_start, rotated_end) = match slope {
+                                                    LineSlope::Positive => (
+                                                        transformed_rect
+                                                            .left_bottom()
+                                                            .to_vec2()
+                                                            .rotate_around(
+                                                                transformed_rect.center().to_vec2(),
+                                                                rotation,
+                                                            ),
+                                                        transformed_rect
+                                                            .right_top()
+                                                            .to_vec2()
+                                                            .rotate_around(
+                                                                transformed_rect.center().to_vec2(),
+                                                                rotation,
+                                                            ),
+                                                    ),
+                                                    LineSlope::Negative => (
+                                                        transformed_rect
+                                                            .left_top()
+                                                            .to_vec2()
+                                                            .rotate_around(
+                                                                transformed_rect.center().to_vec2(),
+                                                                rotation,
+                                                            ),
+                                                        transformed_rect
+                                                            .right_bottom()
+                                                            .to_vec2()
+                                                            .rotate_around(
+                                                                transformed_rect.center().to_vec2(),
+                                                                rotation,
+                                                            ),
+                                                    ),
+                                                };
+                                                ui.painter().line_segment(
+                                                    [
+                                                        rotated_start.to_pos2(),
+                                                        rotated_end.to_pos2(),
+                                                    ],
+                                                    zoomed_stroke,
+                                                );
+                                            }
                                         }
                                     }
-                                }
-                            },
-                        )
+                                },
+                            )
                     },
                 );
                 let mut updated_layer = layer.clone();
                 updated_layer.transform_state = transform_state;
                 self.state.layers.insert(*layer_id, updated_layer);
                 Some(response.inner)
+            }
+        }
+    }
+
+    /// Paint a thumbnail/export layer without registering editor widgets, focus targets, or
+    /// drag regions. Preview identity belongs to the parent page/layout response.
+    fn paint_preview_layer(&self, ui: &mut Ui, page_rect: Rect, layer: &Layer) {
+        let transform = &layer.transform_state;
+        let transformed_rect = Rect::from_min_size(
+            page_rect.min + (transform.rect.min * self.state.zoom).to_vec2(),
+            transform.rect.size() * self.state.zoom,
+        );
+        let render_key = format!(
+            "canvas-preview:{}:{}:{}",
+            ui.id().value(),
+            self.state.canvas_id.value(),
+            layer.id
+        );
+
+        match &layer.content {
+            LayerContent::Photo(photo) => {
+                let _ = PhotoRenderer::paint(
+                    ui,
+                    &photo.photo,
+                    &photo.adjustments,
+                    transformed_rect,
+                    PhotoRenderOptions::default()
+                        .gpu(false)
+                        .with_crop(photo.crop)
+                        .with_rotation(transform.rotation)
+                        .with_render_key(&render_key),
+                );
+            }
+            LayerContent::Text(text) => Self::draw_text(
+                ui,
+                &text.text,
+                &text.font_id,
+                transformed_rect,
+                text.font_size * self.state.zoom,
+                text.color,
+                text.horizontal_alignment,
+                text.vertical_alignment,
+                transform.rotation,
+            ),
+            LayerContent::TemplatePhoto {
+                region,
+                photo,
+                scale_mode,
+            } => {
+                let rect = Self::template_region_rect(page_rect, region);
+                if let Some(photo) = photo {
+                    let photo_size = Vec2::new(
+                        photo.photo.metadata.rotated_width() as f32,
+                        photo.photo.metadata.rotated_height() as f32,
+                    );
+                    let scaled_rect =
+                        Self::scaled_template_photo_rect(rect, photo_size, *scale_mode);
+                    let current_clip = ui.clip_rect();
+                    let clipped_rect = rect.intersect(current_clip);
+                    ui.set_clip_rect(clipped_rect);
+                    let _ = PhotoRenderer::paint(
+                        ui,
+                        &photo.photo,
+                        &photo.adjustments,
+                        scaled_rect.center_within(rect),
+                        PhotoRenderOptions::default()
+                            .gpu(false)
+                            .with_clip_rect(clipped_rect)
+                            .with_crop(Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0)))
+                            .with_render_key(&render_key),
+                    );
+                    ui.set_clip_rect(current_clip);
+                }
+            }
+            LayerContent::TemplateText { region, text } => {
+                let rect = Self::template_region_rect(page_rect, region);
+                Self::draw_text(
+                    ui,
+                    &text.text,
+                    &text.font_id,
+                    rect,
+                    text.font_size * self.state.zoom,
+                    text.color,
+                    text.horizontal_alignment,
+                    text.vertical_alignment,
+                    0.0,
+                );
+            }
+            LayerContent::Shape(shape) => {
+                Self::paint_canvas_shape(
+                    ui,
+                    transformed_rect,
+                    transform.rotation,
+                    shape,
+                    self.state.zoom,
+                );
+            }
+        }
+    }
+
+    fn template_region_rect(page_rect: Rect, region: &crate::template::TemplateRegion) -> Rect {
+        Rect::from_min_max(
+            page_rect.min + region.relative_position.to_vec2() * page_rect.size(),
+            page_rect.min
+                + region.relative_position.to_vec2() * page_rect.size()
+                + region.relative_size * page_rect.size(),
+        )
+    }
+
+    fn scaled_template_photo_rect(rect: Rect, photo_size: Vec2, scale_mode: ScaleMode) -> Rect {
+        if photo_size.x <= 0.0 || photo_size.y <= 0.0 {
+            return rect;
+        }
+
+        match scale_mode {
+            ScaleMode::Fit => Rect::from_center_size(
+                rect.center(),
+                photo_size * (rect.width() / photo_size.x).min(rect.height() / photo_size.y),
+            ),
+            ScaleMode::Fill => Rect::from_center_size(
+                rect.center(),
+                photo_size * (rect.width() / photo_size.x).max(rect.height() / photo_size.y),
+            ),
+            ScaleMode::Stretch => rect,
+        }
+    }
+
+    fn paint_canvas_shape(
+        ui: &Ui,
+        rect: Rect,
+        rotation: f32,
+        shape: &crate::widget::canvas_info::layers::CanvasShape,
+        zoom: f32,
+    ) {
+        let stroke = shape
+            .stroke
+            .map(|(stroke, _)| Stroke::new(stroke.width * zoom, stroke.color))
+            .unwrap_or(Stroke::NONE);
+        match shape.kind {
+            CanvasShapeKind::Rectangle { corner_radius } => {
+                ui.painter().add(Shape::Rect(
+                    RectShape::new(
+                        rect,
+                        CornerRadius::same(corner_radius as u8),
+                        shape.fill_color,
+                        stroke,
+                        shape
+                            .stroke
+                            .map(|(_, kind)| kind)
+                            .unwrap_or(StrokeKind::Outside),
+                    )
+                    .with_angle_and_pivot(rotation, rect.center()),
+                ));
+            }
+            CanvasShapeKind::Ellipse => {
+                ui.painter().add(Shape::Ellipse(EllipseShape {
+                    center: rect.center(),
+                    radius: rect.size() / 2.0,
+                    fill: shape.fill_color,
+                    stroke,
+                    angle: rotation,
+                }));
+            }
+            CanvasShapeKind::Line { ref slope } => {
+                if shape.stroke.is_none() {
+                    return;
+                }
+                let (start, end) = match slope {
+                    LineSlope::Positive => (rect.left_bottom(), rect.right_top()),
+                    LineSlope::Negative => (rect.left_top(), rect.right_bottom()),
+                };
+                let rotation = Rot2::from_angle(rotation);
+                ui.painter().line_segment(
+                    [
+                        rect.center() + rotation * (start - rect.center()),
+                        rect.center() + rotation * (end - rect.center()),
+                    ],
+                    stroke,
+                );
             }
         }
     }
@@ -1403,122 +1629,110 @@ impl<'a> Canvas<'a> {
         clipped_mesh
     }
 
-    fn handle_keys(&mut self, ctx: &Context) -> Option<CanvasResponse> {
-        ctx.input(|input| {
-            // Exit the canvas
-            if input.key_pressed(egui::Key::Backspace) && input.modifiers.ctrl {
-                return Some(CanvasResponse::Exit);
-            }
+    fn handle_keys(
+        &mut self,
+        ui: &mut Ui,
+        canvas_response: &egui::Response,
+    ) -> Option<CanvasResponse> {
+        if !canvas_response.has_focus()
+            || ui.ctx().text_edit_focused()
+            || matches!(
+                self.state.text_edit_mode,
+                TextEditMode::Editing(_) | TextEditMode::BeginEditing(_)
+            )
+        {
+            return None;
+        }
 
-            // Clear the selected photo or exit text edit mode
-            if input.key_pressed(egui::Key::Escape) {
-                if matches!(
-                    self.state.text_edit_mode,
-                    TextEditMode::Editing(_) | TextEditMode::BeginEditing(_)
-                ) {
-                    self.state.text_edit_mode = TextEditMode::None;
+        let ctrl = egui::Modifiers::CTRL | egui::Modifiers::COMMAND;
+        let ctrl_shift = egui::Modifiers::CTRL | egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+
+        // Match the more specific modified shortcuts first and consume every command
+        // owned by the focused canvas.
+        if ui.input_mut(|input| input.consume_key(ctrl, egui::Key::Backspace)) {
+            return Some(CanvasResponse::Exit);
+        }
+
+        if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            self.deselect_all_photos();
+        }
+
+        if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+            && self.state.delete_selected_editable_layers()
+        {
+            self.history_manager
+                .save_history(CanvasHistoryKind::DeletePhoto, self.state);
+        }
+
+        let modifiers = ui.input(|input| input.modifiers);
+        let arrow_modifiers = if modifiers.shift {
+            egui::Modifiers::SHIFT
+        } else {
+            egui::Modifiers::NONE
+        };
+        let left = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowLeft));
+        let right = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowRight));
+        let up = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowUp));
+        let down = ui.input_mut(|input| input.consume_key(arrow_modifiers, egui::Key::ArrowDown));
+        let distance = if modifiers.shift { 10.0 } else { 1.0 };
+        let moved = left || right || up || down;
+
+        if moved {
+            for layer in self.state.selected_layers_iter_mut() {
+                let delta = Vec2::new(
+                    if left {
+                        -distance
+                    } else if right {
+                        distance
+                    } else {
+                        0.0
+                    },
+                    if up {
+                        -distance
+                    } else if down {
+                        distance
+                    } else {
+                        0.0
+                    },
+                );
+                layer.transform_state.rect = layer.transform_state.rect.translate(delta);
+            }
+            self.history_manager
+                .save_history(CanvasHistoryKind::Transform, self.state);
+        }
+
+        if self.state.tool_state.is_idle() {
+            for (key, tool) in [
+                (egui::Key::V, IdleTool::Select),
+                (egui::Key::T, IdleTool::Text),
+                (egui::Key::U, IdleTool::Rectangle),
+                (egui::Key::O, IdleTool::Ellipse),
+                (egui::Key::L, IdleTool::Line),
+            ] {
+                if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, key)) {
+                    self.state.tool_state = ToolState::Idle(tool);
+                    break;
+                }
+            }
+        }
+
+        let scale = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::S));
+        let rotate = ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::R));
+        if scale || rotate {
+            for layer in self.state.selected_layers_iter_mut() {
+                layer.transform_state.handle_mode = if scale {
+                    TransformHandleMode::Resize(ResizeMode::Free)
                 } else {
-                    self.deselect_all_photos();
-                }
-            }
-
-            // Delete the selected photo
-            if input.key_pressed(egui::Key::Delete) {
-                if self.state.delete_selected_editable_layers() {
-                    self.history_manager
-                        .save_history(CanvasHistoryKind::DeletePhoto, self.state);
-                }
-            }
-
-            // Move the selected photo
-            let mut save_transform_history = false;
-            for layer in self.state.selected_layers_iter_mut() {
-                // Handle movement via arrow keys
-                {
-                    let distance = if input.modifiers.shift { 10.0 } else { 1.0 };
-
-                    let transform_state = &mut layer.transform_state;
-
-                    if input.key_pressed(egui::Key::ArrowLeft) {
-                        transform_state.rect =
-                            transform_state.rect.translate(Vec2::new(-distance, 0.0));
-                    }
-
-                    if input.key_pressed(egui::Key::ArrowRight) {
-                        transform_state.rect =
-                            transform_state.rect.translate(Vec2::new(distance, 0.0));
-                    }
-
-                    if input.key_pressed(egui::Key::ArrowUp) {
-                        transform_state.rect =
-                            transform_state.rect.translate(Vec2::new(0.0, -distance));
-                    }
-
-                    if input.key_pressed(egui::Key::ArrowDown) {
-                        transform_state.rect =
-                            transform_state.rect.translate(Vec2::new(0.0, distance));
-                    }
-
-                    // Once the arrow key is released then log the history
-                    if input.key_released(egui::Key::ArrowLeft)
-                        || input.key_released(egui::Key::ArrowRight)
-                        || input.key_released(egui::Key::ArrowUp)
-                        || input.key_released(egui::Key::ArrowDown)
-                    {
-                        save_transform_history = true
-                    }
-                }
-            }
-
-            if self.state.tool_state.is_idle() {
-                if input.key_pressed(egui::Key::V) {
-                    self.state.tool_state = ToolState::Idle(IdleTool::Select);
-                }
-                if input.key_pressed(egui::Key::T) {
-                    self.state.tool_state = ToolState::Idle(IdleTool::Text);
-                }
-                if input.key_pressed(egui::Key::U) {
-                    self.state.tool_state = ToolState::Idle(IdleTool::Rectangle);
-                }
-                if input.key_pressed(egui::Key::O) {
-                    self.state.tool_state = ToolState::Idle(IdleTool::Ellipse);
-                }
-                if input.key_pressed(egui::Key::L) {
-                    self.state.tool_state = ToolState::Idle(IdleTool::Line);
-                }
-            }
-
-            for layer in self.state.selected_layers_iter_mut() {
-                // Switch to scale mode
-                if input.key_pressed(egui::Key::S) {
-                    // TODO should the resize mode be persisted? Probably.
-
-                    layer.transform_state.handle_mode =
-                        TransformHandleMode::Resize(ResizeMode::Free);
-                }
-
-                // Switch to rotate mode
-                if input.key_pressed(egui::Key::R) {
-                    layer.transform_state.handle_mode = TransformHandleMode::Rotate;
+                    TransformHandleMode::Rotate
                 };
             }
+        }
 
-            if save_transform_history {
-                self.history_manager
-                    .save_history(CanvasHistoryKind::Transform, self.state);
-            }
-
-            // Undo/Redo
-            if input.key_pressed(egui::Key::Z) && input.modifiers.ctrl {
-                if input.modifiers.shift {
-                    self.history_manager.redo(self.state);
-                } else {
-                    self.history_manager.undo(self.state);
-                }
-            }
-
-            None
-        });
+        if ui.input_mut(|input| input.consume_key(ctrl_shift, egui::Key::Z)) {
+            self.history_manager.redo(self.state);
+        } else if ui.input_mut(|input| input.consume_key(ctrl, egui::Key::Z)) {
+            self.history_manager.undo(self.state);
+        }
 
         None
     }
@@ -1634,7 +1848,7 @@ impl<'a> Canvas<'a> {
                 .scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
                     AutoCenter::new(format!("action_bar_{}", action_bar_id))
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| ActionBar::with_items(actions).show(ui))
+                            ui.horizontal(|ui| ActionBar::with_items(actions.clone()).show(ui))
                                 .inner
                         })
                         .inner
@@ -1723,6 +1937,142 @@ impl<'a> Canvas<'a> {
 mod tests {
     use super::*;
     use egui_kittest::Harness;
+
+    #[test]
+    fn preview_registers_no_transform_interaction() {
+        let mut state = CanvasState::new();
+        let layer = Layer::new_rectangle_shape_layer();
+        let transform_id = egui::Id::new(("layer-transform", state.canvas_id, layer.id));
+        state.layers.insert(layer.id, layer);
+        let mut history = CanvasHistoryManager::preview();
+
+        let mut harness = Harness::new_ui(move |ui| {
+            let rect = Rect::from_min_size(ui.min_rect().min, Vec2::new(400.0, 300.0));
+            Canvas::new(&mut state, rect, &mut history).show_preview(ui, rect);
+            assert!(ui.ctx().read_response(transform_id).is_none());
+        });
+
+        harness.run();
+    }
+
+    #[derive(Debug)]
+    struct ShortcutTestState {
+        canvas: CanvasState,
+        history: CanvasHistoryManager,
+        editor: String,
+        layer_id: LayerId,
+        initial_rect: Rect,
+    }
+
+    #[test]
+    fn focused_text_edit_owns_canvas_shortcut_keys() {
+        let mut canvas = CanvasState::new();
+        let mut layer = Layer::new_rectangle_shape_layer();
+        layer.selected = true;
+        let layer_id = layer.id;
+        let initial_rect = layer.transform_state.rect;
+        canvas.layers.insert(layer_id, layer);
+        let history = CanvasHistoryManager::with_initial_state(canvas.clone());
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(700.0, 500.0))
+            .build_ui_state(
+                |ui, state: &mut ShortcutTestState| {
+                    let editor = ui.add(
+                        egui::TextEdit::singleline(&mut state.editor)
+                            .id(egui::Id::new("canvas-shortcut-test-editor")),
+                    );
+                    editor.request_focus();
+                    let rect = ui.available_rect_before_wrap();
+                    Canvas::new(&mut state.canvas, rect, &mut state.history).show(ui);
+                },
+                ShortcutTestState {
+                    canvas,
+                    history,
+                    editor: String::new(),
+                    layer_id,
+                    initial_rect,
+                },
+            );
+
+        harness.key_press(egui::Key::T);
+        harness.key_press(egui::Key::S);
+        harness.key_press(egui::Key::R);
+        harness.key_press(egui::Key::ArrowRight);
+        harness.key_press(egui::Key::Delete);
+        harness.key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Z);
+        harness.run();
+
+        let state = harness.state();
+        assert_eq!(state.canvas.tool_state, ToolState::Idle(IdleTool::Select));
+        assert_eq!(
+            state.canvas.layers[&state.layer_id].transform_state.rect,
+            state.initial_rect
+        );
+    }
+
+    #[derive(Debug)]
+    struct CanvasFocusTestState {
+        canvas: CanvasState,
+        history: CanvasHistoryManager,
+        editor: String,
+        focus_editor_once: bool,
+        layer_id: LayerId,
+        initial_rect: Rect,
+    }
+
+    #[test]
+    fn clicking_a_layer_returns_arrow_key_ownership_to_the_canvas() {
+        let mut canvas = CanvasState::new();
+        let mut layer = Layer::new_rectangle_shape_layer();
+        layer.selected = true;
+        let layer_id = layer.id;
+        let initial_rect = layer.transform_state.rect;
+        let transform_id = egui::Id::new(("layer-transform", canvas.canvas_id, layer_id));
+        canvas.layers.insert(layer_id, layer);
+        let history = CanvasHistoryManager::with_initial_state(canvas.clone());
+        let mut harness = Harness::builder()
+            .with_size(Vec2::new(700.0, 500.0))
+            .build_ui_state(
+                |ui, state: &mut CanvasFocusTestState| {
+                    let editor = ui.add(
+                        egui::TextEdit::singleline(&mut state.editor)
+                            .id(egui::Id::new("canvas-focus-test-editor")),
+                    );
+                    if state.focus_editor_once {
+                        editor.request_focus();
+                        state.focus_editor_once = false;
+                    }
+                    let rect = ui.available_rect_before_wrap();
+                    Canvas::new(&mut state.canvas, rect, &mut state.history).show(ui);
+                },
+                CanvasFocusTestState {
+                    canvas,
+                    history,
+                    editor: String::new(),
+                    focus_editor_once: true,
+                    layer_id,
+                    initial_rect,
+                },
+            );
+
+        harness.run();
+        let layer_rect = harness.ctx.read_response(transform_id).unwrap().rect;
+        harness.drag_at(layer_rect.center());
+        harness.run();
+        harness.drop_at(layer_rect.center());
+        harness.run();
+        harness.key_press(egui::Key::ArrowRight);
+        harness.run();
+
+        let state = harness.state();
+        assert_eq!(
+            state.canvas.layers[&state.layer_id]
+                .transform_state
+                .rect
+                .left(),
+            state.initial_rect.left() + 1.0
+        );
+    }
 
     #[test]
     fn editing_text_box_height_matches_layer_height() {

@@ -1,4 +1,4 @@
-use egui::{Align, FontId, Layout, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget};
+use egui::{FontId, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget};
 
 use crate::{
     app_status::AppStatus,
@@ -6,7 +6,6 @@ use crate::{
     dep, dep_mut,
     session::Session,
     theme::{self},
-    utils::EguiUiExt,
     widget::icon_button::IconButton,
 };
 
@@ -35,43 +34,15 @@ impl StatusBar {
 
         let inner_content_rect = bar_rect.shrink2(Vec2::new(12.0, 4.0));
 
-        let layout = Layout::left_to_right(Align::Center).with_cross_justify(true);
-
         let content_height = Self::height() - 8.0;
         let mut response = StatusBarResponse::default();
-
-        ui.sized(
-            ui.id().with("status_left"),
-            Self::left_content,
-            |ui, left_size, add_contents| {
-                let left_rect = Rect::from_min_size(
-                    inner_content_rect.left_top(),
-                    Vec2::new(left_size.x, content_height),
-                );
-                ui.scope_builder(
-                    UiBuilder::new().layout(layout).max_rect(left_rect),
-                    add_contents,
-                );
-            },
-        );
-
-        ui.sized(
-            ui.id().with("status_right"),
-            |ui| self.right_content(ui, &mut response),
-            |ui, right_size, add_contents| {
-                let right_rect = Rect::from_min_max(
-                    egui::pos2(
-                        inner_content_rect.right() - right_size.x,
-                        inner_content_rect.top(),
-                    ),
-                    inner_content_rect.right_bottom(),
-                );
-                ui.scope_builder(
-                    UiBuilder::new().layout(layout).max_rect(right_rect),
-                    add_contents,
-                );
-            },
-        );
+        ui.scope_builder(UiBuilder::new().max_rect(inner_content_rect), |ui| {
+            egui::Sides::new()
+                .height(content_height)
+                .show(ui, Self::left_content, |ui| {
+                    self.right_content(ui, &mut response)
+                });
+        });
         response
     }
 

@@ -183,6 +183,25 @@ enum GpuSourceStatus {
     Failed,
 }
 
+fn set_render_status(
+    statuses: &Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
+    render_key: &str,
+    status: GpuSourceStatus,
+) -> bool {
+    statuses.lock().insert(render_key.to_owned(), status) != Some(status)
+}
+
+fn publish_terminal_render_status(
+    statuses: &Arc<Mutex<HashMap<String, GpuSourceStatus>>>,
+    render_key: &str,
+    status: GpuSourceStatus,
+    repaint_ctx: &egui::Context,
+) {
+    if set_render_status(statuses, render_key, status) {
+        repaint_ctx.request_repaint();
+    }
+}
+
 impl GpuPhotoAdjustmentRenderer {
     pub fn new() -> Self {
         Self::default()
@@ -378,6 +397,7 @@ impl GpuPhotoAdjustmentRenderer {
                     source_key,
                     render_key,
                     max_texture_side,
+                    repaint_ctx: ui.ctx().clone(),
                     uniform: AdjustmentUniform::new(
                         request.adjustments,
                         request.rotation_radians,
@@ -392,7 +412,6 @@ impl GpuPhotoAdjustmentRenderer {
         if status == Some(GpuSourceStatus::Ready) {
             GpuPaintResult::Ready
         } else {
-            ui.ctx().request_repaint();
             GpuPaintResult::Pending
         }
     }
@@ -403,6 +422,7 @@ struct PhotoAdjustmentCallback {
     source_key: String,
     render_key: String,
     max_texture_side: u32,
+    repaint_ctx: egui::Context,
     uniform: AdjustmentUniform,
     curve_lut: [u8; CURVE_LUT_BYTES],
 }
@@ -427,6 +447,7 @@ impl egui_wgpu::CallbackTrait for PhotoAdjustmentCallback {
                 cache_key: &self.source_key,
                 path: &self.path,
                 max_texture_side: self.max_texture_side,
+                repaint_ctx: &self.repaint_ctx,
             },
             &self.render_key,
             self.uniform,
@@ -465,6 +486,7 @@ struct GpuSourceRequest<'a> {
     cache_key: &'a str,
     path: &'a Path,
     max_texture_side: u32,
+    repaint_ctx: &'a egui::Context,
 }
 
 struct GpuRenderUpdate<'a> {
@@ -500,7 +522,7 @@ impl PhotoAdjustmentRenderResources {
                     access,
                 },
             );
-            self.set_render_status(render_key, GpuSourceStatus::Ready);
+            self.set_terminal_render_status(render_key, GpuSourceStatus::Ready, source.repaint_ctx);
             return;
         }
 
@@ -513,14 +535,22 @@ impl PhotoAdjustmentRenderResources {
             Ok(decoded) => decoded,
             Err(error) => {
                 error!("Failed to prepare GPU photo adjustment source: {error}");
-                self.set_render_status(render_key, GpuSourceStatus::Failed);
+                self.set_terminal_render_status(
+                    render_key,
+                    GpuSourceStatus::Failed,
+                    source.repaint_ctx,
+                );
                 return;
             }
         };
 
         let size = decoded.size();
         if size.width == 0 || size.height == 0 {
-            self.set_render_status(render_key, GpuSourceStatus::Failed);
+            self.set_terminal_render_status(
+                render_key,
+                GpuSourceStatus::Failed,
+                source.repaint_ctx,
+            );
             return;
         }
 
@@ -571,7 +601,7 @@ impl PhotoAdjustmentRenderResources {
             },
         );
         self.evict_old_sources(source.cache_key);
-        self.set_render_status(render_key, GpuSourceStatus::Ready);
+        self.set_terminal_render_status(render_key, GpuSourceStatus::Ready, source.repaint_ctx);
     }
 
     fn update_render(
@@ -682,7 +712,12 @@ impl PhotoAdjustmentRenderResources {
 
         if !self.pending_sources.contains_key(source.cache_key) {
             let (sender, receiver) = oneshot::channel();
-            spawn_gpu_source_decode(source.path.to_path_buf(), source.max_texture_side, sender);
+            spawn_gpu_source_decode(
+                source.path.to_path_buf(),
+                source.max_texture_side,
+                sender,
+                source.repaint_ctx.clone(),
+            );
             self.pending_sources
                 .insert(source.cache_key.to_owned(), receiver);
         }
@@ -710,10 +745,17 @@ impl PhotoAdjustmentRenderResources {
         result
     }
 
-    fn set_render_status(&self, render_key: &str, status: GpuSourceStatus) {
-        self.render_status
-            .lock()
-            .insert(render_key.to_owned(), status);
+    fn set_render_status(&self, render_key: &str, status: GpuSourceStatus) -> bool {
+        set_render_status(&self.render_status, render_key, status)
+    }
+
+    fn set_terminal_render_status(
+        &self,
+        render_key: &str,
+        status: GpuSourceStatus,
+        repaint_ctx: &egui::Context,
+    ) {
+        publish_terminal_render_status(&self.render_status, render_key, status, repaint_ctx);
     }
 
     fn paint(&self, render_pass: &mut wgpu::RenderPass<'_>, render_key: &str) {
@@ -793,6 +835,7 @@ fn spawn_gpu_source_decode(
     path: PathBuf,
     max_texture_side: u32,
     sender: oneshot::Sender<std::result::Result<DecodedGpuSource, String>>,
+    repaint_ctx: egui::Context,
 ) {
     let decode = move || decode_gpu_source(path, max_texture_side);
 
@@ -803,10 +846,12 @@ fn spawn_gpu_source_decode(
                 .map_err(|error| error.to_string())
                 .and_then(|result| result);
             let _ = sender.send(result);
+            repaint_ctx.request_repaint();
         });
     } else {
         std::thread::spawn(move || {
             let _ = sender.send(decode());
+            repaint_ctx.request_repaint();
         });
     }
 }
@@ -879,6 +924,25 @@ fn write_curve_lut(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn terminal_status_transition_requests_one_presentation_wakeup() {
+        let statuses = Arc::new(Mutex::new(HashMap::new()));
+        let ctx = egui::Context::default();
+        let repaint_count = Arc::new(AtomicUsize::new(0));
+        let callback_count = Arc::clone(&repaint_count);
+        ctx.set_request_repaint_callback(move |_| {
+            callback_count.fetch_add(1, Ordering::Relaxed);
+        });
+
+        publish_terminal_render_status(&statuses, "render", GpuSourceStatus::Ready, &ctx);
+        assert_eq!(repaint_count.load(Ordering::Relaxed), 1);
+        assert_eq!(statuses.lock().get("render"), Some(&GpuSourceStatus::Ready));
+
+        publish_terminal_render_status(&statuses, "render", GpuSourceStatus::Ready, &ctx);
+        assert_eq!(repaint_count.load(Ordering::Relaxed), 1);
+    }
 
     #[test]
     fn uniform_maps_clipped_rect_into_image_uv_space() {

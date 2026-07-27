@@ -1,4 +1,4 @@
-use egui::{Image, ImageSource, Sense, Widget};
+use egui::{Image, ImageSource, Rect, Sense, Widget};
 
 use crate::{
     cursor_manager::CursorManager,
@@ -102,7 +102,6 @@ impl IconButton {
 impl Widget for IconButton {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
         let (rect, response) = ui.allocate_exact_size(self.size, Sense::click());
-
         if response.hovered() {
             dep_mut!(CursorManager, |cursor_manager| cursor_manager
                 .set_cursor(egui::CursorIcon::PointingHand))
@@ -117,12 +116,10 @@ impl Widget for IconButton {
         let color = self.color().linear_multiply(opacity);
         let icon_size = self.icon_size.unwrap_or(self.size).min(self.size);
 
-        ui.place(
-            rect,
-            Image::new(self.image_source().clone())
-                .max_size(icon_size)
-                .tint(color),
-        );
+        Image::new(self.image_source().clone())
+            .fit_to_exact_size(icon_size)
+            .tint(color)
+            .paint_at(ui, Rect::from_center_size(rect.center(), icon_size));
 
         response
     }

@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use eframe::{egui::Key, epaint::Vec2};
 
@@ -17,7 +17,6 @@ use crate::{
     photo_database::PhotoQuery,
     photo_manager::PhotoManager,
     selection_manager::{SelectionManager, SelectionModifiers},
-    sizing_manager::SizingManager,
     theme::color,
 };
 
@@ -29,11 +28,15 @@ const BASE_COLUMN_SIZE: f32 = 256.0;
 #[derive(Debug, Clone)]
 pub struct ImageGalleryState {
     pub scale: f32,
+    layout_cache: Option<GalleryLayoutCache>,
 }
 
 impl Default for ImageGalleryState {
     fn default() -> Self {
-        Self { scale: 1.0 }
+        Self {
+            scale: 1.0,
+            layout_cache: None,
+        }
     }
 }
 
@@ -68,14 +71,16 @@ impl<'a> ImageGallery<'a> {
             photo_manager.photo_database.photo_count() > 0
         });
 
-        let grouped_photos = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
+        let query_result = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
+        let grouped_photos = &query_result.groups;
         let gallery_background_rect = ui.available_rect_before_wrap();
         ui.painter()
             .rect_filled(gallery_background_rect, 0.0, color::SURFACE_XX_DARK);
 
         if has_photos {
             ui.vertical(|ui| {
-                if ui.input(|input| input.key_down(Key::Escape))
+                if !ui.ctx().text_edit_focused()
+                    && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape))
                     && !selection_snapshot.selected_paths.is_empty()
                 {
                     selection_snapshot = dep_mut!(SelectionManager, |selection_manager| {
@@ -86,20 +91,9 @@ impl<'a> ImageGallery<'a> {
                 let spacing = 24.0;
 
                 let gallery_rect: Rect = ui.available_rect_before_wrap();
-                let top_bar_id = ui.id().with("top_bar");
-                let bottom_bar_id = ui.id().with("bottom_bar");
-
-                let top_bar_height = dep_mut!(SizingManager, |sizing_manager| {
-                    sizing_manager.size(ui, top_bar_id, add_filter_menu).y
-                });
-                let bottom_bar_height = dep_mut!(SizingManager, |sizing_manager| {
-                    let mut measured_scale = state.scale;
-                    sizing_manager
-                        .size(ui, bottom_bar_id, |ui| {
-                            add_scale_controls(ui, &mut measured_scale)
-                        })
-                        .y
-                });
+                let bar_height = ui.spacing().interact_size.y + 2.0 * BAR_INNER_PADDING as f32;
+                let top_bar_height = bar_height;
+                let bottom_bar_height = bar_height;
 
                 let top_bar_rect = Rect::from_min_size(
                     gallery_rect.left_top(),
@@ -144,45 +138,52 @@ impl<'a> ImageGallery<'a> {
                         - ui.spacing().item_spacing.x)
                         .max(0.0);
 
-                    let row_metadatas: Vec<RowMetadata> = {
-                        grouped_photos
-                            .iter()
-                            .flat_map(|(title, group)| {
-                                let rows = group.len().div_ceil(num_columns);
-
-                                let mut metadatas: Vec<RowMetadata> = vec![RowMetadata {
-                                    height: 16.0,
-                                    is_title: true,
-                                    section: title.clone(),
-                                    row_index_in_section: 0,
-                                }];
-
-                                for row_idx in 0..rows {
-                                    metadatas.push(RowMetadata {
-                                        height: row_height,
-                                        is_title: false,
-                                        section: title.clone(),
-                                        row_index_in_section: row_idx,
-                                    });
-                                }
-
-                                metadatas
-                            })
-                            .collect()
+                    let layout_key = GalleryLayoutKey {
+                        query_result_id: query_result.id(),
+                        num_columns,
+                        row_height_bits: row_height.to_bits(),
                     };
-                    let ordered_photo_paths = grouped_photos
-                        .values()
-                        .flat_map(|group| group.keys().cloned())
-                        .collect::<Vec<_>>();
+                    if state.layout_cache.as_ref().map(|cache| cache.key) != Some(layout_key) {
+                        let rows: Arc<[RowMetadata]> = {
+                            grouped_photos
+                                .iter()
+                                .flat_map(|(title, group)| {
+                                    let rows = group.len().div_ceil(num_columns);
 
-                    let heights: Vec<f32> = row_metadatas.iter().map(|x| x.height).collect();
+                                    let mut metadatas: Vec<RowMetadata> = vec![RowMetadata {
+                                        height: 16.0,
+                                        is_title: true,
+                                        section: title.clone(),
+                                        row_index_in_section: 0,
+                                    }];
+
+                                    for row_idx in 0..rows {
+                                        metadatas.push(RowMetadata {
+                                            height: row_height,
+                                            is_title: false,
+                                            section: title.clone(),
+                                            row_index_in_section: row_idx,
+                                        });
+                                    }
+
+                                    metadatas
+                                })
+                                .collect::<Vec<_>>()
+                                .into()
+                        };
+                        state.layout_cache = Some(GalleryLayoutCache {
+                            key: layout_key,
+                            rows,
+                        });
+                    }
+                    let row_metadatas = Arc::clone(&state.layout_cache.as_ref().unwrap().rows);
 
                     let scroll_to_row_index = if let Some(scroll_to_path) = scroll_to_path {
                         scroll_to_row_index(
                             scroll_to_path,
                             num_columns,
-                            &grouped_photos,
-                            &row_metadatas,
+                            grouped_photos,
+                            row_metadatas.as_ref(),
                         )
                     } else {
                         None
@@ -200,71 +201,83 @@ impl<'a> ImageGallery<'a> {
                     }
 
                     builder.body(|body| {
-                        body.heterogeneous_rows(heights.into_iter(), |mut row| {
-                            let row_index = row.index();
-                            let metadata = &row_metadatas[row_index];
-                            let offest = metadata.row_index_in_section * num_columns;
-                            let group = grouped_photos.get(&metadata.section).unwrap();
+                        body.heterogeneous_rows(
+                            row_metadatas.iter().map(|row| row.height),
+                            |mut row| {
+                                let row_index = row.index();
+                                let metadata = &row_metadatas[row_index];
+                                let offest = metadata.row_index_in_section * num_columns;
+                                let group = grouped_photos.get(&metadata.section).unwrap();
 
-                            if metadata.is_title {
-                                row.col(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.label(
-                                            RichText::new(metadata.section.clone())
-                                                .font(FontId::proportional(16.0)),
-                                        );
+                                if metadata.is_title {
+                                    row.col(|ui| {
+                                        ui.vertical(|ui| {
+                                            ui.label(
+                                                RichText::new(metadata.section.clone())
+                                                    .font(FontId::proportional(16.0)),
+                                            );
+                                        });
                                     });
-                                });
-                            } else {
-                                for i in 0..num_columns {
-                                    if offest + i >= group.len() {
-                                        break;
+                                } else {
+                                    for i in 0..num_columns {
+                                        if offest + i >= group.len() {
+                                            break;
+                                        }
+
+                                        row.col(|ui: &mut Ui| {
+                                            let photo = &group[offest + i];
+                                            let image = GalleryImage::new(
+                                                photo.clone(),
+                                                selection_snapshot
+                                                    .selected_paths
+                                                    .contains(&photo.path),
+                                            );
+                                            let image_response = ui.add(image);
+
+                                            if image_response.clicked() {
+                                                let ordered_photo_paths = query_result
+                                                    .ordered_paths()
+                                                    .cloned()
+                                                    .collect::<Vec<_>>();
+                                                let modifiers =
+                                                    ui.input(|input| SelectionModifiers {
+                                                        ctrl: input.modifiers.ctrl,
+                                                        shift: input.modifiers.shift,
+                                                    });
+                                                selection_snapshot = dep_mut!(
+                                                    SelectionManager,
+                                                    |selection_manager| {
+                                                        selection_manager.select_path(
+                                                            ui,
+                                                            &ordered_photo_paths,
+                                                            &photo.path,
+                                                            modifiers,
+                                                        )
+                                                    }
+                                                );
+                                            }
+
+                                            if image_response.hovered() {
+                                                dep_mut!(PhotoManager, |photo_manager| {
+                                                    let _ = photo_manager
+                                                        .preload_texture(photo, ui.ctx());
+                                                });
+                                            }
+
+                                            if image_response.double_clicked() {
+                                                primary_action_photo = Some(photo.clone());
+                                            } else if image_response.secondary_clicked() {
+                                                secondary_action_photo = Some(photo.clone());
+                                            }
+                                        });
                                     }
 
-                                    row.col(|ui: &mut Ui| {
-                                        let photo = &group[offest + i];
-                                        let image = GalleryImage::new(
-                                            photo.clone(),
-                                            selection_snapshot.selected_paths.contains(&photo.path),
-                                        );
-                                        let image_response = ui.add(image);
-
-                                        if image_response.clicked() {
-                                            let modifiers = ui.input(|input| SelectionModifiers {
-                                                ctrl: input.modifiers.ctrl,
-                                                shift: input.modifiers.shift,
-                                            });
-                                            selection_snapshot =
-                                                dep_mut!(SelectionManager, |selection_manager| {
-                                                    selection_manager.select_path(
-                                                        ui,
-                                                        &ordered_photo_paths,
-                                                        &photo.path,
-                                                        modifiers,
-                                                    )
-                                                });
-                                        }
-
-                                        if image_response.hovered() {
-                                            dep_mut!(PhotoManager, |photo_manager| {
-                                                let _ =
-                                                    photo_manager.preload_texture(photo, ui.ctx());
-                                            });
-                                        }
-
-                                        if image_response.double_clicked() {
-                                            primary_action_photo = Some(photo.clone());
-                                        } else if image_response.secondary_clicked() {
-                                            secondary_action_photo = Some(photo.clone());
-                                        }
+                                    row.col(|ui| {
+                                        ui.add(Spacer::new(spacer_width, row_height));
                                     });
                                 }
-
-                                row.col(|ui| {
-                                    ui.add(Spacer::new(spacer_width, row_height));
-                                });
-                            }
-                        });
+                            },
+                        );
                     });
                 });
                 add_child_ui(ui, bottom_bar_rect, "image_gallery_bottom_bar", |ui| {
@@ -529,11 +542,25 @@ fn scroll_to_row_index(
     scroll_to_row
 }
 
+#[derive(Debug, Clone)]
 struct RowMetadata {
     height: f32,
     is_title: bool,
     section: String,
     row_index_in_section: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GalleryLayoutKey {
+    query_result_id: usize,
+    num_columns: usize,
+    row_height_bits: u32,
+}
+
+#[derive(Debug, Clone)]
+struct GalleryLayoutCache {
+    key: GalleryLayoutKey,
+    rows: Arc<[RowMetadata]>,
 }
 
 #[cfg(test)]

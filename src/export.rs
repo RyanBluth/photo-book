@@ -19,8 +19,9 @@ use thiserror::Error;
 use crate::font_manager::FontManager;
 use crate::{dep, dep_mut};
 
+use crate::cancellation::CancellationToken;
 use crate::modal::basic::BasicModal;
-use crate::modal::manager::{ModalManager, TypedModalId};
+use crate::modal::manager::ModalManager;
 use crate::modal::progress::ProgressModal;
 use crate::photo_manager::PhotoManager;
 use crate::scene::canvas_scene::CanvasHistoryManager;
@@ -41,6 +42,8 @@ pub enum ExportError {
     FileError(String),
     #[error("PDF rendering error: {0}")]
     PdfRenderingError(String),
+    #[error("Export cancelled")]
+    Cancelled,
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
@@ -53,6 +56,7 @@ pub enum ExportTaskStatus {
     InProgress(f32),
     Completed,
     Failed(ExportError),
+    Cancelled,
 }
 
 pub struct Exporter {
@@ -111,6 +115,7 @@ impl Exporter {
         let tasks = self.tasks.clone();
 
         let file_name = file_name.to_string();
+        let cancellation = CancellationToken::new();
 
         if !directory.exists()
             && let Err(err) = std::fs::create_dir_all(&directory)
@@ -125,60 +130,57 @@ impl Exporter {
         }
 
         spawn_blocking(move || {
-            let progress_modal_id =
-                ModalManager::push(ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0));
+            let progress_modal_id = ModalManager::push(
+                ProgressModal::new("Exporting", "Preparing", "Cancel", 0.0)
+                    .with_cancellation(cancellation.clone()),
+            );
 
-            let show_export_failure_modal =
-                |progress_modal_id: TypedModalId<ProgressModal>, error: ExportError| {
-                    dep_mut!(ModalManager, |modal_manager| {
-                        modal_manager.dismiss(progress_modal_id);
+            let export_result = (|| -> Result<(), ExportError> {
+                let num_pages = pages.len();
+                for (page_index, page) in pages.iter().enumerate() {
+                    check_cancelled(&cancellation)?;
+                    Self::export_page(page.clone(), &directory, page_index as u32, &cancellation)?;
+
+                    let page_number = page_index + 1;
+                    let progress = page_number as f32 / (num_pages as f32 + 1.0);
+                    tasks
+                        .lock()
+                        .unwrap()
+                        .insert(task_id, ExportTaskStatus::InProgress(progress));
+                    _ = dep_mut!(ModalManager, |modal_manager| {
+                        modal_manager.modify(&progress_modal_id, |progress_modal| {
+                            progress_modal.progress = progress;
+                            progress_modal.message =
+                                format!("Exporting page {page_number}/{num_pages}");
+                        })
                     });
-                    ModalManager::push(BasicModal::new(
-                        "Export Failed",
-                        error.to_string(),
-                        "Dismiss",
-                    ));
-                };
-
-            let mut page_number = 0;
-            let num_pages = pages.len();
-            for page in &pages {
-                if let Err(err) = Self::export_page(page.clone(), &directory, page_number) {
-                    let mut tasks = tasks.lock().unwrap();
-                    tasks.insert(task_id, ExportTaskStatus::Failed(err.clone()));
-                    show_export_failure_modal(progress_modal_id, err);
                     ctx.request_repaint();
-                    return;
                 }
-                page_number += 1;
-                let progress = page_number as f32 / (num_pages as f32 + 1.0); // +1 for the PDF generation
-                let mut tasks = tasks.lock().unwrap();
-                tasks.insert(task_id, ExportTaskStatus::InProgress(progress));
-                _ = dep_mut!(ModalManager, |modal_manager| {
-                    modal_manager.modify(&progress_modal_id, |progress_modal| {
-                        progress_modal.progress = progress;
-                        progress_modal.message =
-                            format!("Exporting page {}/{}", page_number, num_pages);
-                    })
-                });
 
-                ctx.request_repaint();
-            }
+                check_cancelled(&cancellation)?;
+                Self::export_pdf(&pages, &directory, &file_name, &cancellation)?;
+                check_cancelled(&cancellation)
+            })();
 
-            if let Err(err) = Self::export_pdf(&pages, &directory, &file_name) {
-                let mut tasks: std::sync::MutexGuard<'_, HashMap<ExportTaskId, ExportTaskStatus>> =
-                    tasks.lock().unwrap();
-                tasks.insert(task_id, ExportTaskStatus::Failed(err.clone()));
-                show_export_failure_modal(progress_modal_id, err);
-                ctx.request_repaint();
-                return;
-            }
+            let task_status = match &export_result {
+                Ok(()) => ExportTaskStatus::Completed,
+                Err(ExportError::Cancelled) => ExportTaskStatus::Cancelled,
+                Err(error) => ExportTaskStatus::Failed(error.clone()),
+            };
+            tasks.lock().unwrap().insert(task_id, task_status);
 
-            let mut tasks = tasks.lock().unwrap();
-            tasks.insert(task_id, ExportTaskStatus::Completed);
             dep_mut!(ModalManager, |modal_manager| {
                 modal_manager.dismiss(progress_modal_id);
             });
+            if let Err(error) = export_result
+                && !matches!(error, ExportError::Cancelled)
+            {
+                ModalManager::push(BasicModal::new(
+                    "Export Failed",
+                    error.to_string(),
+                    "Dismiss",
+                ));
+            }
             ctx.request_repaint();
         });
 
@@ -193,6 +195,7 @@ impl Exporter {
         mut canvas_state: CanvasState,
         directory: &Path,
         page_number: u32,
+        cancellation: &CancellationToken,
     ) -> Result<(), ExportError> {
         let directory = PathBuf::from(directory);
 
@@ -220,13 +223,17 @@ impl Exporter {
 
         let mut export_photo_manager = PhotoManager::new();
         let prepared_photo_count =
-            prepare_visible_photo_textures_for_export(canvas.state.layers.values(), |photo| {
-                export_photo_manager.texture_for_export(
+            match prepare_visible_photo_textures_for_export(canvas.state.layers.values(), |photo| {
+                export_photo_manager.texture_for_export_cancellable(
                     &photo.photo,
                     &photo.adjustments,
                     &backend.egui_ctx,
+                    Some(cancellation),
                 )
-            })?;
+            }) {
+                Err(_) if cancellation.is_cancelled() => return Err(ExportError::Cancelled),
+                result => result?,
+            };
 
         let cache_adopted = dep_mut!(PhotoManager, |photo_manager| {
             export_photo_manager
@@ -295,52 +302,61 @@ impl Exporter {
         pages: &[CanvasState],
         directory: &Path,
         file_name: &str,
+        cancellation: &CancellationToken,
     ) -> Result<(), ExportError> {
         let directory = PathBuf::from(directory);
 
         let mut doc = PdfDocument::new(file_name);
         let mut pdf_pages = Vec::new();
 
-        for (page_number, page) in pages.iter().enumerate() {
-            let image_path = directory.join(format!("page_{}.jpg", page_number));
+        for_each_cancellable(
+            pages.iter().enumerate(),
+            cancellation,
+            |(page_number, page)| {
+                let image_path = directory.join(format!("page_{}.jpg", page_number));
 
-            let page_size = page.page.size_mm();
-            let (mm_width, mm_height) = (Mm(page_size.x), Mm(page_size.y));
+                let page_size = page.page.size_mm();
+                let (mm_width, mm_height) = (Mm(page_size.x), Mm(page_size.y));
 
-            // Load and decode the JPEG image
-            let image_bytes =
-                std::fs::read(&image_path).map_err(|e| ExportError::FileError(e.to_string()))?;
-            let mut warnings = Vec::new();
-            let image = RawImage::decode_from_bytes(&image_bytes, &mut warnings).map_err(|e| {
-                ExportError::PdfRenderingError(format!("Error loading image: {:?}", e))
-            })?;
+                // Load and decode the JPEG image
+                let image_bytes = std::fs::read(&image_path)
+                    .map_err(|e| ExportError::FileError(e.to_string()))?;
+                let mut warnings = Vec::new();
+                let image =
+                    RawImage::decode_from_bytes(&image_bytes, &mut warnings).map_err(|e| {
+                        ExportError::PdfRenderingError(format!("Error loading image: {:?}", e))
+                    })?;
 
-            // Add image to document and get XObject ID
-            let image_xobject_id = doc.add_image(&image);
+                // Add image to document and get XObject ID
+                let image_xobject_id = doc.add_image(&image);
 
-            // Calculate transform based on DPI
-            let dpi = page.page.ppi() as f32;
-            let transform = XObjectTransform {
-                dpi: Some(dpi),
-                ..Default::default()
-            };
+                // Calculate transform based on DPI
+                let dpi = page.page.ppi() as f32;
+                let transform = XObjectTransform {
+                    dpi: Some(dpi),
+                    ..Default::default()
+                };
 
-            // Create page operations
-            let page_contents = vec![Op::UseXobject {
-                id: image_xobject_id,
-                transform,
-            }];
+                // Create page operations
+                let page_contents = vec![Op::UseXobject {
+                    id: image_xobject_id,
+                    transform,
+                }];
 
-            // Create the page
-            let page = PdfPage::new(mm_width, mm_height, page_contents);
-            pdf_pages.push(page);
-        }
+                // Create the page
+                let page = PdfPage::new(mm_width, mm_height, page_contents);
+                pdf_pages.push(page);
+                Ok(())
+            },
+        )?;
 
         // Add all pages to document and save
+        check_cancelled(cancellation)?;
         let mut warnings = Vec::new();
         let pdf_bytes = doc
             .with_pages(pdf_pages)
             .save(&PdfSaveOptions::default(), &mut warnings);
+        check_cancelled(cancellation)?;
 
         let mut pdf_path = directory.join(file_name);
         pdf_path.set_extension("pdf");
@@ -350,8 +366,29 @@ impl Exporter {
 
         output_pdf
             .write_all(&pdf_bytes)
-            .map_err(|e| ExportError::FileError(e.to_string()))
+            .map_err(|e| ExportError::FileError(e.to_string()))?;
+        check_cancelled(cancellation)
     }
+}
+
+fn check_cancelled(cancellation: &CancellationToken) -> Result<(), ExportError> {
+    if cancellation.is_cancelled() {
+        Err(ExportError::Cancelled)
+    } else {
+        Ok(())
+    }
+}
+
+fn for_each_cancellable<I>(
+    items: impl IntoIterator<Item = I>,
+    cancellation: &CancellationToken,
+    mut process: impl FnMut(I) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
+    for item in items {
+        check_cancelled(cancellation)?;
+        process(item)?;
+    }
+    check_cancelled(cancellation)
 }
 
 fn prepare_visible_photo_textures_for_export<'a, T>(
@@ -432,6 +469,23 @@ mod tests {
 
         assert_eq!(loaded_count, 1);
         assert_eq!(loaded_paths, [PathBuf::from("/visible.jpg")]);
+    }
+
+    #[test]
+    fn cancellation_inside_pdf_page_loop_stops_before_the_next_page() {
+        let cancellation = CancellationToken::new();
+        let mut processed = Vec::new();
+
+        let result = for_each_cancellable(0..3, &cancellation, |page| {
+            processed.push(page);
+            if page == 0 {
+                cancellation.cancel();
+            }
+            Ok(())
+        });
+
+        assert!(matches!(result, Err(ExportError::Cancelled)));
+        assert_eq!(processed, [0]);
     }
 
     #[test]

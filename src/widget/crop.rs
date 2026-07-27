@@ -118,7 +118,7 @@ impl<'a> Crop<'a> {
             .scope_builder(UiBuilder::new().max_rect(bar_rect), |ui| {
                 AutoCenter::new("crop_action_bar")
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| ActionBar::with_items(actions).show(ui))
+                        ui.horizontal(|ui| ActionBar::with_items(actions.clone()).show(ui))
                             .inner
                     })
                     .inner

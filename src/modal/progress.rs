@@ -1,4 +1,5 @@
 use super::{Modal, ModalActionResponse};
+use crate::cancellation::CancellationToken;
 
 pub struct ProgressModal {
     pub message: String,
@@ -6,6 +7,7 @@ pub struct ProgressModal {
 
     dismiss_title: String,
     title: String,
+    cancellation: Option<CancellationToken>,
 }
 
 impl ProgressModal {
@@ -20,7 +22,13 @@ impl ProgressModal {
             message: message.into(),
             dismiss_title: dismiss_title.into(),
             progress,
+            cancellation: None,
         }
+    }
+
+    pub fn with_cancellation(mut self, cancellation: CancellationToken) -> Self {
+        self.cancellation = Some(cancellation);
+        self
     }
 }
 
@@ -42,6 +50,9 @@ impl Modal for ProgressModal {
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
         if ui.button(&self.dismiss_title).clicked() {
+            if let Some(cancellation) = &self.cancellation {
+                cancellation.cancel();
+            }
             return Some(ModalActionResponse::Cancel);
         }
 

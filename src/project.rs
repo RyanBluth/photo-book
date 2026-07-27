@@ -1761,6 +1761,21 @@ mod tests {
     }
 
     #[test]
+    fn layer_visibility_and_lock_round_trip() {
+        let mut layer = AppLayer::new_text_layer();
+        layer.visible = false;
+        layer.locked = true;
+        let layer_id = layer.id;
+
+        let persisted: Layer = layer.into();
+        let restored: AppLayer = persisted.into();
+
+        assert_eq!(restored.id, layer_id);
+        assert!(!restored.visible);
+        assert!(restored.locked);
+    }
+
+    #[test]
     fn photo_adjustments_project_conversion_round_trips() {
         let mut adjustments = AppPhotoAdjustments::default();
         adjustments.light.exposure = 0.35;

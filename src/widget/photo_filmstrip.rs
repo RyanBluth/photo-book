@@ -58,20 +58,17 @@ impl<'a> PhotoFilmstrip<'a> {
 
     pub fn show(mut self, ui: &mut Ui) -> PhotoFilmstripResponse {
         let mut selected_photo = None;
-        let mut photos = dep_mut!(PhotoManager, |photo_manager| {
-            photo_manager
-                .grouped_photos()
-                .values()
-                .flat_map(|group| group.values().cloned())
-                .collect::<Vec<_>>()
-        });
-
-        if !photos
-            .iter()
-            .any(|photo| photo.path == self.current_photo.path)
-        {
-            photos.insert(0, self.current_photo.clone());
-        }
+        let photos = dep_mut!(PhotoManager, |photo_manager| photo_manager.grouped_photos());
+        let current_index = photos.index_of_path(&self.current_photo.path);
+        let has_fallback = current_index.is_none();
+        let photo_count = photos.photo_count() + usize::from(has_fallback);
+        let photo_at = |index: usize| -> Option<&Photo> {
+            if has_fallback && index == 0 {
+                Some(self.current_photo)
+            } else {
+                photos.photo_at(index - usize::from(has_fallback))
+            }
+        };
 
         self.state.height = self.state.height.clamp(MIN_BAR_HEIGHT, MAX_BAR_HEIGHT);
 
@@ -87,11 +84,17 @@ impl<'a> PhotoFilmstrip<'a> {
 
         ui.painter().rect_filled(bar_rect, 0.0, color::SURFACE_DARK);
 
-        let row_width = thumbnail_row_width(photos.len(), cell_width);
+        let row_width = thumbnail_row_width(photo_count, cell_width);
         let edge_spacing = ((content_rect.width() - row_width) * 0.5).max(CELL_SPACING);
         ui.scope_builder(UiBuilder::new().max_rect(content_rect), |ui| {
             ui.set_clip_rect(content_rect);
             ui.spacing_mut().item_spacing = Vec2::new(CELL_SPACING, 0.0);
+
+            let should_center =
+                self.state.centered_photo_path.as_ref() != Some(&self.current_photo.path);
+            if should_center {
+                ui.style_mut().scroll_animation = ScrollAnimation::none();
+            }
 
             ScrollArea::horizontal()
                 .id_salt("viewer_photo_filmstrip")
@@ -101,26 +104,24 @@ impl<'a> PhotoFilmstrip<'a> {
                     let total_width = edge_spacing * 2.0 + row_width;
                     ui.set_min_size(Vec2::new(total_width, cell_height));
 
-                    if let Some(current_index) = photos
-                        .iter()
-                        .position(|photo| photo.path == self.current_photo.path)
+                    if let Some(current_index) = current_index
+                        .map(|index| index + usize::from(has_fallback))
+                        .or(Some(0).filter(|_| has_fallback))
                     {
                         let current_rect =
                             cell_rect(ui, current_index, edge_spacing, cell_width, cell_height);
-                        if self.state.centered_photo_path.as_ref() != Some(&self.current_photo.path)
-                        {
-                            ui.ctx().global_style_mut(|style| {
-                                style.scroll_animation = ScrollAnimation::none();
-                            });
+                        if should_center {
                             ui.scroll_to_rect(current_rect, Some(Align::Center));
                             self.state.centered_photo_path = Some(self.current_photo.path.clone());
                         }
                     }
 
                     for index in
-                        visible_photo_range(viewport, photos.len(), edge_spacing, cell_width)
+                        visible_photo_range(viewport, photo_count, edge_spacing, cell_width)
                     {
-                        let photo = &photos[index];
+                        let Some(photo) = photo_at(index) else {
+                            continue;
+                        };
                         let rect = cell_rect(ui, index, edge_spacing, cell_width, cell_height);
                         let response = ui
                             .push_id(("viewer_photo_filmstrip_cell", &photo.path), |ui| {

@@ -9,10 +9,7 @@ use egui::CursorIcon;
 use crate::{
     cursor_manager::CursorManager,
     dep_mut,
-    photo::{
-        MaxPhotoDimension::{Height, Width},
-        Photo,
-    },
+    photo::Photo,
     photo_renderer::{PhotoRenderOptions, PhotoRenderStatus, PhotoRenderer},
     theme::color,
 };
@@ -21,6 +18,7 @@ use crate::{
 pub struct ImageViewerState {
     pub scale: f32,
     pub offset: Vec2,
+    focus_on_next_show: bool,
 }
 
 impl fmt::Debug for ImageViewerState {
@@ -29,6 +27,7 @@ impl fmt::Debug for ImageViewerState {
             .debug_struct("ImageViewerState")
             .field("scale", &self.scale)
             .field("offset", &self.offset)
+            .field("focus_on_next_show", &self.focus_on_next_show)
             .finish()
     }
 }
@@ -38,7 +37,14 @@ impl Default for ImageViewerState {
         Self {
             scale: 1.0,
             offset: Vec2::ZERO,
+            focus_on_next_show: true,
         }
+    }
+}
+
+impl ImageViewerState {
+    fn take_focus_request(&mut self) -> bool {
+        std::mem::take(&mut self.focus_on_next_show)
     }
 }
 
@@ -68,15 +74,20 @@ impl<'a> ImageViewer<'a> {
 
         let mut viewer_response = ImageViewerResponse {
             request: None,
-            _response: response,
+            _response: response.clone(),
         };
 
-        if ui.input(|input| input.key_pressed(Key::Escape)) {
-            viewer_response.request = Some(Request::Exit);
-        } else if ui.input(|input| input.key_pressed(Key::ArrowLeft)) {
-            viewer_response.request = Some(Request::Previous);
-        } else if ui.input(|input| input.key_pressed(Key::ArrowRight)) {
-            viewer_response.request = Some(Request::Next);
+        if response.has_focus() && !ui.ctx().text_edit_focused() {
+            if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape)) {
+                viewer_response.request = Some(Request::Exit);
+            } else if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::ArrowLeft))
+            {
+                viewer_response.request = Some(Request::Previous);
+            } else if ui
+                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::ArrowRight))
+            {
+                viewer_response.request = Some(Request::Next);
+            }
         }
 
         viewer_response
@@ -102,76 +113,30 @@ impl<'a> Widget for ImageViewer<'a> {
 
         ui.painter().rect_filled(rect, 0.0, color::BLACK);
 
-        if response.clicked() || response.drag_started() {
-            response.request_focus();
-        }
+        claim_viewer_focus(&response, self.state);
 
-        let mut image_rect = rect;
-
-        // Adjust the rect aspect ratio
-        match self.photo.max_dimension() {
-            Width => {
-                let aspect_ratio = self.photo.metadata.rotated_height() as f32
-                    / self.photo.metadata.rotated_width() as f32;
-                if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32
-                            / self.photo.metadata.rotated_height() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(adjusted_width, desired_height),
-                    );
-                } else {
-                    let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32
-                            / self.photo.metadata.rotated_width() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(desired_width, adjusted_height),
-                    );
-                }
-            }
-            Height => {
-                let aspect_ratio = self.photo.metadata.rotated_width() as f32
-                    / self.photo.metadata.rotated_height() as f32;
-                if image_rect.width() > image_rect.height() {
-                    let desired_height = (image_rect.width() * aspect_ratio).min(available_size.y);
-                    let adjusted_width = desired_height
-                        * (self.photo.metadata.rotated_width() as f32
-                            / self.photo.metadata.rotated_height() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(adjusted_width, desired_height),
-                    );
-                } else {
-                    let desired_width = (image_rect.height() / aspect_ratio).min(available_size.x);
-                    let adjusted_height = desired_width
-                        * (self.photo.metadata.rotated_height() as f32
-                            / self.photo.metadata.rotated_width() as f32);
-
-                    image_rect = Rect::from_center_size(
-                        rect.center(),
-                        Vec2::new(desired_width, adjusted_height),
-                    );
-                }
-            }
-        };
+        let photo_size = Vec2::new(
+            self.photo.metadata.rotated_width() as f32,
+            self.photo.metadata.rotated_height() as f32,
+        );
+        let mut image_rect =
+            Rect::from_center_size(rect.center(), aspect_fit_size(photo_size, available_size));
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
 
         let mouse_input = ui.input(|input| {
             if let Some(mouse_pos) = input.pointer.hover_pos() {
                 for event in &input.events {
-                    let egui::Event::MouseWheel { delta, .. } = event else {
+                    let egui::Event::MouseWheel { delta, unit, .. } = event else {
                         continue;
                     };
-                    if delta.y != 0.0 {
-                        return Some((delta.y, mouse_pos));
+                    let wheel_points = match unit {
+                        egui::MouseWheelUnit::Point => delta.y,
+                        egui::MouseWheelUnit::Line => delta.y * 20.0,
+                        egui::MouseWheelUnit::Page => delta.y * rect.height(),
+                    };
+                    if wheel_points != 0.0 {
+                        return Some((wheel_points, mouse_pos));
                     }
                 }
             }
@@ -182,27 +147,10 @@ impl<'a> Widget for ImageViewer<'a> {
         if let Some((scroll_delta, mouse_pos)) = mouse_input
             && rect.contains(mouse_pos)
         {
-            let rel_mouse_pos_before = image_rect.center() - mouse_pos;
-
             let scale_delta = if scroll_delta > 0.0 { 1.1 } else { 0.9 };
-
-            self.state.scale *= scale_delta;
-
-            let scaled_width_diff = image_rect.width() * self.state.scale - image_rect.width();
-            let scaled_height_diff = image_rect.height() * self.state.scale - image_rect.height();
-
-            image_rect =
-                image_rect.expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5));
-
-            let rel_mouse_pos_after = rel_mouse_pos_before * scale_delta;
-
-            self.state.offset += rel_mouse_pos_after - rel_mouse_pos_before;
+            image_rect = apply_zoom_at_pointer(self.state, image_rect, mouse_pos, scale_delta);
         } else {
-            let scaled_width_diff = image_rect.width() * self.state.scale - image_rect.width();
-            let scaled_height_diff = image_rect.height() * self.state.scale - image_rect.height();
-
-            image_rect =
-                image_rect.expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5));
+            image_rect = scale_rect_from_center(image_rect, self.state.scale);
         }
 
         image_rect = Self::translate_from_center(self.state.offset, image_rect, rect);
@@ -301,5 +249,136 @@ impl<'a> Widget for ImageViewer<'a> {
         }
 
         response
+    }
+}
+
+fn aspect_fit_size(image_size: Vec2, bounds: Vec2) -> Vec2 {
+    if image_size.x <= 0.0 || image_size.y <= 0.0 || bounds.x <= 0.0 || bounds.y <= 0.0 {
+        return Vec2::ZERO;
+    }
+
+    image_size * (bounds.x / image_size.x).min(bounds.y / image_size.y)
+}
+
+fn claim_viewer_focus(response: &Response, state: &mut ImageViewerState) {
+    if response.clicked() || response.drag_started() || state.take_focus_request() {
+        response.request_focus();
+    }
+}
+
+fn scale_rect_from_center(rect: Rect, scale: f32) -> Rect {
+    let scaled_width_diff = rect.width() * scale - rect.width();
+    let scaled_height_diff = rect.height() * scale - rect.height();
+    rect.expand2(Vec2::new(scaled_width_diff * 0.5, scaled_height_diff * 0.5))
+}
+
+fn apply_zoom_at_pointer(
+    state: &mut ImageViewerState,
+    image_rect: Rect,
+    mouse_pos: Pos2,
+    requested_scale_delta: f32,
+) -> Rect {
+    let previous_scale = state.scale;
+    let new_scale = (previous_scale * requested_scale_delta).clamp(0.1, 20.0);
+    let applied_scale_delta = new_scale / previous_scale;
+    let rel_mouse_pos_before = image_rect.center() - mouse_pos;
+
+    state.scale = new_scale;
+    state.offset += rel_mouse_pos_before * applied_scale_delta - rel_mouse_pos_before;
+
+    scale_rect_from_center(image_rect, new_scale)
+}
+
+#[cfg(test)]
+mod fit_tests {
+    use super::*;
+    use egui_kittest::Harness;
+
+    #[test]
+    fn portrait_image_uses_the_available_height() {
+        assert_eq!(
+            aspect_fit_size(Vec2::new(2.0, 3.0), Vec2::new(500.0, 400.0)),
+            Vec2::new(800.0 / 3.0, 400.0)
+        );
+    }
+
+    #[test]
+    fn fit_handles_empty_dimensions() {
+        assert_eq!(
+            aspect_fit_size(Vec2::ZERO, Vec2::new(500.0, 400.0)),
+            Vec2::ZERO
+        );
+    }
+
+    #[test]
+    fn new_viewer_requests_focus_exactly_once() {
+        let mut state = ImageViewerState::default();
+
+        assert!(state.take_focus_request());
+        assert!(!state.take_focus_request());
+    }
+
+    #[test]
+    fn zoom_at_limits_does_not_move_an_off_center_image() {
+        let image_rect = Rect::from_center_size(Pos2::new(250.0, 200.0), Vec2::new(300.0, 200.0));
+        let mouse_pos = Pos2::new(140.0, 120.0);
+
+        let mut max_state = ImageViewerState {
+            scale: 20.0,
+            offset: Vec2::new(12.0, -8.0),
+            focus_on_next_show: false,
+        };
+        let max_offset = max_state.offset;
+        apply_zoom_at_pointer(&mut max_state, image_rect, mouse_pos, 1.1);
+        assert_eq!(max_state.offset, max_offset);
+
+        let mut min_state = ImageViewerState {
+            scale: 0.1,
+            offset: Vec2::new(-9.0, 6.0),
+            focus_on_next_show: false,
+        };
+        let min_offset = min_state.offset;
+        apply_zoom_at_pointer(&mut min_state, image_rect, mouse_pos, 0.9);
+        assert_eq!(min_state.offset, min_offset);
+    }
+
+    #[test]
+    fn fresh_viewer_state_reclaims_focus_but_does_not_steal_it_afterward() {
+        struct FocusState {
+            viewer: ImageViewerState,
+            tag: String,
+            viewer_has_focus: bool,
+            tag_has_focus: bool,
+        }
+
+        let tag_id = egui::Id::new("viewer-focus-tag-field");
+        let mut harness = Harness::new_ui_state(
+            move |ui, state: &mut FocusState| {
+                let viewer_response = ui.allocate_response(Vec2::new(200.0, 100.0), Sense::click());
+                claim_viewer_focus(&viewer_response, &mut state.viewer);
+                let tag_response = ui.add(egui::TextEdit::singleline(&mut state.tag).id(tag_id));
+                state.viewer_has_focus = viewer_response.has_focus();
+                state.tag_has_focus = tag_response.has_focus();
+            },
+            FocusState {
+                viewer: ImageViewerState::default(),
+                tag: String::new(),
+                viewer_has_focus: false,
+                tag_has_focus: false,
+            },
+        );
+
+        harness.run();
+        assert!(harness.state().viewer_has_focus);
+
+        harness
+            .ctx
+            .memory_mut(|memory| memory.request_focus(tag_id));
+        harness.run();
+        assert!(harness.state().tag_has_focus);
+
+        harness.state_mut().viewer.focus_on_next_show = true;
+        harness.run();
+        assert!(harness.state().viewer_has_focus);
     }
 }

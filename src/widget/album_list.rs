@@ -97,6 +97,10 @@ impl<'a> AlbumList<'a> {
     }
 
     pub fn show(&mut self, ui: &mut Ui, scroll_to_path: Option<&PathBuf>) -> AlbumListResponse {
+        ui.scope(|ui| self.show_scoped(ui, scroll_to_path)).inner
+    }
+
+    fn show_scoped(&mut self, ui: &mut Ui, scroll_to_path: Option<&PathBuf>) -> AlbumListResponse {
         ui.style_mut().interaction.selectable_labels = false;
 
         let mut selection = TreeListSelection::new(ui);

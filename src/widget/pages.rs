@@ -94,21 +94,15 @@ impl<'a> Pages<'a> {
 
                             let index: usize = offset + i;
                             let id: usize = *self.state.pages.get_index(index).unwrap().0;
-                            let page = &mut self
-                                .state
-                                .pages
-                                .get_index_mut(index)
-                                .unwrap()
-                                .1
-                                .clone_with_new_widget_ids();
+                            let page = &mut self.state.pages.get_index(index).unwrap().1.clone();
 
                             row.col(|ui| {
-                                let item_id = egui::Id::new(("page_list", index));
+                                let item_id = ui.make_persistent_id(("page_list", id));
 
                                 ui.vertical(|ui| {
                                     ui.add_space(10.0);
 
-                                    let response = ui.dnd_drag_source(item_id, index, |ui| {
+                                    let response = ui.dnd_drag_source(item_id, id, |ui| {
                                         ui.horizontal(|ui| {
                                             ui.add_space(10.0);
                                             ui.label(format!("Page {}", index + 1));
@@ -129,9 +123,9 @@ impl<'a> Pages<'a> {
 
                                     if let (Some(pointer), Some(hovered_idx)) = (
                                         ui.input(|i| i.pointer.interact_pos()),
-                                        response.response.dnd_hover_payload::<usize>(),
+                                        response.response.dnd_hover_payload::<PageId>(),
                                     ) {
-                                        if *hovered_idx != index {
+                                        if *hovered_idx != id {
                                             let stroke =
                                                 egui::Stroke::new(2.0, theme::color::WHITE);
                                             if pointer.y < page_rect.center().y {
@@ -151,16 +145,14 @@ impl<'a> Pages<'a> {
                                             }
                                         }
 
-                                        if let Some(dragged_idx) =
-                                            response.response.dnd_release_payload()
+                                        if let Some(dragged_id) =
+                                            response.response.dnd_release_payload::<PageId>()
                                         {
-                                            from = Some(*dragged_idx);
+                                            from = self.state.pages.get_index_of(&*dragged_id);
                                         }
                                     }
 
-                                    if ui.input(|i| i.pointer.primary_clicked())
-                                        && ui.rect_contains_pointer(page_rect)
-                                    {
+                                    if response.response.clicked() {
                                         clicked_page = Some(id);
                                     }
 

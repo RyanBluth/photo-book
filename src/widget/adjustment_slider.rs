@@ -1,6 +1,8 @@
 use std::ops::RangeInclusive;
 
-use egui::{Align2, FontId, Key, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2};
+use egui::{
+    Align2, EventFilter, FontId, Key, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2,
+};
 
 use crate::{cursor_manager::CursorManager, dep_mut, theme::color};
 
@@ -47,7 +49,6 @@ impl<'a> AdjustmentSlider<'a> {
             Rect::from_center_size(hit_rect.center(), Vec2::new(hit_rect.width(), ROW_HEIGHT));
         response
             .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Slider, true, self.label));
-
         let previous_value = *self.value;
 
         if response.hovered() {
@@ -57,23 +58,26 @@ impl<'a> AdjustmentSlider<'a> {
 
         if response.double_clicked() {
             *self.value = self.default;
-            response.mark_changed();
         } else if (response.dragged() || response.clicked())
             && let Some(pointer_pos) = response.interact_pointer_pos()
         {
             *self.value = value_from_x(pointer_pos.x, rect, &self.range);
-            response.mark_changed();
         }
 
         if response.has_focus() {
+            ui.memory_mut(|memory| {
+                memory.set_focus_lock_filter(
+                    response.id,
+                    EventFilter {
+                        horizontal_arrows: true,
+                        ..Default::default()
+                    },
+                );
+            });
             ui.input(|input| {
-                if input.key_pressed(Key::ArrowLeft) {
-                    *self.value -= STEP;
-                    response.mark_changed();
-                } else if input.key_pressed(Key::ArrowRight) {
-                    *self.value += STEP;
-                    response.mark_changed();
-                }
+                *self.value += (input.num_presses(Key::ArrowRight) as f32
+                    - input.num_presses(Key::ArrowLeft) as f32)
+                    * STEP;
             });
         }
 
@@ -186,6 +190,7 @@ fn paint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::Harness;
 
     #[test]
     fn snap_to_default_matches_display_precision() {
@@ -198,5 +203,32 @@ mod tests {
     fn snap_to_default_preserves_visible_values() {
         assert_eq!(snap_to_default(0.006, 0.0), 0.006);
         assert_eq!(snap_to_default(0.494, 0.5), 0.494);
+    }
+
+    #[test]
+    fn focused_slider_owns_horizontal_arrow_keys() {
+        #[derive(Default)]
+        struct State {
+            value: f32,
+            response_id: Option<egui::Id>,
+        }
+
+        let mut harness = Harness::new_ui_state(
+            |ui, state: &mut State| {
+                let response = AdjustmentSlider::new("Exposure", &mut state.value).show(ui);
+                state.response_id = Some(response.id);
+            },
+            State::default(),
+        );
+        harness.run();
+
+        let response_id = harness.state().response_id.unwrap();
+        harness
+            .ctx
+            .memory_mut(|memory| memory.request_focus(response_id));
+        harness.key_press(Key::ArrowRight);
+        harness.run();
+
+        assert_eq!(harness.state().value, STEP);
     }
 }

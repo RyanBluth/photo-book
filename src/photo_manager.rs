@@ -3,6 +3,7 @@ use std::{
     collections::{HashMap, HashSet},
     io::BufWriter,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,7 +16,6 @@ use image::{
     ExtendedColorType,
     codecs::{jpeg::JpegEncoder, png::PngEncoder},
 };
-use indexmap::IndexMap;
 use log::{error, info};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
@@ -24,6 +24,7 @@ use tokio::{fs::File as TokioFile, io::AsyncWriteExt};
 
 use crate::{
     app_status::{AppJob, AppJobStatus, AppStatus},
+    cancellation::CancellationToken,
     dep, dep_mut,
     dirs::Dirs,
     image_utils::{decode_oriented_image, path_version_key},
@@ -162,7 +163,7 @@ pub struct PhotoManager {
     current_filter: PhotoQuery,
     caches: Vec<(Context, ContextCache)>,
     thumbnail_existence_cache: HashSet<String>,
-    current_query_result: Option<PhotoQueryResult>,
+    current_query_result: Option<Arc<PhotoQueryResult>>,
     pub photo_database: PhotoDatabase,
 }
 
@@ -339,7 +340,7 @@ impl PhotoManager {
         self.photo_database.sort_photos(PhotoSortCriteria::Date);
     }
 
-    pub fn grouped_photos(&mut self) -> IndexMap<String, IndexMap<PathBuf, Photo>> {
+    pub fn grouped_photos(&mut self) -> Arc<PhotoQueryResult> {
         let mut query = self.current_filter.clone();
 
         // Ensure grouping is set
@@ -349,11 +350,10 @@ impl PhotoManager {
         if let Some(current_query_result) = &self.current_query_result
             && query_result.id() == current_query_result.id()
         {
-            current_query_result.groups.clone()
+            Arc::clone(current_query_result)
         } else {
-            let groups = query_result.groups.clone();
-            self.current_query_result = Some(query_result);
-            groups
+            self.current_query_result = Some(Arc::clone(&query_result));
+            query_result
         }
     }
 
@@ -362,10 +362,7 @@ impl PhotoManager {
     }
 
     /// Change the photo grouping to given one
-    pub fn group_photos_by(
-        &mut self,
-        photos_grouping: PhotoGrouping,
-    ) -> IndexMap<String, IndexMap<PathBuf, Photo>> {
+    pub fn group_photos_by(&mut self, photos_grouping: PhotoGrouping) -> Arc<PhotoQueryResult> {
         self.current_grouping = photos_grouping;
         self.grouped_photos()
     }
@@ -518,6 +515,16 @@ impl PhotoManager {
         adjustments: &PhotoAdjustments,
         ctx: &Context,
     ) -> anyhow::Result<SizedTexture> {
+        self.texture_for_export_cancellable(photo, adjustments, ctx, None)
+    }
+
+    pub fn texture_for_export_cancellable(
+        &mut self,
+        photo: &Photo,
+        adjustments: &PhotoAdjustments,
+        ctx: &Context,
+        cancellation: Option<&CancellationToken>,
+    ) -> anyhow::Result<SizedTexture> {
         let uri = photo.uri();
         let max_texture_side = ctx.input(|input| input.max_texture_side as u32);
         let protected_uri = if adjustments.is_identity() {
@@ -527,7 +534,7 @@ impl PhotoManager {
         };
         let cache = self.get_cache_mut(ctx);
         let result = if adjustments.is_identity() {
-            Self::load_full_res_texture_for_export(&uri, ctx, cache)
+            Self::load_full_res_texture_for_export(&uri, ctx, cache, cancellation)
         } else {
             Self::load_adjusted_full_res_texture_for_export(
                 photo,
@@ -535,6 +542,7 @@ impl PhotoManager {
                 max_texture_side,
                 ctx,
                 cache,
+                cancellation,
             )
         };
 
@@ -695,6 +703,7 @@ impl PhotoManager {
         uri: &str,
         ctx: &Context,
         cache: &mut ContextCache,
+        cancellation: Option<&CancellationToken>,
     ) -> anyhow::Result<SizedTexture> {
         Self::touch_full_res_texture(cache, uri);
         let result = Self::load_texture_for_export(
@@ -702,6 +711,7 @@ impl PhotoManager {
             ctx,
             &mut cache.texture_cache,
             &mut cache.pending_textures,
+            cancellation,
         );
         if result.is_err() {
             cache.full_res_accesses.remove(uri);
@@ -750,6 +760,7 @@ impl PhotoManager {
         max_texture_side: u32,
         ctx: &Context,
         cache: &mut ContextCache,
+        cancellation: Option<&CancellationToken>,
     ) -> anyhow::Result<SizedTexture> {
         let uri = photo.uri();
         let source_version = path_version_key(&photo.path);
@@ -763,6 +774,7 @@ impl PhotoManager {
             max_texture_side,
             ctx,
             cache,
+            cancellation,
         );
 
         if result.is_err() {
@@ -830,7 +842,6 @@ impl PhotoManager {
         }
 
         if cache.pending_adjusted_textures.contains_key(&cache_key) {
-            ctx.request_repaint();
             return Ok(None);
         }
 
@@ -844,9 +855,9 @@ impl PhotoManager {
             adjustments.clone(),
             max_texture_side,
             sender,
+            ctx.clone(),
         );
         cache.pending_adjusted_textures.insert(cache_key, receiver);
-        ctx.request_repaint();
 
         Ok(None)
     }
@@ -858,6 +869,7 @@ impl PhotoManager {
         max_texture_side: u32,
         ctx: &Context,
         cache: &mut ContextCache,
+        cancellation: Option<&CancellationToken>,
     ) -> anyhow::Result<SizedTexture> {
         if !cache.adjusted_texture_cache.contains_key(&cache_key) {
             // Replace any asynchronous receiver: its worker may be queued on the Tokio pool
@@ -868,6 +880,7 @@ impl PhotoManager {
                 adjustments.clone(),
                 max_texture_side,
                 sender,
+                None,
             );
             cache
                 .pending_adjusted_textures
@@ -878,6 +891,7 @@ impl PhotoManager {
             &cache_key,
             EXPORT_TEXTURE_LOAD_TIMEOUT,
             EXPORT_TEXTURE_POLL_INTERVAL,
+            cancellation,
             || {
                 Self::load_adjusted_texture(
                     source_path.clone(),
@@ -925,6 +939,7 @@ impl PhotoManager {
         adjustments: PhotoAdjustments,
         max_texture_side: u32,
         sender: oneshot::Sender<std::result::Result<AdjustedTextureImage, String>>,
+        repaint_ctx: Context,
     ) {
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
             let load = move || adjusted_texture_image(source_path, adjustments, max_texture_side);
@@ -934,6 +949,7 @@ impl PhotoManager {
                     .map_err(|error| error.to_string())
                     .and_then(|result| result);
                 let _ = sender.send(result);
+                repaint_ctx.request_repaint();
             });
         } else {
             Self::spawn_adjusted_texture_job_on_thread(
@@ -941,6 +957,7 @@ impl PhotoManager {
                 adjustments,
                 max_texture_side,
                 sender,
+                Some(repaint_ctx),
             );
         }
     }
@@ -950,10 +967,14 @@ impl PhotoManager {
         adjustments: PhotoAdjustments,
         max_texture_side: u32,
         sender: oneshot::Sender<std::result::Result<AdjustedTextureImage, String>>,
+        repaint_ctx: Option<Context>,
     ) {
         std::thread::spawn(move || {
             let result = adjusted_texture_image(source_path, adjustments, max_texture_side);
             let _ = sender.send(result);
+            if let Some(ctx) = repaint_ctx {
+                ctx.request_repaint();
+            }
         });
     }
 
@@ -1074,11 +1095,13 @@ impl PhotoManager {
         ctx: &Context,
         texture_cache: &mut HashMap<String, SizedTexture>,
         pending_textures: &mut HashSet<String>,
+        cancellation: Option<&CancellationToken>,
     ) -> anyhow::Result<SizedTexture> {
         let result = wait_for_texture(
             uri,
             EXPORT_TEXTURE_LOAD_TIMEOUT,
             EXPORT_TEXTURE_POLL_INTERVAL,
+            cancellation,
             || Self::load_texture(uri, ctx, texture_cache, pending_textures),
         );
 
@@ -1469,11 +1492,15 @@ fn wait_for_texture<T>(
     description: &str,
     timeout: Duration,
     poll_interval: Duration,
+    cancellation: Option<&CancellationToken>,
     mut poll: impl FnMut() -> anyhow::Result<Option<T>>,
 ) -> anyhow::Result<T> {
     let started_at = Instant::now();
 
     loop {
+        if cancellation.is_some_and(CancellationToken::is_cancelled) {
+            return Err(anyhow!("Cancelled loading {description}"));
+        }
         match poll() {
             Ok(Some(texture)) => return Ok(texture),
             Ok(None) if started_at.elapsed() < timeout => {
@@ -1599,6 +1626,7 @@ mod tests {
             "test texture",
             Duration::from_secs(1),
             Duration::ZERO,
+            None,
             || {
                 poll_count += 1;
                 Ok((poll_count == 3).then_some(42))
@@ -1616,6 +1644,7 @@ mod tests {
             "file:///broken.jpg",
             Duration::from_secs(1),
             Duration::ZERO,
+            None,
             || Err(anyhow!("decode failed")),
         )
         .unwrap_err();
@@ -1626,11 +1655,34 @@ mod tests {
     }
 
     #[test]
+    fn export_texture_wait_honors_cancellation_without_polling() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let mut polled = false;
+
+        let error = wait_for_texture::<()>(
+            "cancelled texture",
+            Duration::from_secs(1),
+            Duration::ZERO,
+            Some(&cancellation),
+            || {
+                polled = true;
+                Ok(None)
+            },
+        )
+        .unwrap_err();
+
+        assert!(!polled);
+        assert!(error.to_string().contains("Cancelled"));
+    }
+
+    #[test]
     fn export_texture_wait_times_out_instead_of_remaining_pending() {
         let error = wait_for_texture::<()>(
             "file:///pending.jpg",
             Duration::ZERO,
             Duration::ZERO,
+            None,
             || Ok(None),
         )
         .unwrap_err();

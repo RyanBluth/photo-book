@@ -117,7 +117,7 @@ impl<'a> QuickLayout<'a> {
 
                             let layout = &available_layouts[offset + i];
 
-                            let mut canvas_state = self.canvas_state.clone_with_new_widget_ids();
+                            let mut canvas_state = self.canvas_state.clone();
 
                             apply_layout_node(
                                 layout,
@@ -127,19 +127,22 @@ impl<'a> QuickLayout<'a> {
                             );
 
                             row.col(|ui| {
-                                let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
-                                Canvas::new(
-                                    &mut canvas_state,
-                                    page_rect,
-                                    &mut CanvasHistoryManager::preview(),
-                                )
-                                .show_preview(ui, page_rect);
+                                ui.push_id(("quick_layout_preview", offset + i), |ui| {
+                                    let page_rect = ui.max_rect().shrink2(Vec2::new(20.0, 0.0));
+                                    Canvas::new(
+                                        &mut canvas_state,
+                                        page_rect,
+                                        &mut CanvasHistoryManager::preview(),
+                                    )
+                                    .show_preview(ui, page_rect);
 
-                                let click_response = ui.allocate_rect(page_rect, Sense::click());
+                                    let click_response =
+                                        ui.allocate_rect(page_rect, Sense::click());
 
-                                if click_response.clicked() {
-                                    selected_layout = Some(layout.clone());
-                                }
+                                    if click_response.clicked() {
+                                        selected_layout = Some(layout.clone());
+                                    }
+                                });
                             });
                         }
 

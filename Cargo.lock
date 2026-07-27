@@ -2088,7 +2088,6 @@ dependencies = [
  "egui-wgpu 0.35.0",
  "egui-winit 0.35.0",
  "egui_glow 0.35.0",
- "glow",
  "glutin",
  "glutin-winit",
  "image",

@@ -12,7 +12,7 @@ snapshot = []
 [dependencies]
 re_ui = "0.33.1"
 egui = { version = "0.35.0" }
-eframe = { version = "0.35.0", features = ["glow", "wgpu"] }
+eframe = { version = "0.35.0", features = ["wgpu"] }
 egui_extras = { version = "0.35.0", features = ["default", "all_loaders"] }
 native-dialog = { version = "0.9.7", features = ["async"] }
 env_logger = "0.11.10"

@@ -100,14 +100,6 @@ impl CanvasState {
         }
     }
 
-    pub fn clone_with_new_widget_ids(&self) -> Self {
-        let mut clone = self.clone();
-        for layer in clone.layers.values_mut() {
-            layer.transform_state.id = Id::random();
-        }
-        clone
-    }
-
     pub fn with_photo(photo: Photo) -> Self {
         let initial_rect = match photo.max_dimension() {
             crate::photo::MaxPhotoDimension::Width => {

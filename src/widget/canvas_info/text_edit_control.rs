@@ -5,7 +5,7 @@ use eframe::{
 use egui::ComboBox;
 use strum::IntoEnumIterator;
 
-use crate::utils::{EditableValueTextEdit, StyledTextEdit};
+use crate::utils::EditableValueTextEdit;
 
 use super::layers::{
     Layer,

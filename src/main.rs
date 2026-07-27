@@ -31,7 +31,7 @@ use log::info;
 use modal::manager::ModalManager;
 use project::Project;
 use scene::{SceneManager, organize_edit_scene::OrganizeEditScene};
-use tokio::runtime;
+use tokio::runtime::{self, Runtime};
 
 use flexi_logger::{Logger, WriteMode};
 use string_log::StringLogWriter;
@@ -42,6 +42,7 @@ mod app_status;
 mod assets;
 mod auto_persisting;
 mod autosave_manager;
+mod cancellation;
 mod config;
 mod cursor_manager;
 mod debug;
@@ -81,20 +82,35 @@ mod widget;
 
 static MAX_TEXTURE_SIZE: AtomicU32 = AtomicU32::new(0);
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn build_runtime() -> anyhow::Result<Runtime> {
     let num_cores: i32 = num_cpus::get() as i32;
 
-    let rt = runtime::Builder::new_multi_thread()
+    runtime::Builder::new_multi_thread()
         .enable_all()
         .max_blocking_threads((num_cores - 2).max(1) as usize)
         .build()
-        .unwrap();
+        .map_err(Into::into)
+}
 
+fn run_in_runtime<T>(run: impl FnOnce() -> T) -> anyhow::Result<T> {
+    let runtime = build_runtime()?;
+    let result = {
+        // Keep a single runtime entered for the complete native event-loop lifetime.
+        let _runtime_guard = runtime.enter();
+        run()
+    };
+    // The enter guard is gone before the runtime shuts down. Dropping a runtime while
+    // another Tokio runtime is active is a panic path in Tokio's blocking scheduler.
+    drop(runtime);
+    Ok(result)
+}
+
+fn main() -> anyhow::Result<()> {
+    run_in_runtime(run_native_app)?
+}
+
+fn run_native_app() -> anyhow::Result<()> {
     Dirs::initialize_dirs();
-
-    // Enter the runtime so that `tokio::spawn` is available immediately.
-    let _enter = rt.enter();
 
     // Start deadlock detection thread
     std::thread::spawn(move || {
@@ -125,7 +141,8 @@ async fn main() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
-            .with_inner_size((3000.0, 2000.0)),
+            .with_inner_size((1440.0, 960.0))
+            .with_min_inner_size((900.0, 600.0)),
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
             wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(

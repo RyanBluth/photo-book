@@ -148,7 +148,10 @@ impl TreeListSelection {
             selection_manager.snapshot()
         });
 
-        if ui.input(|input| input.key_down(Key::Escape)) && !snapshot.selected_paths.is_empty() {
+        if !ui.ctx().text_edit_focused()
+            && ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape))
+            && !snapshot.selected_paths.is_empty()
+        {
             snapshot = dep_mut!(SelectionManager, |selection_manager| {
                 selection_manager.clear_this_frame(ui)
             });
@@ -315,26 +318,29 @@ impl<'a> TreeList<'a> {
     }
 
     pub fn body(self, add_body_contents: impl for<'body> FnOnce(TreeListBody<'body>)) -> Response {
-        self.ui.style_mut().interaction.selectable_labels = false;
-
-        let outer_response = self
-            .ui
-            .allocate_response(self.ui.available_size(), Sense::click());
-        let mut list_ui = self.ui.new_child(
-            UiBuilder::new()
-                .max_rect(outer_response.rect)
-                .layout(*self.ui.layout()),
-        );
-
-        let body = TreeListBody {
-            ui: &mut list_ui,
-            id_salt: self.id_salt,
-            min_width: self.min_width,
-            scroll_to_row_top: self.scroll_to_row_top,
-        };
-        add_body_contents(body);
-
-        outer_response
+        let TreeList {
+            ui,
+            id_salt,
+            min_width,
+            scroll_to_row_top,
+        } = self;
+        ui.scope(|ui| {
+            ui.style_mut().interaction.selectable_labels = false;
+            let outer_response = ui.allocate_response(ui.available_size(), Sense::click());
+            let mut list_ui = ui.new_child(
+                UiBuilder::new()
+                    .max_rect(outer_response.rect)
+                    .layout(*ui.layout()),
+            );
+            add_body_contents(TreeListBody {
+                ui: &mut list_ui,
+                id_salt,
+                min_width,
+                scroll_to_row_top,
+            });
+            outer_response
+        })
+        .inner
     }
 }
 

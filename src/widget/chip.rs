@@ -64,6 +64,12 @@ impl<'a> Chip<'a> {
 
 impl<'a> Widget for Chip<'a> {
     fn ui(self, ui: &mut Ui) -> Response {
+        self.show(ui).0
+    }
+}
+
+impl Chip<'_> {
+    fn show(self, ui: &mut Ui) -> (Response, Option<Response>) {
         let visuals = ui.style().visuals.clone();
         let text_color = if self.selected {
             visuals.text_color()
@@ -89,13 +95,12 @@ impl<'a> Widget for Chip<'a> {
         let size = Vec2::new(total_width, CHIP_HEIGHT);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         let close_rect = close_rect(rect);
-        let close_hovered = self.closable
-            && response
-                .hover_pos()
-                .map(|pointer_pos| close_rect.contains(pointer_pos))
-                .unwrap_or(false);
+        let close_response = self
+            .closable
+            .then(|| ui.interact(close_rect, response.id.with("close"), Sense::click()));
+        let close_hovered = close_response.as_ref().is_some_and(Response::hovered);
 
-        if response.hovered() {
+        if response.hovered() || close_hovered {
             dep_mut!(CursorManager, |cursor_manager| {
                 cursor_manager.set_cursor(egui::CursorIcon::PointingHand);
             });
@@ -179,7 +184,7 @@ impl<'a> Widget for Chip<'a> {
             }
         }
 
-        response
+        (response, close_response)
     }
 }
 
@@ -196,7 +201,7 @@ fn close_rect(rect: Rect) -> Rect {
 #[allow(dead_code)]
 pub fn chip(ui: &mut Ui, text: &str) -> ChipResponse {
     let chip = Chip::new(text);
-    let response = ui.add(chip);
+    let (response, _) = chip.show(ui);
 
     ChipResponse {
         clicked: response.clicked(),
@@ -207,7 +212,7 @@ pub fn chip(ui: &mut Ui, text: &str) -> ChipResponse {
 
 pub fn chip_selectable(ui: &mut Ui, text: &str, selected: bool) -> ChipResponse {
     let chip = Chip::new(text).selected(selected);
-    let response = ui.add(chip);
+    let (response, _) = chip.show(ui);
 
     ChipResponse {
         clicked: response.clicked(),
@@ -219,17 +224,8 @@ pub fn chip_selectable(ui: &mut Ui, text: &str, selected: bool) -> ChipResponse 
 #[allow(dead_code)]
 pub fn chip_closable(ui: &mut Ui, text: &str) -> ChipResponse {
     let chip = Chip::new(text).closable(true);
-    let response = ui.add(chip);
-
-    let close_clicked = if let Some(pointer_pos) = response.interact_pointer_pos() {
-        if response.clicked() {
-            close_rect(response.rect).contains(pointer_pos)
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let (response, close_response) = chip.show(ui);
+    let close_clicked = close_response.is_some_and(|response| response.clicked());
 
     ChipResponse {
         clicked: response.clicked() && !close_clicked,
@@ -240,17 +236,8 @@ pub fn chip_closable(ui: &mut Ui, text: &str) -> ChipResponse {
 
 pub fn chip_selectable_closable(ui: &mut Ui, text: &str, selected: bool) -> ChipResponse {
     let chip = Chip::new(text).selected(selected).closable(true);
-    let response = ui.add(chip);
-
-    let close_clicked = if let Some(pointer_pos) = response.interact_pointer_pos() {
-        if response.clicked() {
-            close_rect(response.rect).contains(pointer_pos)
-        } else {
-            false
-        }
-    } else {
-        false
-    };
+    let (response, close_response) = chip.show(ui);
+    let close_clicked = close_response.is_some_and(|response| response.clicked());
 
     ChipResponse {
         clicked: response.clicked() && !close_clicked,

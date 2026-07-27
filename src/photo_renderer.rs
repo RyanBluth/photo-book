@@ -173,7 +173,6 @@ impl PhotoRenderer {
             Self::paint_texture(ui, texture, rect, clip_rect, options);
             Ok(PhotoRenderStatus::Placeholder)
         } else {
-            ui.ctx().request_repaint();
             Ok(PhotoRenderStatus::Pending)
         }
     }

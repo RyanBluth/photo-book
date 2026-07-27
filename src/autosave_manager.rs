@@ -95,7 +95,16 @@ impl AutoSaveManager {
         }
 
         let path = auto_save_path().ok_or(AutoSaveManagerError::AutoSavePathError)?;
-        self.current_save_task = Some(create_save_task(root_scene.clone(), path));
+        // Capture one immutable point-in-time snapshot while the caller owns the scene view.
+        // Compression and disk I/O then run without consulting live scene locks.
+        let auto_save = {
+            profiling::scope!("autosave_snapshot");
+            AutoSave {
+                active_project: dep!(Session, |session| session.active_project.clone()),
+                project: Project::new(root_scene),
+            }
+        };
+        self.current_save_task = Some(create_save_task(auto_save, path));
         self.last_save_time = Some(std::time::Instant::now());
 
         Ok(())
@@ -107,14 +116,9 @@ impl AutoSaveManager {
     }
 }
 
-fn create_save_task(root_scene: OrganizeEditScene, path: PathBuf) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
+fn create_save_task(auto_save: AutoSave, path: PathBuf) -> tokio::task::JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
         info!("Auto saving project to {}", path.display());
-
-        let auto_save: AutoSave = AutoSave {
-            active_project: dep!(Session, |session| session.active_project.clone()),
-            project: Project::new(&root_scene),
-        };
 
         if let Err(e) = savefile::save_file_compressed(path, PROJECT_VERSION, &auto_save) {
             error!("Error saving auto save: {:?}", e);

@@ -561,7 +561,9 @@ impl<'a> Layers<'a> {
             ui.spacing_mut().item_spacing.y = 0.0;
             for (idx, (layer_id, layer)) in self.layers.iter_mut().rev().enumerate() {
                 let row_response = Self::show_layer_row(ui, *layer_id, layer);
-                row_response.response.dnd_set_drag_payload(idx);
+                if !layer.locked {
+                    row_response.response.dnd_set_drag_payload(*layer_id);
+                }
 
                 if row_response.changed {
                     changed = true;
@@ -572,12 +574,12 @@ impl<'a> Layers<'a> {
 
                 if let (Some(pointer), Some(hovered_idx)) = (
                     ui.input(|i| i.pointer.interact_pos()),
-                    row_response.response.dnd_hover_payload::<usize>(),
+                    row_response.response.dnd_hover_payload::<LayerId>(),
                 ) {
                     let rect = row_response.response.rect;
                     let stroke = egui::Stroke::new(2.0, color::ACCENT);
 
-                    let line_y = if *hovered_idx == idx {
+                    let line_y = if *hovered_idx == *layer_id {
                         None
                     } else if pointer.y < rect.center().y {
                         Some(rect.top())
@@ -594,14 +596,21 @@ impl<'a> Layers<'a> {
                         });
                     }
 
-                    if let Some(dragged_idx) = row_response.response.dnd_release_payload() {
-                        from = Some(*dragged_idx);
+                    if let Some(dragged_id) = row_response.response.dnd_release_payload::<LayerId>()
+                    {
+                        from = Some(*dragged_id);
                     }
                 }
             }
         });
 
-        if let (Some(from_idx), Some(to_idx)) = (from, to)
+        let from_idx = from.and_then(|from_id| {
+            self.layers
+                .keys()
+                .rev()
+                .position(|layer_id| *layer_id == from_id)
+        });
+        if let (Some(from_idx), Some(to_idx)) = (from_idx, to)
             && Self::reorder_display_layers(self.layers, from_idx, to_idx)
         {
             changed = true;
@@ -663,7 +672,12 @@ impl<'a> Layers<'a> {
         let size = Vec2::new(ui.available_width().max(0.0), Self::ROW_HEIGHT);
         let (_, rect) = ui.allocate_space(size);
         let row_id = ui.make_persistent_id(("layer_row", layer_id));
-        let mut row_response = ui.interact(rect, row_id, Sense::click_and_drag());
+        let sense = if layer.locked {
+            Sense::click()
+        } else {
+            Sense::click_and_drag()
+        };
+        let mut row_response = ui.interact(rect, row_id, sense);
         row_response.set_intrinsic_size(size);
 
         let visibility_width = Self::VISIBILITY_WIDTH.min(rect.width() * 0.5);
@@ -1121,6 +1135,25 @@ mod tests {
         assert_eq!(
             harness.state().keys().copied().collect::<Vec<_>>(),
             vec![top_id, bottom_id]
+        );
+    }
+
+    #[test]
+    fn locked_row_cannot_be_reordered() {
+        let (mut layers, bottom_id, top_id) = test_layers();
+        layers.get_mut(&top_id).unwrap().locked = true;
+        let mut harness = harness_for(layers);
+
+        harness.drag_at(Pos2::new(180.0, 30.0));
+        harness.run();
+        harness.hover_at(Pos2::new(180.0, 90.0));
+        harness.run();
+        harness.drop_at(Pos2::new(180.0, 90.0));
+        harness.run();
+
+        assert_eq!(
+            harness.state().keys().copied().collect::<Vec<_>>(),
+            vec![bottom_id, top_id]
         );
     }
 

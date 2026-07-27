@@ -88,7 +88,7 @@ pub struct PhotoDatabase {
     photo_ratings: HashMap<PathBuf, PhotoRating>,
     photo_tags: HashMap<PathBuf, HashSet<String>>,
     photo_adjustments: HashMap<PathBuf, PhotoAdjustments>,
-    query_cache: HashMap<PhotoQuery, PhotoQueryResult>,
+    query_cache: HashMap<PhotoQuery, Arc<PhotoQueryResult>>,
     pub file_collection: FileTreeCollection,
     albums: HashMap<AlbumId, Album>,
     is_sorted: bool,
@@ -190,7 +190,7 @@ impl PhotoDatabase {
         self.query_cache.clear();
     }
 
-    pub fn query_photos(&mut self, query: &PhotoQuery) -> PhotoQueryResult {
+    pub fn query_photos(&mut self, query: &PhotoQuery) -> Arc<PhotoQueryResult> {
         self.ensure_sorted();
 
         if let Some(cached) = self.query_cache.get(query) {
@@ -305,7 +305,7 @@ impl PhotoDatabase {
             }
         }
 
-        let result = PhotoQueryResult::new(grouped_photos);
+        let result = Arc::new(PhotoQueryResult::new(grouped_photos));
         self.query_cache.insert(query.clone(), result.clone());
         result
     }
@@ -610,17 +610,23 @@ pub struct PhotoQueryResult {
     pub groups: IndexMap<String, IndexMap<PathBuf, Photo>>,
     id: usize,
     path_to_index_map: HashMap<String, (usize, usize)>,
+    flat_indices: Vec<(usize, usize)>,
+    path_to_flat_index: HashMap<PathBuf, usize>,
 }
 
 impl PhotoQueryResult {
     pub fn new(groups: IndexMap<String, IndexMap<PathBuf, Photo>>) -> Self {
         let mut path_to_index_map = HashMap::new();
+        let mut flat_indices = Vec::new();
+        let mut path_to_flat_index = HashMap::new();
 
         for group_idx in 0..groups.len() {
             if let Some((_group_name, photos)) = groups.get_index(group_idx) {
                 for photo_idx in 0..photos.len() {
                     if let Some((_path, photo)) = photos.get_index(photo_idx) {
                         path_to_index_map.insert(photo.string_path(), (group_idx, photo_idx));
+                        path_to_flat_index.insert(photo.path.clone(), flat_indices.len());
+                        flat_indices.push((group_idx, photo_idx));
                     }
                 }
             }
@@ -630,11 +636,42 @@ impl PhotoQueryResult {
             groups,
             id: next_query_result_id(),
             path_to_index_map,
+            flat_indices,
+            path_to_flat_index,
         }
     }
 
     pub fn id(&self) -> usize {
         self.id
+    }
+
+    pub fn photo_count(&self) -> usize {
+        self.flat_indices.len()
+    }
+
+    pub fn photo_at(&self, flat_index: usize) -> Option<&Photo> {
+        let (group_index, photo_index) = *self.flat_indices.get(flat_index)?;
+        self.groups
+            .get_index(group_index)?
+            .1
+            .get_index(photo_index)
+            .map(|(_, photo)| photo)
+    }
+
+    pub fn index_of_path(&self, path: &Path) -> Option<usize> {
+        self.path_to_flat_index.get(path).copied()
+    }
+
+    pub fn ordered_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.flat_indices
+            .iter()
+            .filter_map(|(group_index, photo_index)| {
+                self.groups
+                    .get_index(*group_index)?
+                    .1
+                    .get_index(*photo_index)
+                    .map(|(path, _)| path)
+            })
     }
 
     pub fn photo_after(&self, photo: &Photo) -> Option<Photo> {
@@ -1083,6 +1120,7 @@ mod tests {
         // Second query should use cache
         let result2 = db.query_photos(&query);
         assert_eq!(result1, result2);
+        assert!(Arc::ptr_eq(&result1, &result2));
 
         // Manual cache invalidation
         db.invalidate_query_cache();
@@ -1443,7 +1481,7 @@ mod tests {
         };
 
         let result = db.query_photos(&query);
-        let items: Vec<_> = result.clone().into_iter().collect();
+        let items: Vec<_> = (*result).clone().into_iter().collect();
 
         // We should have 3 items (photos are sorted newest first in query)
         assert_eq!(items.len(), 3);
@@ -1453,5 +1491,39 @@ mod tests {
         assert!(paths.contains(&PathBuf::from("/test/photo1.jpg")));
         assert!(paths.contains(&PathBuf::from("/test/photo2.jpg")));
         assert!(paths.contains(&PathBuf::from("/test/photo3.jpg")));
+    }
+
+    /// Manual regression benchmark for the query snapshot returned to virtualized views.
+    /// The timed loop must only clone an `Arc`; it must not clone the photos or rebuild groups.
+    #[test]
+    #[ignore = "manual large-library allocation/timing benchmark"]
+    fn benchmark_cached_large_library_query_snapshot() {
+        const PHOTO_COUNT: usize = 25_000;
+        const QUERY_PASSES: usize = 10_000;
+
+        let mut db = PhotoDatabase::new();
+        for index in 0..PHOTO_COUNT {
+            db.add_photo(create_test_photo(
+                &format!("/test/library/photo-{index:05}.jpg"),
+                None,
+            ));
+        }
+
+        let query = PhotoQuery {
+            grouping: PhotoGrouping::Rating,
+            ..Default::default()
+        };
+        let snapshot = db.query_photos(&query);
+        assert_eq!(snapshot.photo_count(), PHOTO_COUNT);
+
+        let started = std::time::Instant::now();
+        for _ in 0..QUERY_PASSES {
+            let cached = std::hint::black_box(db.query_photos(&query));
+            assert!(Arc::ptr_eq(&snapshot, &cached));
+        }
+        eprintln!(
+            "{QUERY_PASSES} cached passes over {PHOTO_COUNT} photos took {:?}",
+            started.elapsed()
+        );
     }
 }

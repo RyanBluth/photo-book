@@ -105,6 +105,7 @@ impl TransformableState {
 
 pub struct TransformableWidget<'a> {
     pub state: &'a mut TransformableState,
+    interaction_id: Option<Id>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -135,7 +136,15 @@ impl<'a> TransformableWidget<'a> {
     const HANDLE_SIZE: Vec2 = Vec2::splat(10.0);
 
     pub fn new(state: &'a mut TransformableState) -> Self {
-        Self { state }
+        Self {
+            state,
+            interaction_id: None,
+        }
+    }
+
+    pub fn id(mut self, id: Id) -> Self {
+        self.interaction_id = Some(id);
+        self
     }
 
     pub fn show<R>(
@@ -170,21 +179,19 @@ impl<'a> TransformableWidget<'a> {
         // Get the actual rotated corners of the pre-rotated rect
         // Order: [top_left, top_right, bottom_left, bottom_right]
         let rotated_corners = pre_rotated_inner_content_rect.rotated_corners(self.state.rotation);
-        let mut response = if active {
-            if rotatable {
-                let mode_selector_response =
-                    self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
-
-                ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
-                    .union(mode_selector_response)
-            } else {
-                ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
-            }
+        let interact_rect = if active {
+            rotated_inner_content_rect.expand(Self::HANDLE_SIZE.x / 2.0)
         } else {
-            ui.allocate_rect(rotated_inner_content_rect, Sense::click_and_drag())
+            rotated_inner_content_rect
         };
-
-        response.id = self.state.id;
+        let interact_response = ui.interact(
+            interact_rect,
+            self.interaction_id.unwrap_or(self.state.id),
+            Sense::click_and_drag(),
+        );
+        if active && rotatable {
+            self.draw_handle_mode_selector(ui, rotated_inner_content_rect.center_top());
+        }
 
         let middle_point = |p1: Pos2, p2: Pos2| p1 + (p2 - p1) / 2.0;
 
@@ -223,12 +230,6 @@ impl<'a> TransformableWidget<'a> {
             ),
         ];
 
-        // Interact with an expanded rect to include the handles which are partially outside the rect
-        let interact_response: Response = ui.interact(
-            rotated_inner_content_rect.expand(Self::HANDLE_SIZE.x / 2.0),
-            response.id,
-            Sense::click_and_drag(),
-        );
         let interact_pointer_pos = interact_response.interact_pointer_pos();
         let pointer_on_rotated_rect = interact_pointer_pos
             .map(|pos| {

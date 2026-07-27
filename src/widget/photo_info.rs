@@ -86,17 +86,17 @@ impl<'a> PhotoInfo<'a> {
                 });
         });
 
-        ui.ctx().input(|input| {
-            if input.key_pressed(Key::Num1) {
+        if !ui.ctx().text_edit_focused() {
+            if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Num1)) {
                 self.photo.set_rating(Some(1));
-            } else if input.key_pressed(Key::Num2) {
+            } else if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Num2)) {
                 self.photo.set_rating(Some(2));
-            } else if input.key_pressed(Key::Num3) {
+            } else if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Num3)) {
                 self.photo.set_rating(Some(3));
-            } else if input.key_pressed(Key::Num0) {
+            } else if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Num0)) {
                 self.photo.set_rating(None);
             }
-        })
+        }
     }
 
     fn section_separator(ui: &mut Ui) {
@@ -155,10 +155,7 @@ impl<'a> PhotoInfo<'a> {
                                 Label::new(RichText::new(self.camera()).size(15.0).strong())
                                     .truncate(),
                             );
-                            ui.add(
-                                Label::new(RichText::new(self.lens()).size(13.0))
-                                    .truncate(),
-                            );
+                            ui.add(Label::new(RichText::new(self.lens()).size(13.0)).truncate());
                         });
                     });
 
