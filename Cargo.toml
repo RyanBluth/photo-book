@@ -10,24 +10,24 @@ wgpu = []
 snapshot = []
 
 [dependencies]
-re_ui = "0.33.1"
+re_ui = "0.35.0"
 egui = { version = "0.35.0" }
 eframe = { version = "0.35.0", features = ["wgpu"] }
 egui_extras = { version = "0.35.0", features = ["default", "all_loaders"] }
 native-dialog = { version = "0.9.7", features = ["async"] }
-env_logger = "0.11.10"
+env_logger = "0.11.11"
 image = { version = "0.25.10", features = ["jpeg", "png"] }
-tokio = { version = "1.52.3", features = ["full", "rt-multi-thread"] }
+tokio = { version = "1.53.1", features = ["full", "rt-multi-thread"] }
 once_cell = "1.21.4"
-fast_image_resize = "6.0.0"
-anyhow = "1.0.102"
+fast_image_resize = "6.1.0"
+anyhow = "1.0.104"
 flexi_logger = "0.31.9"
 log = "0.4"
 kamadak-exif = "0.6.1"
-imagesize = "0.14.0"
+imagesize = "0.15.0"
 backtrace = "0.3"
-bytemuck = { version = "1.24.0", features = ["derive"] }
-open = "5.3.5"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+open = "5.4.0"
 strum = { version = "0.28.0", features = ["derive"] }
 strum_macros = "0.28.0"
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -35,29 +35,29 @@ indexmap = { version = "2.14.0", features = ["serde"] }
 font-kit = "0.14.3"
 egui_tiles = "0.16.0"
 ab_glyph = "0.2.32"
-rand = "0.10.1"
+rand = "0.10.2"
 smol_egui_skia = { git = "https://github.com/RyanBluth/smol_egui_skia.git", branch = "main" }
-skia-safe = { version = "0.97", features = ["vulkan"] }
-wgpu = { version = "29.0.3", features = ["vulkan", "metal", "dx12", "gles"] }
-thiserror = "2.0.18"
-printpdf = { version = "0.9.1", features = ["jpeg", "png"] }
-serde = { version = "1.0.228", features = ["derive"] }
+skia-safe = { version = "0.97.2", features = ["vulkan"] }
+wgpu = { version = "29.0.4", features = ["vulkan", "metal", "dx12", "gles"] }
+thiserror = "2.0.19"
+printpdf = { version = "0.12.5", features = ["jpeg", "png"] }
+serde = { version = "1.0.229", features = ["derive"] }
 ron = "0.12"
 calculate = { git = "https://github.com/RyanBluth/calc.git", branch = "master" }
 num-traits = "0.2"
-serde_json = "1.0.150"
+serde_json = "1.0.151"
 dirs = "6.0.0"
 fxhash = "0.2.1"
-toml = "1.1.2"
-glob = "0.3.3"
+toml = "1.1.4"
+glob = "0.3.4"
 parking_lot = { version = "0.12", features = ["deadlock_detection"] }
 profiling = { version = "1.0.18", default-features = false }
 notify = "8.2.0"
 num_cpus = "1.17.0"
-rkyv = "0.8.16"
-savefile = { version = "0.20.2", features = ["bzip2", "serde"] }
-savefile-derive = "0.20.2"
-uuid = { version = "1.23", features = ["v4"] }
+rkyv = "0.8.17"
+savefile = { version = "0.20.5", features = ["bzip2", "serde"] }
+savefile-derive = "0.20.5"
+uuid = { version = "1.24", features = ["v4"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
