@@ -1,10 +1,13 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use eframe::{egui::Key, epaint::Vec2};
 
 use egui::{
-    Align, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, RichText,
-    Slider, Ui, UiBuilder, containers::menu::MenuConfig,
+    Align, FontId, Frame, Image, Layout, Margin, MenuBar, PopupCloseBehavior, Rect, Response,
+    RichText, Slider, Ui, UiBuilder, containers::menu::MenuConfig,
 };
 use egui_extras::{Column, TableBuilder};
 use indexmap::IndexMap;
@@ -12,10 +15,11 @@ use indexmap::IndexMap;
 use crate::{
     assets::Asset,
     dep, dep_mut,
-    model::photo_grouping::PhotoGrouping,
+    modal::{manager::ModalManager, new_album::NewAlbumModal},
+    model::{album::Album, photo_grouping::PhotoGrouping},
     photo::Photo,
     photo_database::PhotoQuery,
-    photo_manager::PhotoManager,
+    photo_manager::{self, PhotoManager},
     selection_manager::{SelectionManager, SelectionModifiers},
     theme::color,
 };
@@ -234,6 +238,8 @@ impl<'a> ImageGallery<'a> {
                                             );
                                             let image_response = ui.add(image);
 
+                                            Self::image_context_menu(photo, &image_response);
+
                                             if image_response.clicked() {
                                                 let ordered_photo_paths = query_result
                                                     .ordered_paths()
@@ -294,6 +300,56 @@ impl<'a> ImageGallery<'a> {
             primary_action_photo,
             secondary_action_photo,
         }
+    }
+
+    fn image_context_menu(photo: &Photo, image_response: &Response) {
+        let (photo_albums, not_belongs_to_albums) = dep!(PhotoManager, |photo_manager| {
+            let mut photo_albums = Vec::new();
+            let mut not_belongs_to_albums = Vec::new();
+
+            for album in photo_manager.albums_iter().cloned() {
+                if album.photos.contains(&photo.path) {
+                    photo_albums.push(album);
+                } else {
+                    not_belongs_to_albums.push(album);
+                }
+            }
+
+            (photo_albums, not_belongs_to_albums)
+        });
+
+        let _ = image_response.context_menu(|ui| {
+            ui.menu_button("Add to album", |ui| {
+                if ui.button("New Album").clicked() {
+                    ModalManager::push(NewAlbumModal::with_photos(vec![photo.path.clone()]));
+                }
+
+                ui.separator();
+
+                for album in &not_belongs_to_albums {
+                    if ui.button(&album.name).clicked() {
+                        dep_mut!(PhotoManager, |photo_manager| {
+                            photo_manager.add_to_album(&album.id, &photo.path);
+                        });
+                    }
+                }
+            });
+            if !photo_albums.is_empty() {
+                ui.menu_button("Remove from album", |ui| {
+                    if photo_albums.is_empty() {
+                        ui.label("No albums");
+                    } else {
+                        for album in &photo_albums {
+                            if ui.button(&album.name).clicked() {
+                                dep_mut!(PhotoManager, |photo_manager| {
+                                    photo_manager.remove_from_album(&album.id, &photo.path);
+                                });
+                            }
+                        }
+                    }
+                });
+            }
+        });
     }
 }
 

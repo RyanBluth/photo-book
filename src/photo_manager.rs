@@ -1398,6 +1398,10 @@ impl PhotoManager {
         self.photo_database.get_photo_albums(photo_path)
     }
 
+    pub fn get_photo_album(&self, album_id: &AlbumId) -> Option<&Album> {
+        self.photo_database.get_photo_album(album_id)
+    }
+
     pub fn create_album(&mut self, album_name: &str) -> Option<AlbumId> {
         self.photo_database.create_album(album_name)
     }

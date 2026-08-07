@@ -590,6 +590,10 @@ impl PhotoDatabase {
             .map(|album| album.id.clone())
             .collect()
     }
+
+    pub fn get_photo_album(&self, album_id: &AlbumId) -> Option<&Album> {
+        self.albums.get(album_id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
