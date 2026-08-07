@@ -1,4 +1,4 @@
-use egui::{FontId, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget};
+use egui::{FontId, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget, Layout, Align};
 
 use crate::{
     app_status::AppStatus,
@@ -57,7 +57,7 @@ impl StatusBar {
 
     fn right_content(&mut self, ui: &mut Ui, response: &mut StatusBarResponse) {
         let preferences = dep!(Session, |session| session.project_preferences.clone());
-        ui.horizontal(|ui| {
+        ui.horizontal_centered(|ui| {
             if IconButton::new(Asset::logs())
                 .active(preferences.log_viewer_open)
                 .ui(ui)
@@ -99,6 +99,6 @@ impl StatusBar {
     }
 
     pub fn height() -> f32 {
-        30.0
+        34.0
     }
 }
