@@ -151,18 +151,18 @@ impl GalleryTreeBehavior<'_> {
                             )
                             .show(ui);
                         } else {
-                            ui.both_centered(|ui| {
+                            ui.centered_and_justified(|ui| {
                                 ui.heading("Nothing selected");
                             });
                         }
                     }
                     0 => {
-                        ui.both_centered(|ui| {
+                        ui.centered_and_justified(|ui| {
                             ui.heading("Nothing selected");
                         });
                     }
                     _ => {
-                        ui.both_centered(|ui| {
+                        ui.centered_and_justified(|ui| {
                             ui.heading("Multiple photos selected");
                         });
                     }

@@ -48,7 +48,7 @@ impl<'a> QuickLayout<'a> {
         let available_layouts = self.available_layouts();
 
         if available_layouts.is_empty() {
-            ui.both_centered(|ui| {
+            ui.centered_and_justified(|ui| {
                 ui.heading("Add photos to view available layouts.");
             });
 
