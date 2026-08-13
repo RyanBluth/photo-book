@@ -569,6 +569,7 @@ impl<'a> Canvas<'a> {
     }
 
     pub fn show_preview(&mut self, ui: &mut Ui, rect: Rect) {
+        let rect = ui.allocate_rect(rect, Sense::hover()).rect;
         let zoom = (rect.width() / self.state.page.size_pixels().x)
             .min(rect.height() / self.state.page.size_pixels().y);
 

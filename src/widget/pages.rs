@@ -1,5 +1,5 @@
 use eframe::egui::{self};
-use egui::{Button, Layout, Stroke, Vec2};
+use egui::{Button, Layout, Sense, Stroke, Vec2};
 
 use egui_extras::Column;
 use indexmap::IndexMap;
@@ -102,28 +102,28 @@ impl<'a> Pages<'a> {
                                 ui.vertical(|ui| {
                                     ui.add_space(10.0);
 
-                                    let response = ui.dnd_drag_source(item_id, id, |ui| {
-                                        ui.horizontal(|ui| {
-                                            ui.add_space(10.0);
-                                            ui.label(format!("Page {}", index + 1));
-                                        });
+                                    let item_rect = ui.max_rect().shrink(10.0);
+                                    let response =
+                                        ui.interact(item_rect, item_id, Sense::click_and_drag());
+                                    response.dnd_set_drag_payload(id);
 
-                                        let mut page_rect = ui.max_rect().shrink(10.0);
-                                        page_rect.min.y += 30.0;
-
-                                        Canvas::new(
-                                            page,
-                                            page_rect,
-                                            &mut CanvasHistoryManager::preview(),
-                                        )
-                                        .show_preview(ui, page_rect);
+                                    ui.horizontal(|ui| {
+                                        ui.add_space(10.0);
+                                        ui.label(format!("Page {}", index + 1));
                                     });
 
-                                    let page_rect = ui.max_rect().shrink(10.0);
+                                    let mut page_rect = item_rect;
+                                    page_rect.min.y += 30.0;
+                                    Canvas::new(
+                                        page,
+                                        page_rect,
+                                        &mut CanvasHistoryManager::preview(),
+                                    )
+                                    .show_preview(ui, page_rect);
 
                                     if let (Some(pointer), Some(hovered_idx)) = (
                                         ui.input(|i| i.pointer.interact_pos()),
-                                        response.response.dnd_hover_payload::<PageId>(),
+                                        response.dnd_hover_payload::<PageId>(),
                                     ) {
                                         if *hovered_idx != id {
                                             let stroke =
@@ -146,20 +146,20 @@ impl<'a> Pages<'a> {
                                         }
 
                                         if let Some(dragged_id) =
-                                            response.response.dnd_release_payload::<PageId>()
+                                            response.dnd_release_payload::<PageId>()
                                         {
                                             from = self.state.pages.get_index_of(&*dragged_id);
                                         }
                                     }
 
-                                    if response.response.clicked() {
+                                    if response.clicked() {
                                         clicked_page = Some(id);
                                     }
 
                                     if self.state.selected_page == id {
                                         // ui.set_clip_rect(ui.max_rect().expand(10.0));
                                         ui.painter().rect_stroke(
-                                            page_rect.expand(3.0),
+                                            item_rect.expand(3.0),
                                             4.0,
                                             Stroke::new(3.0, theme::color::ACCENT),
                                             egui::StrokeKind::Outside,
