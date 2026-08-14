@@ -7,7 +7,7 @@ use crate::{
     photo::{Photo, SaveOnDropPhoto},
     photo_manager::PhotoManager,
     widget::{
-        image_viewer::{self, ImageViewer, ImageViewerState},
+        image_viewer::{ImageViewer, ImageViewerState},
         photo_filmstrip::{PhotoFilmstrip, PhotoFilmstripState},
         photo_info::{PhotoInfo, PhotoInfoState},
     },
@@ -107,6 +107,36 @@ impl Scene for ViewerScene {
             ui,
         );
 
+        if !ui.ctx().text_edit_focused() {
+            if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+                navigator.pop(ScenePopResponse::None);
+            } else if ui
+                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowLeft))
+            {
+                dep_mut!(PhotoManager, |photo_manager| {
+                    if let Some(prev_photo) = photo_manager
+                        .previous_photo(&self.state.photo, ui.ctx())
+                        .unwrap()
+                    {
+                        self.state.photo = prev_photo;
+                        self.state.viewer_state = ImageViewerState::default();
+                    }
+                });
+            } else if ui
+                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::ArrowRight))
+            {
+                dep_mut!(PhotoManager, |photo_manager| {
+                    if let Some(next_photo) = photo_manager
+                        .next_photo(&self.state.photo, ui.ctx())
+                        .unwrap()
+                    {
+                        self.state.photo = next_photo;
+                        self.state.viewer_state = ImageViewerState::default();
+                    }
+                });
+            }
+        }
+
         let paging_key_down = ui.input(|input| {
             input.key_down(egui::Key::ArrowLeft) || input.key_down(egui::Key::ArrowRight)
         });
@@ -141,38 +171,8 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
     ) -> UiResponse {
         match pane {
             ViewerScenePane::Viewer => {
-                let viewer_response =
-                    ImageViewer::new(&self.scene_state.photo, &mut self.scene_state.viewer_state)
-                        .show(ui);
-                if let Some(request) = viewer_response.request {
-                    match request {
-                        image_viewer::Request::Exit => {
-                            self.navigator.pop(ScenePopResponse::None);
-                        }
-                        image_viewer::Request::Previous => {
-                            dep_mut!(PhotoManager, |photo_manager| {
-                                if let Some(prev_photo) = photo_manager
-                                    .previous_photo(&self.scene_state.photo, ui.ctx())
-                                    .unwrap()
-                                {
-                                    self.scene_state.photo = prev_photo;
-                                    self.scene_state.viewer_state = ImageViewerState::default();
-                                }
-                            });
-                        }
-                        image_viewer::Request::Next => {
-                            dep_mut!(PhotoManager, |photo_manager| {
-                                if let Some(next_photo) = photo_manager
-                                    .next_photo(&self.scene_state.photo, ui.ctx())
-                                    .unwrap()
-                                {
-                                    self.scene_state.photo = next_photo;
-                                    self.scene_state.viewer_state = ImageViewerState::default();
-                                }
-                            });
-                        }
-                    }
-                }
+                ImageViewer::new(&self.scene_state.photo, &mut self.scene_state.viewer_state)
+                    .show(ui);
             }
             ViewerScenePane::PhotoInfo => {
                 PhotoInfo::new(

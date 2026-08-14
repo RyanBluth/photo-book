@@ -1,7 +1,7 @@
 use std::fmt;
 
 use eframe::{
-    egui::{self, Key, Response, Sense, Widget},
+    egui::{self, Response, Sense, Widget},
     epaint::{Pos2, Rect, Vec2},
 };
 use egui::CursorIcon;
@@ -48,17 +48,6 @@ impl ImageViewerState {
     }
 }
 
-pub enum Request {
-    Exit,
-    Previous,
-    Next,
-}
-
-pub struct ImageViewerResponse {
-    pub request: Option<Request>,
-    pub _response: Response,
-}
-
 pub struct ImageViewer<'a> {
     photo: &'a Photo,
     state: &'a mut ImageViewerState,
@@ -69,28 +58,8 @@ impl<'a> ImageViewer<'a> {
         Self { photo, state }
     }
 
-    pub fn show(self, ui: &mut eframe::egui::Ui) -> ImageViewerResponse {
-        let response = self.ui(ui);
-
-        let mut viewer_response = ImageViewerResponse {
-            request: None,
-            _response: response.clone(),
-        };
-
-        if response.has_focus() && !ui.ctx().text_edit_focused() {
-            if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::Escape)) {
-                viewer_response.request = Some(Request::Exit);
-            } else if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::ArrowLeft))
-            {
-                viewer_response.request = Some(Request::Previous);
-            } else if ui
-                .input_mut(|input| input.consume_key(egui::Modifiers::NONE, Key::ArrowRight))
-            {
-                viewer_response.request = Some(Request::Next);
-            }
-        }
-
-        viewer_response
+    pub fn show(self, ui: &mut eframe::egui::Ui) -> Response {
+        self.ui(ui)
     }
 
     fn translate_from_center(offset: Vec2, rect: Rect, relative_to: Rect) -> Rect {
