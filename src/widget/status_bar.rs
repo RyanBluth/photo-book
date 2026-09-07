@@ -1,4 +1,4 @@
-use egui::{FontId, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget, Layout, Align};
+use egui::{FontId, Rect, RichText, Spinner, Ui, UiBuilder, Vec2, Widget};
 
 use crate::{
     app_status::AppStatus,

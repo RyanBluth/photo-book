@@ -19,6 +19,7 @@ use crate::{
     modal::{
         ModalActionResponse,
         basic::BasicModal,
+        file_import::FileImportModal,
         manager::{ModalManager, TypedModalId},
         name_prompt::{NamePromptModal, NamePromptResponse},
         page_settings::PageSettingsModal,
@@ -77,7 +78,8 @@ pub enum MenuCommand {
     OpenCollection,
     OpenRecent(PathBuf),
     Save,
-    Import,
+    AddToCollection,
+    ImportFiles,
     Export,
     GroupByDate,
     GroupByRating,
@@ -406,8 +408,11 @@ impl OrganizeEditScene {
                     error!("Error saving collection: {:?}", err);
                 }
             }
-            MenuCommand::Import => {
+            MenuCommand::AddToCollection => {
                 self.import_photos(ctx);
+            }
+            MenuCommand::ImportFiles => {
+                ModalManager::push(FileImportModal::new());
             }
             MenuCommand::Export => {
                 self.export_selected_book(ctx);
@@ -664,8 +669,12 @@ impl OrganizeEditScene {
                             self.handle_menu_command(MenuCommand::Save, ui.ctx());
                         }
 
-                        if ui.button("Import").clicked() {
-                            self.handle_menu_command(MenuCommand::Import, ui.ctx());
+                        if ui.button("Add to Collection").clicked() {
+                            self.handle_menu_command(MenuCommand::AddToCollection, ui.ctx());
+                        }
+
+                        if ui.button("Import Files").clicked() {
+                            self.handle_menu_command(MenuCommand::ImportFiles, ui.ctx());
                         }
 
                         if ui.button("Export").clicked() {

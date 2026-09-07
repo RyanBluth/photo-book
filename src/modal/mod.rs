@@ -1,6 +1,7 @@
 use std::any::Any;
 
 pub mod basic;
+pub mod file_import;
 pub mod manager;
 pub mod name_prompt;
 pub mod new_album;
@@ -8,7 +9,6 @@ pub mod page_settings;
 pub mod photo_filter;
 pub mod progress;
 pub mod save_warning;
-
 pub trait Modal: Send + Any {
     type Response: ModalResponse + 'static;
 

@@ -58,9 +58,14 @@ define_class!(
             push_command(MenuCommand::Save);
         }
 
-        #[unsafe(method(importPhotos:))]
-        fn import_photos(&self, _sender: &AnyObject) {
-            push_command(MenuCommand::Import);
+        #[unsafe(method(addToCollection:))]
+        fn add_to_collection(&self, _sender: &AnyObject) {
+            push_command(MenuCommand::AddToCollection);
+        }
+
+        #[unsafe(method(importFiles:))]
+        fn import_files(&self, _sender: &AnyObject) {
+            push_command(MenuCommand::ImportFiles);
         }
 
         #[unsafe(method(exportBook:))]
@@ -169,8 +174,17 @@ fn create_global_menu(handler: &NativeMenuHandler) {
         add_command_item(
             mtm,
             menu,
-            "Import...",
-            sel!(importPhotos:),
+            "Add to Collection...",
+            sel!(addToCollection:),
+            "",
+            NSEventModifierFlags::empty(),
+            handler,
+        );
+        add_command_item(
+            mtm,
+            menu,
+            "Import Files...",
+            sel!(importFiles:),
             "",
             NSEventModifierFlags::empty(),
             handler,

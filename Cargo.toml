@@ -12,7 +12,9 @@ snapshot = []
 [dependencies]
 egui = { version = "0.36.1" }
 eframe = { version = "0.36.1", features = ["wgpu"] }
-egui_extras = { version = "0.36.1", features = ["default", "all_loaders"] }
+egui_extras = { version = "0.36.1", features = ["default", "all_loaders", "datepicker"] }
+jiff = "0.2.35"
+egui_graph = { git = "https://github.com/RyanBluth/egui_graph.git", branch = "main" }
 native-dialog = { version = "0.9.7", features = ["async"] }
 env_logger = "0.11.11"
 image = { version = "0.25.10", features = ["jpeg", "png"] }
@@ -72,6 +74,7 @@ objc2-foundation = { version = "0.3.2", features = ["NSObject", "NSString"] }
 
 [dev-dependencies]
 egui_kittest = { version = "0.36.1", features = ["wgpu", "snapshot"] }
+tempfile = "3.27"
 
 [profile.dev.package."*"]
 opt-level = 2
