@@ -19,3 +19,15 @@
   - `SURFACE`, `SURFACE_MUTED`, and `SURFACE_DARK` for cards, controls, and intermediate surfaces.
 - If a new repeated visual state needs a color that does not map well to the existing tokens, add a named token to `theme.rs` instead of scattering raw `Color32::from_gray(...)` values.
 
+
+## Editor Appearance
+
+- `theme::style::apply` owns the dark editor theme, fixed typography, control density,
+  and egui interaction states. Keep chrome neutral so it does not compete with photos.
+- Use `BORDER` for subtle separators, `CONTROL_TEXT` for normal labels, and
+  `TEXT_MUTED` for secondary information. Reserve solid `ACCENT` fills for primary
+  actions; selections use `ACCENT_MUTED` with bright text.
+- Controls use 3-point corners, menus 4, and dialogs 6. Standard controls are
+  28 points high; avoid overriding these locally without a layout need.
+- Icon buttons paint hover, selection, and keyboard-focus states inside their
+  allocated bounds. Leave padding around glyphs rather than filling the hit area.

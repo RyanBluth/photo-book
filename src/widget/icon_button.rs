@@ -107,14 +107,34 @@ impl Widget for IconButton {
                 .set_cursor(egui::CursorIcon::PointingHand))
         }
 
-        let opacity = if ui.input(|input| input.pointer.primary_down() && response.hovered()) {
-            0.75
-        } else {
-            1.0
-        };
+        let visuals = ui.style().interact_selectable(&response, self.active);
+        if self.active
+            || response.hovered()
+            || response.has_focus()
+            || response.is_pointer_button_down_on()
+        {
+            ui.painter().rect(
+                rect,
+                visuals.corner_radius,
+                visuals.weak_bg_fill,
+                if response.has_focus() {
+                    egui::Stroke::new(1.0, theme::color::BLUE_SOFT)
+                } else {
+                    visuals.bg_stroke
+                },
+                egui::StrokeKind::Inside,
+            );
+        }
 
-        let color = self.color().linear_multiply(opacity);
-        let icon_size = self.icon_size.unwrap_or(self.size).min(self.size);
+        let color = if response.hovered() && !self.active {
+            theme::color::WHITE
+        } else {
+            self.color()
+        };
+        let icon_size = self
+            .icon_size
+            .unwrap_or(self.size - Vec2::splat(6.0))
+            .min(self.size);
 
         Image::new(self.image_source().clone())
             .fit_to_exact_size(icon_size)

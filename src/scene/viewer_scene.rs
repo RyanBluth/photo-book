@@ -186,6 +186,30 @@ impl<'a> egui_tiles::Behavior<ViewerScenePane> for ViewerTreeBehavior<'a> {
         UiResponse::None
     }
 
+    fn tab_bg_color(
+        &self,
+        _visuals: &egui::Visuals,
+        _tiles: &egui_tiles::Tiles<ViewerScenePane>,
+        _tile_id: egui_tiles::TileId,
+        state: &egui_tiles::TabState,
+    ) -> egui::Color32 {
+        if state.active {
+            crate::theme::color::SURFACE_MUTED
+        } else {
+            crate::theme::color::TOOLBAR_BACKGROUND
+        }
+    }
+
+    fn tab_outline_stroke(
+        &self,
+        _visuals: &egui::Visuals,
+        _tiles: &egui_tiles::Tiles<ViewerScenePane>,
+        _tile_id: egui_tiles::TileId,
+        _state: &egui_tiles::TabState,
+    ) -> egui::Stroke {
+        egui::Stroke::NONE
+    }
+
     fn tab_title_for_pane(&mut self, pane: &ViewerScenePane) -> egui::widget_text::WidgetText {
         match pane {
             ViewerScenePane::Viewer => "Viewer".into(),

@@ -12,6 +12,7 @@ use crate::{
     photo::Photo,
     project::{ProjectWorkspaceTab, ProjectWorkspaceTabs},
     scene::{Scene, viewer_scene::ViewerScene},
+    theme::color,
 };
 
 use super::{BookId, OrganizeEditScene, SceneResponse, photo_viewer::PhotoViewerId};
@@ -444,24 +445,15 @@ impl TileBehavior<WorkspacePane> for WorkspaceTabsBehavior<'_> {
 
         // Show a gap when dragged
         if ui.is_rect_visible(tab_rect) && !state.is_being_dragged {
-            let bg_color = self.tab_bg_color(ui.visuals(), tiles, tile_id, state);
-            let stroke = self.tab_outline_stroke(ui.visuals(), tiles, tile_id, state);
-            ui.painter().rect(
-                tab_rect.shrink(0.5),
-                0.0,
-                bg_color,
-                stroke,
-                egui::StrokeKind::Inside,
-            );
-
-            if state.active {
-                // Make the tab name area connect with the tab ui area:
-                ui.painter().hline(
-                    tab_rect.x_range().shrink(stroke.width),
-                    tab_rect.bottom(),
-                    Stroke::new(stroke.width + 2.0, bg_color),
-                );
-            }
+            // Distinguish tabs with a flat fill, without an accent outline.
+            let bg_color = if state.active || tab_response.has_focus() {
+                color::SURFACE_MUTED
+            } else if is_hovered {
+                color::SURFACE
+            } else {
+                color::TOOLBAR_BACKGROUND
+            };
+            ui.painter().rect_filled(tab_rect, 0.0, bg_color);
 
             // Prepare title's text for rendering
             let text_color = self.tab_text_color(ui.visuals(), tiles, tile_id, state);

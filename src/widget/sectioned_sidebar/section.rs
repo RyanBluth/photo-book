@@ -2,7 +2,7 @@ use egui::{Button, CursorIcon, Frame, RichText, Sense, TextStyle, UiBuilder, Vec
 
 use crate::{cursor_manager::CursorManager, dep_mut, theme::color};
 
-pub const SECTION_HEADER_INNER_MARGIN: f32 = 8.0;
+pub const SECTION_HEADER_INNER_MARGIN: f32 = 4.0;
 
 pub fn section_header_height(ui: &egui::Ui) -> f32 {
     ui.text_style_height(&TextStyle::Body)
