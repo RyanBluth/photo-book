@@ -190,6 +190,7 @@ fn disabled_graph_selection_preserves_navigation_and_controls() {
 fn conditional_without_else_keeps_only_then_edge_after_background_clicks() {
     use egui_kittest::{Harness, kittest::Queryable};
     let mut modal = FileImportModal::new();
+    modal.load_saved_workflow(saved_workflows::WorkflowSelection::New);
     modal
         .workflow
         .steps
@@ -218,6 +219,14 @@ fn conditional_without_else_keeps_only_then_edge_after_background_clicks() {
         });
     style::apply(&harness.ctx);
     harness.run();
+    harness.run_steps(5);
+    if std::env::var("PHOTOBOOK_IMPORT_REVIEW_SNAPSHOT").is_ok() {
+        harness
+            .render()
+            .unwrap()
+            .save("/tmp/photobook-conditional-selection.png")
+            .unwrap();
+    }
     for _ in 0..3 {
         let buttons = harness
             .get_all_by_label("+")
@@ -756,8 +765,10 @@ fn preview_and_copy_agree_after_branching_and_filtering() {
         .unwrap();
     assert_eq!((preview.imported_count, preview.dropped_count), (2, 1));
     assert_eq!(std::fs::read_dir(destination.path()).unwrap().count(), 0);
-    import.run().unwrap();
+    let imported_paths = import.run().unwrap();
+    assert_eq!(imported_paths.len(), 2);
     for name in ["raw/day/9/photo.RAW", "day/9/photo.jpg"] {
+        assert!(imported_paths.contains(&destination.path().join(name)));
         assert!(destination.path().join(name).is_file());
         assert!(preview.items.iter().any(|item| item.path.ends_with(name)));
     }
@@ -987,6 +998,10 @@ fn graph_layout_fits_expanded_nodes_and_calendar_edits() {
         .unwrap()
         .and_utc();
     let modal = Arc::new(Mutex::new(FileImportModal::new()));
+    modal
+        .lock()
+        .unwrap()
+        .load_saved_workflow(saved_workflows::WorkflowSelection::New);
     modal.lock().unwrap().workflow.steps = vec![
         WorkflowStep::Filter(Condition::Compare {
             field: MetadataField::CaptureDateTime,
@@ -1134,4 +1149,120 @@ fn graph_layout_fits_expanded_nodes_and_calendar_edits() {
             .content_rect()
             .contains_rect(harness.get_by_label("Import preview").rect())
     );
+}
+
+#[test]
+fn import_dialog_adapts_to_narrow_windows_and_can_refit_workflow() {
+    use egui_kittest::{Harness, kittest::Queryable};
+
+    let mut harness = Harness::builder()
+        .with_size(egui::vec2(1440.0, 900.0))
+        .build_ui_state(
+            |ui, modal: &mut FileImportModal| {
+                egui::Modal::new(egui::Id::new("responsive_import"))
+                    .frame(style::dialog_frame())
+                    .show(ui.ctx(), |ui| {
+                        style::dialog_title(ui, modal.title());
+                        ui.add_space(12.0);
+                        modal.body_ui(ui);
+                        ui.add_space(24.0);
+                        egui::Sides::new().show(ui, |_| {}, |ui| modal.actions_ui(ui));
+                    });
+            },
+            FileImportModal::new(),
+        );
+    style::apply(&harness.ctx);
+    harness.run_steps(5);
+    harness.run();
+
+    assert!(harness.state().add_to_collection);
+    harness
+        .get_by_label("Add imported images to collection")
+        .click();
+    harness.run();
+    assert!(!harness.state().add_to_collection);
+
+    assert!(harness.query_by_label("Fit workflow").is_none());
+    assert!(harness.query_by_label("Save to").is_none());
+    assert!(harness.query_by_label("Direct import (modified)").is_none());
+    harness
+        .get_all_by_role(egui::accesskit::Role::ComboBox)
+        .next()
+        .unwrap()
+        .click();
+    harness.run();
+    harness.get_by_label("New workflow…").click();
+    harness.run();
+    assert!(harness.query_by_label("Save to").is_some());
+
+    let fit = harness.get_by_label("Fit workflow").rect();
+    let preview = harness.get_by_label("Import preview").rect();
+    assert!(preview.left() > fit.right());
+    assert!((preview.center().y - fit.center().y).abs() < 5.0);
+
+    harness.state_mut().graph.view.scene_rect = harness
+        .state()
+        .graph
+        .view
+        .scene_rect
+        .translate(egui::vec2(2000.0, 1000.0));
+    harness.run();
+    let panned = harness.state().graph.view.scene_rect;
+    harness.get_by_label("Fit workflow").click();
+    harness.run();
+    assert!((harness.state().graph.view.scene_rect.center() - panned.center()).length() > 500.0);
+    assert!(!harness.state().graph.fit_requested);
+
+    assert!(harness.query_by_label("Save to").is_some());
+
+    harness.set_size(egui::vec2(800.0, 700.0));
+    harness.run();
+    assert!(
+        harness.get_by_label("Import preview").rect().top()
+            > harness.get_by_label("Fit workflow").rect().bottom()
+    );
+
+    harness.set_size(egui::vec2(640.0, 640.0));
+    harness.run_steps(5);
+    harness.run();
+    assert!(
+        harness
+            .get_by_label("Choose destination folder…")
+            .rect()
+            .top()
+            > harness
+                .get_by_label("Choose source folder…")
+                .rect()
+                .bottom()
+    );
+    for label in ["Cancel", "Import"] {
+        assert!(
+            harness.ctx.content_rect().contains_rect(
+                harness
+                    .get_by_role_and_label(egui::accesskit::Role::Button, label)
+                    .rect()
+            )
+        );
+    }
+    if let Ok(path) = std::env::var("PHOTOBOOK_IMPORT_NARROW_SNAPSHOT") {
+        harness.render().unwrap().save(path).unwrap();
+    }
+}
+
+#[test]
+fn collection_import_reads_only_copied_supported_images() {
+    let destination = tempfile::tempdir().unwrap();
+    let imported = destination.path().join("imported.PNG");
+    let existing = destination.path().join("existing.png");
+    let missing = destination.path().join("missing.jpg");
+    let sidecar = destination.path().join("metadata.xmp");
+    let image = image::RgbImage::new(2, 2);
+    image.save(&imported).unwrap();
+    image.save(&existing).unwrap();
+    std::fs::write(&sidecar, b"metadata").unwrap();
+    let (photos, failures) =
+        FileImportModal::imported_photos(vec![imported.clone(), missing, sidecar]);
+    assert_eq!(failures, 1);
+    assert_eq!(photos.len(), 1);
+    assert_eq!(photos[0].path, imported);
 }

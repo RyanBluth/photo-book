@@ -67,70 +67,66 @@ impl FileImportModal {
 
     pub(super) fn preview_ui(&mut self, ui: &mut Ui) {
         let status = self.preview_state.lock().unwrap().status.clone();
-        egui::Frame::new()
-            .fill(color::SURFACE_DARK)
-            .stroke(egui::Stroke::new(1.0, color::SURFACE_MUTED))
-            .corner_radius(8)
-            .inner_margin(10)
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.strong(egui::RichText::new("Import preview").color(color::WHITE));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Refresh").clicked() {
-                            let mut state = self.preview_state.lock().unwrap();
-                            state.generation = state.generation.wrapping_add(1);
-                            state.active_key = None;
-                            state.cache_source = None;
-                            state.cached_files = None;
-                            state.status = ImportPreviewStatus::Idle;
+        Self::panel_frame().inner_margin(10).show(ui, |ui| {
+            ui.set_min_size(ui.available_size());
+            ui.horizontal(|ui| {
+                ui.strong(egui::RichText::new("Import preview").color(color::WHITE));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("Refresh").clicked() {
+                        let mut state = self.preview_state.lock().unwrap();
+                        state.generation = state.generation.wrapping_add(1);
+                        state.active_key = None;
+                        state.cache_source = None;
+                        state.cached_files = None;
+                        state.status = ImportPreviewStatus::Idle;
+                    }
+                });
+            });
+            ui.separator();
+            match status {
+                ImportPreviewStatus::Idle => {
+                    ui.weak("Choose source and destination folders to preview the import.");
+                }
+                ImportPreviewStatus::Loading => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Reading metadata and evaluating workflow…");
+                    });
+                }
+                ImportPreviewStatus::Error(error) => {
+                    ui.colored_label(color::ERROR, error);
+                }
+                ImportPreviewStatus::Ready(preview) => {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label(format!("{} files", preview.imported_count));
+                        if preview.dropped_count > 0 {
+                            ui.weak(format!("{} filtered out", preview.dropped_count));
                         }
                     });
-                });
-                ui.separator();
-                match status {
-                    ImportPreviewStatus::Idle => {
-                        ui.weak("Choose source and destination folders to preview the import.");
-                    }
-                    ImportPreviewStatus::Loading => {
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label("Reading metadata and evaluating workflow…");
-                        });
-                    }
-                    ImportPreviewStatus::Error(error) => {
-                        ui.colored_label(color::ERROR, error);
-                    }
-                    ImportPreviewStatus::Ready(preview) => {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(format!("{} files", preview.imported_count));
-                            if preview.dropped_count > 0 {
-                                ui.weak(format!("{} filtered out", preview.dropped_count));
-                            }
-                        });
-                        if !preview.conflicts.is_empty() {
-                            ui.colored_label(
-                                color::ERROR,
-                                format!(
-                                    "{} destination conflicts block import",
-                                    preview.conflicts.len()
-                                ),
-                            );
-                            for path in preview.conflicts.iter().take(3) {
-                                ui.small(format!("• {}", path.display()));
-                            }
-                            if preview.conflicts.len() > 3 {
-                                ui.weak(format!("…and {} more", preview.conflicts.len() - 3));
-                            }
+                    if !preview.conflicts.is_empty() {
+                        ui.colored_label(
+                            color::ERROR,
+                            format!(
+                                "{} destination conflicts block import",
+                                preview.conflicts.len()
+                            ),
+                        );
+                        for path in preview.conflicts.iter().take(3) {
+                            ui.small(format!("• {}", path.display()));
                         }
-                        ui.add_space(4.0);
-                        if preview.imported_count == 0 {
-                            ui.weak("No files match the current workflow.");
-                        } else {
-                            self.preview_tree_ui(ui, &preview);
+                        if preview.conflicts.len() > 3 {
+                            ui.weak(format!("…and {} more", preview.conflicts.len() - 3));
                         }
+                    }
+                    ui.add_space(4.0);
+                    if preview.imported_count == 0 {
+                        ui.weak("No files match the current workflow.");
+                    } else {
+                        self.preview_tree_ui(ui, &preview);
                     }
                 }
-            });
+            }
+        });
     }
 
     fn preview_tree_ui(&mut self, ui: &mut Ui, preview: &ImportPreview) {

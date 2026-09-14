@@ -585,7 +585,7 @@ impl FileImportWorkflow {
         }
     }
 
-    pub(super) fn run(&self) -> Result<(), FileImportWorkflowError> {
+    pub(super) fn run(&self) -> Result<Vec<PathBuf>, FileImportWorkflowError> {
         let (_, destination_path) = self.validate_paths()?;
         let files = self.scan_source()?;
         let results = self.evaluate(&files, destination_path)?;
@@ -595,10 +595,12 @@ impl FileImportWorkflow {
         {
             return Err(FileImportWorkflowError::DestinationConflict(conflict));
         }
+        let mut imported_paths = Vec::with_capacity(results.len());
         for result in results {
             Self::copy(&result)?;
+            imported_paths.push(result.output_path);
         }
-        Ok(())
+        Ok(imported_paths)
     }
 
     fn validate_paths(&self) -> Result<(&Path, &Path), FileImportWorkflowError> {
