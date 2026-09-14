@@ -9,6 +9,12 @@ use thiserror::Error;
 use crate::{
     dep, dep_mut,
     id::{LayerId, PageId, next_page_id, set_min_layer_id},
+    modal::file_import::workflow::{
+        ComparisonOperator as AppComparisonOperator, Condition as AppCondition,
+        FileWorkflow as AppFileWorkflow, MetadataField as AppMetadataField,
+        MetadataValue as AppMetadataValue, SubdirectoryTemplate as AppSubdirectoryTemplate,
+        WorkflowStep as AppWorkflowStep,
+    },
     model::{
         album::Album as AppAlbum,
         edit_state::EditablePage,
@@ -58,7 +64,7 @@ use crate::{
     },
 };
 
-pub const PROJECT_VERSION: u32 = 12;
+pub const PROJECT_VERSION: u32 = 13;
 
 #[derive(Error, Debug)]
 #[allow(clippy::enum_variant_names)]
@@ -270,6 +276,7 @@ pub struct ProjectPreferences {
     pub left_sidebar_open: bool,
     pub log_viewer_open: bool,
     pub workspace_tabs: ProjectWorkspaceTabs,
+    pub import_workflows: Vec<NamedWorkflow>,
 }
 
 impl Default for ProjectPreferences {
@@ -279,6 +286,7 @@ impl Default for ProjectPreferences {
             left_sidebar_open: true,
             log_viewer_open: false,
             workspace_tabs: ProjectWorkspaceTabs::default(),
+            import_workflows: Vec::new(),
         }
     }
 }
@@ -1717,6 +1725,258 @@ impl From<Album> for AppAlbum {
             id,
             name: album.name,
             photos: album.photos,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct NamedWorkflow {
+    pub name: String,
+    pub workflow: FileWorkflow,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Savefile)]
+pub struct FileWorkflow {
+    pub steps: Vec<WorkflowStep>,
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum WorkflowStep {
+    Filter(Condition),
+    AppendSubdirectory(SubdirectoryTemplate),
+    Conditional {
+        condition: Condition,
+        then_workflow: FileWorkflow,
+        else_workflow: Option<FileWorkflow>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum MetadataField {
+    Extension,
+    FileName,
+    FileSize,
+    ModifiedDateTime,
+    CaptureDateTime,
+    Iso,
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum MetadataValue {
+    Text(String),
+    Integer(u64),
+    DateTime(DateTime<Utc>),
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum Condition {
+    Compare {
+        field: MetadataField,
+        operator: ComparisonOperator,
+        value: MetadataValue,
+    },
+    Exists(MetadataField),
+    And(Vec<Condition>),
+    Or(Vec<Condition>),
+    Not(Box<Condition>),
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub enum ComparisonOperator {
+    Equal,
+    Greater,
+    Less,
+    GreaterOrEqual,
+    LessOrEqual,
+}
+
+#[derive(Debug, Clone, PartialEq, Savefile)]
+pub struct SubdirectoryTemplate {
+    pub template: String,
+}
+
+impl From<AppFileWorkflow> for FileWorkflow {
+    fn from(value: AppFileWorkflow) -> Self {
+        Self {
+            steps: value.steps.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<AppSubdirectoryTemplate> for SubdirectoryTemplate {
+    fn from(value: AppSubdirectoryTemplate) -> Self {
+        Self {
+            template: value.template,
+        }
+    }
+}
+
+impl From<AppWorkflowStep> for WorkflowStep {
+    fn from(value: AppWorkflowStep) -> Self {
+        match value {
+            AppWorkflowStep::Filter(condition) => Self::Filter(condition.into()),
+            AppWorkflowStep::AppendSubdirectory(template) => {
+                Self::AppendSubdirectory(template.into())
+            }
+            AppWorkflowStep::Conditional {
+                condition,
+                then_workflow,
+                else_workflow,
+            } => Self::Conditional {
+                condition: condition.into(),
+                then_workflow: then_workflow.into(),
+                else_workflow: else_workflow.map(Into::into),
+            },
+        }
+    }
+}
+
+impl From<AppCondition> for Condition {
+    fn from(value: AppCondition) -> Self {
+        match value {
+            AppCondition::Compare {
+                field,
+                operator,
+                value,
+            } => Self::Compare {
+                field: field.into(),
+                operator: operator.into(),
+                value: value.into(),
+            },
+            AppCondition::Exists(field) => Self::Exists(field.into()),
+            AppCondition::And(conditions) => {
+                Self::And(conditions.into_iter().map(Into::into).collect())
+            }
+            AppCondition::Or(conditions) => {
+                Self::Or(conditions.into_iter().map(Into::into).collect())
+            }
+            AppCondition::Not(condition) => Self::Not(Box::new((*condition).into())),
+        }
+    }
+}
+
+impl From<AppMetadataField> for MetadataField {
+    fn from(value: AppMetadataField) -> Self {
+        match value {
+            AppMetadataField::Extension => Self::Extension,
+            AppMetadataField::FileName => Self::FileName,
+            AppMetadataField::FileSize => Self::FileSize,
+            AppMetadataField::ModifiedDateTime => Self::ModifiedDateTime,
+            AppMetadataField::CaptureDateTime => Self::CaptureDateTime,
+            AppMetadataField::Iso => Self::Iso,
+        }
+    }
+}
+
+impl From<AppComparisonOperator> for ComparisonOperator {
+    fn from(value: AppComparisonOperator) -> Self {
+        match value {
+            AppComparisonOperator::Equal => Self::Equal,
+            AppComparisonOperator::Greater => Self::Greater,
+            AppComparisonOperator::Less => Self::Less,
+            AppComparisonOperator::GreaterOrEqual => Self::GreaterOrEqual,
+            AppComparisonOperator::LessOrEqual => Self::LessOrEqual,
+        }
+    }
+}
+
+impl From<AppMetadataValue> for MetadataValue {
+    fn from(value: AppMetadataValue) -> Self {
+        match value {
+            AppMetadataValue::Text(value) => Self::Text(value),
+            AppMetadataValue::Integer(value) => Self::Integer(value),
+            AppMetadataValue::DateTime(value) => Self::DateTime(value),
+        }
+    }
+}
+
+impl From<FileWorkflow> for AppFileWorkflow {
+    fn from(value: FileWorkflow) -> Self {
+        Self {
+            steps: value.steps.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<SubdirectoryTemplate> for AppSubdirectoryTemplate {
+    fn from(value: SubdirectoryTemplate) -> Self {
+        Self {
+            template: value.template,
+        }
+    }
+}
+
+impl From<WorkflowStep> for AppWorkflowStep {
+    fn from(value: WorkflowStep) -> Self {
+        match value {
+            WorkflowStep::Filter(condition) => Self::Filter(condition.into()),
+            WorkflowStep::AppendSubdirectory(template) => Self::AppendSubdirectory(template.into()),
+            WorkflowStep::Conditional {
+                condition,
+                then_workflow,
+                else_workflow,
+            } => Self::Conditional {
+                condition: condition.into(),
+                then_workflow: then_workflow.into(),
+                else_workflow: else_workflow.map(Into::into),
+            },
+        }
+    }
+}
+
+impl From<Condition> for AppCondition {
+    fn from(value: Condition) -> Self {
+        match value {
+            Condition::Compare {
+                field,
+                operator,
+                value,
+            } => Self::Compare {
+                field: field.into(),
+                operator: operator.into(),
+                value: value.into(),
+            },
+            Condition::Exists(field) => Self::Exists(field.into()),
+            Condition::And(conditions) => {
+                Self::And(conditions.into_iter().map(Into::into).collect())
+            }
+            Condition::Or(conditions) => Self::Or(conditions.into_iter().map(Into::into).collect()),
+            Condition::Not(condition) => Self::Not(Box::new((*condition).into())),
+        }
+    }
+}
+
+impl From<MetadataField> for AppMetadataField {
+    fn from(value: MetadataField) -> Self {
+        match value {
+            MetadataField::Extension => Self::Extension,
+            MetadataField::FileName => Self::FileName,
+            MetadataField::FileSize => Self::FileSize,
+            MetadataField::ModifiedDateTime => Self::ModifiedDateTime,
+            MetadataField::CaptureDateTime => Self::CaptureDateTime,
+            MetadataField::Iso => Self::Iso,
+        }
+    }
+}
+
+impl From<ComparisonOperator> for AppComparisonOperator {
+    fn from(value: ComparisonOperator) -> Self {
+        match value {
+            ComparisonOperator::Equal => Self::Equal,
+            ComparisonOperator::Greater => Self::Greater,
+            ComparisonOperator::Less => Self::Less,
+            ComparisonOperator::GreaterOrEqual => Self::GreaterOrEqual,
+            ComparisonOperator::LessOrEqual => Self::LessOrEqual,
+        }
+    }
+}
+
+impl From<MetadataValue> for AppMetadataValue {
+    fn from(value: MetadataValue) -> Self {
+        match value {
+            MetadataValue::Text(value) => Self::Text(value),
+            MetadataValue::Integer(value) => Self::Integer(value),
+            MetadataValue::DateTime(value) => Self::DateTime(value),
         }
     }
 }

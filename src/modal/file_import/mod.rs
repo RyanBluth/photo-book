@@ -3,7 +3,8 @@ mod graph_model;
 mod node_editor;
 mod preview;
 mod preview_tree;
-mod workflow;
+mod saved_workflows;
+pub(crate) mod workflow;
 
 #[cfg(test)]
 mod tests;
@@ -39,6 +40,7 @@ pub struct FileImportModal {
     graph: WorkflowGraphState,
     preview_state: Arc<Mutex<ImportPreviewState>>,
     preview_expanded: HashSet<PathBuf>,
+    saved_workflows: saved_workflows::SavedWorkflowState,
 }
 
 impl FileImportModal {
@@ -50,6 +52,7 @@ impl FileImportModal {
             graph: WorkflowGraphState::default(),
             preview_state: Arc::new(Mutex::new(ImportPreviewState::default())),
             preview_expanded: HashSet::new(),
+            saved_workflows: saved_workflows::SavedWorkflowState::default(),
         }
     }
 
@@ -136,6 +139,7 @@ impl Modal for FileImportModal {
             ui.add_space(16.0);
             ui.heading("Workflow");
             ui.label("Build the import from left to right. Each file follows the connected steps.");
+            self.saved_workflows_ui(ui);
             ui.add_space(8.0);
 
             {
@@ -157,7 +161,7 @@ impl Modal for FileImportModal {
                 );
                 ui.scope_builder(
                     egui::UiBuilder::new()
-                        .id_salt("workflow_editor")
+                        .id_salt(("workflow_editor", self.saved_workflows.revision))
                         .max_rect(graph_rect)
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                     |ui| {

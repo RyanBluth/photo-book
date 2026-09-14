@@ -110,12 +110,12 @@ pub(super) struct CachedImportFile {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(super) struct FileWorkflow {
-    pub(super) steps: Vec<WorkflowStep>,
+pub(crate) struct FileWorkflow {
+    pub(crate) steps: Vec<WorkflowStep>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) enum WorkflowStep {
+pub(crate) enum WorkflowStep {
     Filter(Condition),
     AppendSubdirectory(SubdirectoryTemplate),
     Conditional {
@@ -126,7 +126,7 @@ pub(super) enum WorkflowStep {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) enum MetadataField {
+pub(crate) enum MetadataField {
     Extension,
     FileName,
     FileSize,
@@ -203,7 +203,7 @@ impl std::fmt::Display for MetadataField {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) enum MetadataValue {
+pub(crate) enum MetadataValue {
     Text(String),
     Integer(u64),
     DateTime(DateTime<Utc>),
@@ -220,7 +220,7 @@ impl MetadataValue {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) enum Condition {
+pub(crate) enum Condition {
     Compare {
         field: MetadataField,
         operator: ComparisonOperator,
@@ -233,7 +233,7 @@ pub(super) enum Condition {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) enum ComparisonOperator {
+pub(crate) enum ComparisonOperator {
     Equal,
     Greater,
     Less,
@@ -423,8 +423,8 @@ impl FileWorkflowStepResult {
 /// `{{extension}}`, `{{file_name}}`, `{{file_size}}`, `{{capture_date}}`, and
 /// `{{modified_date}}`. Date variables accept a chrono format after a colon.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct SubdirectoryTemplate {
-    pub(super) template: String,
+pub(crate) struct SubdirectoryTemplate {
+    pub(crate) template: String,
 }
 
 impl SubdirectoryTemplate {
