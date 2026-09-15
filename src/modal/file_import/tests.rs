@@ -1266,3 +1266,57 @@ fn collection_import_reads_only_copied_supported_images() {
     assert_eq!(photos.len(), 1);
     assert_eq!(photos[0].path, imported);
 }
+
+#[test]
+fn native_file_dialog_completion_updates_only_its_target() {
+    for target in [
+        NativeFileDialogTarget::Source,
+        NativeFileDialogTarget::Destination,
+    ] {
+        let mut modal = FileImportModal::new();
+        let old_source = PathBuf::from("old-source");
+        let old_destination = PathBuf::from("old-destination");
+        modal.source_path = Some(old_source.clone());
+        modal.destination_path = Some(old_destination.clone());
+        let (send, recv) = oneshot::channel();
+        modal.native_file_dialog = Some((target, recv));
+        modal.poll_native_file_dialog();
+        assert!(modal.native_file_dialog.is_some());
+        let selected = PathBuf::from("selected");
+        send.send(Ok(Some(selected.clone()))).unwrap();
+        modal.poll_native_file_dialog();
+        assert!(modal.native_file_dialog.is_none());
+        assert_eq!(
+            modal.source_path,
+            Some(match target {
+                NativeFileDialogTarget::Source => selected.clone(),
+                NativeFileDialogTarget::Destination => old_source,
+            })
+        );
+        assert_eq!(
+            modal.destination_path,
+            Some(match target {
+                NativeFileDialogTarget::Source => old_destination,
+                NativeFileDialogTarget::Destination => selected,
+            })
+        );
+    }
+}
+
+#[test]
+fn native_file_dialog_cancel_and_disconnect_preserve_selection() {
+    for cancelled in [true, false] {
+        let mut modal = FileImportModal::new();
+        modal.source_path = Some(PathBuf::from("existing"));
+        let (send, recv) = oneshot::channel();
+        modal.native_file_dialog = Some((NativeFileDialogTarget::Source, recv));
+        if cancelled {
+            send.send(Ok(None)).unwrap();
+        } else {
+            drop(send);
+        }
+        modal.poll_native_file_dialog();
+        assert!(modal.native_file_dialog.is_none());
+        assert_eq!(modal.source_path, Some(PathBuf::from("existing")));
+    }
+}

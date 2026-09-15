@@ -16,8 +16,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use tokio::sync::oneshot;
+
 use crate::{
     dep, dep_mut,
+    file_dialog::{self, FileDialogResult},
     modal::{
         Modal, ModalActionResponse, basic::BasicModal, manager::ModalManager,
         progress::ProgressModal,
@@ -36,10 +39,17 @@ use self::{
 #[allow(unused_imports)]
 pub use workflow::FileImportWorkflowError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NativeFileDialogTarget {
+    Source,
+    Destination,
+}
+
 pub struct FileImportModal {
     source_path: Option<PathBuf>,
     destination_path: Option<PathBuf>,
     add_to_collection: bool,
+    native_file_dialog: Option<(NativeFileDialogTarget, oneshot::Receiver<FileDialogResult>)>,
     workflow: FileWorkflow,
     graph: WorkflowGraphState,
     preview_state: Arc<Mutex<ImportPreviewState>>,
@@ -53,12 +63,49 @@ impl FileImportModal {
             source_path: None,
             destination_path: None,
             add_to_collection: true,
+            native_file_dialog: None,
             workflow: FileWorkflow::default(),
             graph: WorkflowGraphState::default(),
             preview_state: Arc::new(Mutex::new(ImportPreviewState::default())),
             preview_expanded: HashSet::new(),
             saved_workflows: saved_workflows::SavedWorkflowState::default(),
         }
+    }
+
+    fn open_native_file_dialog(&mut self, target: NativeFileDialogTarget, ctx: &egui::Context) {
+        // The synchronous macOS dialog changes the app's activation policy and can
+        // hide its window. Keep the native event loop running with the async API.
+        let dialog = native_dialog::DialogBuilder::file()
+            .open_single_dir()
+            .spawn();
+        let (send, recv) = oneshot::channel();
+        self.native_file_dialog = Some((target, recv));
+        file_dialog::spawn(dialog, ctx.clone(), move |result, _| {
+            let _ = send.send(result);
+        });
+    }
+
+    fn poll_native_file_dialog(&mut self) {
+        let Some((target, recv)) = &mut self.native_file_dialog else {
+            return;
+        };
+        let target = *target;
+        match recv.try_recv() {
+            Ok(Ok(Some(path))) => match target {
+                NativeFileDialogTarget::Source => self.source_path = Some(path),
+                NativeFileDialogTarget::Destination => self.destination_path = Some(path),
+            },
+            Ok(Err(error)) => {
+                ModalManager::push(BasicModal::new(
+                    "Unable to Open Folder",
+                    error.to_string(),
+                    "OK",
+                ));
+            }
+            Ok(Ok(None)) | Err(oneshot::error::TryRecvError::Closed) => {}
+            Err(oneshot::error::TryRecvError::Empty) => return,
+        }
+        self.native_file_dialog = None;
     }
 
     fn start_import(&self, ctx: &egui::Context) {
@@ -148,11 +195,14 @@ impl Modal for FileImportModal {
     }
 
     fn body_ui(&mut self, ui: &mut egui::Ui) {
+        self.poll_native_file_dialog();
         self.import_body_ui(ui);
     }
 
     fn actions_ui(&mut self, ui: &mut egui::Ui) -> Option<Self::Response> {
-        let can_import = self.source_path.is_some() && self.destination_path.is_some();
+        let can_import = self.native_file_dialog.is_none()
+            && self.source_path.is_some()
+            && self.destination_path.is_some();
         if style::primary_button_enabled(ui, can_import, "Import").clicked() {
             self.start_import(ui.ctx());
 

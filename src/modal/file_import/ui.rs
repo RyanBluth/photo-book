@@ -1,8 +1,10 @@
 use std::path::PathBuf;
 
+use egui::{RichText, ScrollArea};
+
 use crate::theme::color;
 
-use super::FileImportModal;
+use super::{FileImportModal, NativeFileDialogTarget};
 
 impl FileImportModal {
     pub(super) fn panel_frame() -> egui::Frame {
@@ -16,30 +18,48 @@ impl FileImportModal {
     fn directory_selectors_ui(&mut self, ui: &mut egui::Ui) {
         let selectors = [
             (
+                NativeFileDialogTarget::Source,
                 "Source folder",
                 "Photos and metadata are read from here.",
                 "Choose source folder…",
-                &mut self.source_path,
+                &self.source_path,
             ),
             (
+                NativeFileDialogTarget::Destination,
                 "Destination folder",
                 "The workflow builds the imported structure here.",
                 "Choose destination folder…",
-                &mut self.destination_path,
+                &self.destination_path,
             ),
         ];
+        let mut selected_target = None;
+        let enabled = self.native_file_dialog.is_none();
         if ui.available_width() >= 700.0 {
             ui.columns(2, |columns| {
-                for (ui, (title, description, placeholder, path)) in
+                for (ui, (target, title, description, placeholder, path)) in
                     columns.iter_mut().zip(selectors)
                 {
-                    Self::directory_selector_ui(ui, title, description, placeholder, path);
+                    if Self::directory_selector_ui(
+                        ui,
+                        title,
+                        description,
+                        placeholder,
+                        path,
+                        enabled,
+                    ) {
+                        selected_target = Some(target);
+                    }
                 }
             });
         } else {
-            for (title, description, placeholder, path) in selectors {
-                Self::directory_selector_ui(ui, title, description, placeholder, path);
+            for (target, title, description, placeholder, path) in selectors {
+                if Self::directory_selector_ui(ui, title, description, placeholder, path, enabled) {
+                    selected_target = Some(target);
+                }
             }
+        }
+        if let Some(target) = selected_target {
+            self.open_native_file_dialog(target, ui.ctx());
         }
     }
 
@@ -48,16 +68,21 @@ impl FileImportModal {
         title: &str,
         description: &str,
         placeholder: &str,
-        path: &mut Option<PathBuf>,
-    ) {
+        path: &Option<PathBuf>,
+        enabled: bool,
+    ) -> bool {
+        let mut clicked = false;
         Self::panel_frame().show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(egui::RichText::new(title).strong().color(color::WHITE));
+            ui.label(RichText::new(title).strong().color(color::WHITE));
             ui.add_space(2.0);
 
             let display_path = path
                 .as_deref()
                 .map_or_else(|| placeholder.to_owned(), |path| path.display().to_string());
+            if !enabled {
+                ui.disable();
+            }
             let response = ui.add_sized(
                 egui::vec2(ui.available_width(), 32.0),
                 egui::Button::new(display_path)
@@ -73,22 +98,17 @@ impl FileImportModal {
             } else {
                 response.on_hover_text("Click to choose a folder")
             };
-            if response.clicked()
-                && let Ok(Some(selected_path)) = native_dialog::DialogBuilder::file()
-                    .open_single_dir()
-                    .show()
-            {
-                *path = Some(selected_path);
-            }
-            ui.small(egui::RichText::new(description).color(color::CONTROL_TEXT));
+            clicked = response.clicked();
+            ui.small(RichText::new(description).color(color::CONTROL_TEXT));
         });
+        clicked
     }
 
     pub(super) fn import_body_ui(&mut self, ui: &mut egui::Ui) {
         let viewport = ui.ctx().content_rect().size();
         ui.set_width((viewport.x - 64.0).clamp(240.0, 1500.0));
         let body_height = (viewport.y - 210.0).clamp(180.0, 820.0);
-        egui::ScrollArea::vertical()
+        ScrollArea::vertical()
             .id_salt("import_dialog_body")
             .max_height(body_height)
             .auto_shrink([false, false])

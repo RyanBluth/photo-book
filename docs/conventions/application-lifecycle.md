@@ -9,6 +9,11 @@ the runtime. Do not add `#[tokio::main]` around code that constructs another run
 CPU-bound work and blocking file/compression work belongs in `spawn_blocking`. Every operation must
 have an explicit ready, error, timeout, and (when user initiated) cancellation path.
 
+Native file dialogs use the asynchronous `.spawn()` API and `file_dialog::spawn` for completion
+and repaint. Avoid synchronous `.show()` inside UI code: native-dialog's macOS implementation
+changes the application's activation policy while an unowned modal is open, which can hide the
+main window. Keep pending dialog results in the owning UI state and preserve selection on cancel.
+
 ## Keyboard ownership
 
 Canvas and viewer shortcuts are local commands, not global input listeners. Their primary surface
