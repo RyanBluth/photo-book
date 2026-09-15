@@ -141,8 +141,7 @@ fn run_native_app() -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_maximize_button(true)
-            .with_inner_size((1440.0, 960.0))
-            .with_min_inner_size((900.0, 600.0)),
+            .with_maximized(true),
         renderer: eframe::Renderer::Wgpu,
         wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
             wgpu_setup: eframe::egui_wgpu::WgpuSetup::CreateNew(
