@@ -324,13 +324,15 @@ impl<'a> ImageGallery<'a> {
                     ModalManager::push(NewAlbumModal::with_photos(vec![photo.path.clone()]));
                 }
 
-                ui.separator();
+                if !not_belongs_to_albums.is_empty() {
+                    ui.separator();
 
-                for album in &not_belongs_to_albums {
-                    if ui.button(&album.name).clicked() {
-                        dep_mut!(PhotoManager, |photo_manager| {
-                            photo_manager.add_to_album(&album.id, &photo.path);
-                        });
+                    for album in &not_belongs_to_albums {
+                        if ui.button(&album.name).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                photo_manager.add_to_album(&album.id, &photo.path);
+                            });
+                        }
                     }
                 }
             });
