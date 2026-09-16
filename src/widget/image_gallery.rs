@@ -1,6 +1,5 @@
 use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
+    collections::HashSet, path::{Path, PathBuf}, sync::Arc,
 };
 
 use eframe::{egui::Key, epaint::Vec2};
@@ -15,7 +14,7 @@ use indexmap::IndexMap;
 use crate::{
     assets::Asset,
     dep, dep_mut,
-    modal::{manager::ModalManager, new_album::NewAlbumModal},
+    modal::{manager::ModalManager, new_album::NewAlbumModal, new_tag::NewTagModal},
     model::{album::Album, photo_grouping::PhotoGrouping},
     photo::Photo,
     photo_database::PhotoQuery,
@@ -238,7 +237,18 @@ impl<'a> ImageGallery<'a> {
                                             );
                                             let image_response = ui.add(image);
 
-                                            Self::image_context_menu(photo, &image_response);
+                                            if selection_snapshot.selected_paths.len() > 1
+                                                && selection_snapshot
+                                                    .selected_paths
+                                                    .contains(&photo.path)
+                                            {
+                                                Self::multi_image_context_menu(
+                                                    &image_response,
+                                                    &selection_snapshot.selected_paths,
+                                                );
+                                            } else {
+                                                Self::image_context_menu(photo, &image_response);
+                                            }
 
                                             if image_response.clicked() {
                                                 let ordered_photo_paths = query_result
@@ -318,6 +328,19 @@ impl<'a> ImageGallery<'a> {
             (photo_albums, not_belongs_to_albums)
         });
 
+        let (has_tags, not_has_tags) = dep!(PhotoManager, |photo_manager| {
+            let photo_tags = photo_manager.get_photo_tags(&photo.path);
+            let all_tags = photo_manager.all_tags();
+
+            let not_has_tags = all_tags
+                .iter()
+                .filter(|tag| !photo_tags.contains(*tag))
+                .cloned()
+                .collect::<Vec<_>>();
+
+            (photo_tags, not_has_tags)
+        });
+
         let _ = image_response.context_menu(|ui| {
             ui.menu_button("Add to album", |ui| {
                 if ui.button("New Album").clicked() {
@@ -347,6 +370,152 @@ impl<'a> ImageGallery<'a> {
                                     photo_manager.remove_from_album(&album.id, &photo.path);
                                 });
                             }
+                        }
+                    }
+                });
+            }
+
+            ui.menu_button("Add tag", |ui| {
+                if ui.button("New Tag").clicked() {
+                    ModalManager::push(NewTagModal::with_photos(vec![photo.path.clone()]));
+                }
+
+                if !not_has_tags.is_empty() {
+                    for tag in not_has_tags {
+                        if ui.button(&tag).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                photo_manager.add_photo_tag(&photo.path, tag.clone());
+                            });
+                        }
+                    }
+                }
+            });
+
+            if !has_tags.is_empty() {
+                ui.menu_button("Remove tag", |ui| {
+                    for tag in has_tags {
+                        if ui.button(&tag).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                photo_manager.remove_photo_tag(&photo.path, &tag);
+                            });
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    fn multi_image_context_menu(response: &Response, photo_paths: &HashSet<PathBuf>) {
+        let photo_paths: Vec<PathBuf> = photo_paths.iter().cloned().collect();
+
+        let (addable_albums, removable_albums) = dep!(PhotoManager, |photo_manager| {
+            let mut addable_albums = Vec::new();
+            let mut removable_albums = Vec::new();
+
+            for album in photo_manager.albums_iter().cloned() {
+                let contained_count = photo_paths
+                    .iter()
+                    .filter(|path| album.photos.contains(path.as_path()))
+                    .count();
+
+                if contained_count < photo_paths.len() {
+                    addable_albums.push(album.clone());
+                }
+                if contained_count > 0 {
+                    removable_albums.push(album);
+                }
+            }
+
+            (addable_albums, removable_albums)
+        });
+
+        let (addable_tags, removable_tags) = dep!(PhotoManager, |photo_manager| {
+            let photo_tag_sets: Vec<HashSet<String>> = photo_paths
+                .iter()
+                .map(|path| photo_manager.get_photo_tags(path))
+                .collect();
+
+            let mut shared_tags = photo_tag_sets.first().cloned().unwrap_or_default();
+            let mut any_tags = HashSet::new();
+            for tags in &photo_tag_sets {
+                shared_tags = shared_tags.intersection(tags).cloned().collect();
+                any_tags.extend(tags.iter().cloned());
+            }
+
+            let addable_tags = photo_manager
+                .all_tags()
+                .into_iter()
+                .filter(|tag| !shared_tags.contains(tag))
+                .collect::<Vec<_>>();
+
+            let mut removable_tags: Vec<String> = any_tags.into_iter().collect();
+            removable_tags.sort();
+
+            (addable_tags, removable_tags)
+        });
+
+        let _ = response.context_menu(|ui| {
+            ui.menu_button("Add to album", |ui| {
+                if ui.button("New Album").clicked() {
+                    ModalManager::push(NewAlbumModal::with_photos(photo_paths.clone()));
+                }
+
+                if !addable_albums.is_empty() {
+                    ui.separator();
+
+                    for album in &addable_albums {
+                        if ui.button(&album.name).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                for path in &photo_paths {
+                                    photo_manager.add_to_album(&album.id, path);
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+
+            if !removable_albums.is_empty() {
+                ui.menu_button("Remove from album", |ui| {
+                    for album in &removable_albums {
+                        if ui.button(&album.name).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                for path in &photo_paths {
+                                    photo_manager.remove_from_album(&album.id, path);
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+
+            ui.menu_button("Add tag", |ui| {
+                if ui.button("New Tag").clicked() {
+                    ModalManager::push(NewTagModal::with_photos(photo_paths.clone()));
+                }
+
+                if !addable_tags.is_empty() {
+                    for tag in &addable_tags {
+                        if ui.button(tag).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                for path in &photo_paths {
+                                    photo_manager.add_photo_tag(path, tag.clone());
+                                }
+                            });
+                        }
+                    }
+                }
+            });
+
+            if !removable_tags.is_empty() {
+                ui.menu_button("Remove tag", |ui| {
+                    for tag in &removable_tags {
+                        if ui.button(tag).clicked() {
+                            dep_mut!(PhotoManager, |photo_manager| {
+                                for path in &photo_paths {
+                                    photo_manager.remove_photo_tag(path, tag);
+                                }
+                            });
                         }
                     }
                 });

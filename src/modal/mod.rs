@@ -5,6 +5,7 @@ pub mod file_import;
 pub mod manager;
 pub mod name_prompt;
 pub mod new_album;
+pub mod new_tag;
 pub mod page_settings;
 pub mod photo_filter;
 pub mod progress;
