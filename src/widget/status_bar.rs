@@ -70,19 +70,6 @@ impl StatusBar {
                 response.log_viewer_toggled = true;
             }
 
-            if IconButton::new(Asset::sidebar_left())
-                .active(preferences.left_sidebar_open)
-                .ui(ui)
-                .on_hover_text("Toggle left sidebar")
-                .clicked()
-            {
-                dep_mut!(Session, |session| {
-                    session.project_preferences.left_sidebar_open =
-                        !session.project_preferences.left_sidebar_open;
-                });
-                response.left_sidebar_toggled = true;
-            }
-
             if IconButton::new(Asset::sidebar_right())
                 .active(preferences.right_sidebar_open)
                 .ui(ui)
@@ -94,6 +81,19 @@ impl StatusBar {
                         !session.project_preferences.right_sidebar_open;
                 });
                 response.right_sidebar_toggled = true;
+            }
+
+            if IconButton::new(Asset::sidebar_left())
+                .active(preferences.left_sidebar_open)
+                .ui(ui)
+                .on_hover_text("Toggle left sidebar")
+                .clicked()
+            {
+                dep_mut!(Session, |session| {
+                    session.project_preferences.left_sidebar_open =
+                        !session.project_preferences.left_sidebar_open;
+                });
+                response.left_sidebar_toggled = true;
             }
         });
     }
