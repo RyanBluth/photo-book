@@ -24,7 +24,6 @@ use crate::{
         name_prompt::{NamePromptModal, NamePromptResponse},
         page_settings::PageSettingsModal,
     },
-    model::photo_grouping::PhotoGrouping,
     photo_manager::PhotoManager,
     project::ProjectPreferences,
     project_settings::ProjectSettingsManager,
@@ -81,8 +80,7 @@ pub enum MenuCommand {
     AddToCollection,
     ImportFiles,
     Export,
-    GroupByDate,
-    GroupByRating,
+
     PageSettings,
     ToggleQuickLayoutNumbers,
 }
@@ -417,16 +415,7 @@ impl OrganizeEditScene {
             MenuCommand::Export => {
                 self.export_selected_book(ctx);
             }
-            MenuCommand::GroupByDate => {
-                dep_mut!(PhotoManager, |photo_manager| {
-                    photo_manager.group_photos_by(PhotoGrouping::Date);
-                });
-            }
-            MenuCommand::GroupByRating => {
-                dep_mut!(PhotoManager, |photo_manager| {
-                    photo_manager.group_photos_by(PhotoGrouping::Rating);
-                });
-            }
+
             MenuCommand::PageSettings => {
                 self.page_settings_modal_id = Some(ModalManager::push(PageSettingsModal::new()));
             }
@@ -682,17 +671,8 @@ impl OrganizeEditScene {
                         }
                     });
 
-                    ui.menu_button("Group By", |ui| {
-                        if ui.button("Date").clicked() {
-                            self.handle_menu_command(MenuCommand::GroupByDate, ui.ctx());
-                        }
-                        if ui.button("Rating").clicked() {
-                            self.handle_menu_command(MenuCommand::GroupByRating, ui.ctx());
-                        }
-                    });
-
-                    ui.menu_button("Collection Settings", |ui| {
-                        if ui.button("Page Settings").clicked() {
+                    ui.menu_button("Edit", |ui| {
+                        if ui.button("Settings").clicked() {
                             self.handle_menu_command(MenuCommand::PageSettings, ui.ctx());
                         }
                     });

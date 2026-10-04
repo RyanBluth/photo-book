@@ -73,15 +73,6 @@ define_class!(
             push_command(MenuCommand::Export);
         }
 
-        #[unsafe(method(groupByDate:))]
-        fn group_by_date(&self, _sender: &AnyObject) {
-            push_command(MenuCommand::GroupByDate);
-        }
-
-        #[unsafe(method(groupByRating:))]
-        fn group_by_rating(&self, _sender: &AnyObject) {
-            push_command(MenuCommand::GroupByRating);
-        }
 
         #[unsafe(method(openPageSettings:))]
         fn open_page_settings(&self, _sender: &AnyObject) {
@@ -200,32 +191,11 @@ fn create_global_menu(handler: &NativeMenuHandler) {
         );
     });
 
-    add_submenu(mtm, &main_menu, "Group By", |menu| {
+    add_submenu(mtm, &main_menu, "Edit", |menu| {
         add_command_item(
             mtm,
             menu,
-            "Date",
-            sel!(groupByDate:),
-            "",
-            NSEventModifierFlags::empty(),
-            handler,
-        );
-        add_command_item(
-            mtm,
-            menu,
-            "Rating",
-            sel!(groupByRating:),
-            "",
-            NSEventModifierFlags::empty(),
-            handler,
-        );
-    });
-
-    add_submenu(mtm, &main_menu, "Collection Settings", |menu| {
-        add_command_item(
-            mtm,
-            menu,
-            "Page Settings...",
+            "Settings",
             sel!(openPageSettings:),
             ",",
             NSEventModifierFlags::Command,
