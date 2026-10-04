@@ -74,9 +74,9 @@ define_class!(
         }
 
 
-        #[unsafe(method(openPageSettings:))]
-        fn open_page_settings(&self, _sender: &AnyObject) {
-            push_command(MenuCommand::PageSettings);
+        #[unsafe(method(openSettings:))]
+        fn open_settings(&self, _sender: &AnyObject) {
+            push_command(MenuCommand::Settings);
         }
 
         #[unsafe(method(toggleQuickLayoutNumbers:))]
@@ -196,7 +196,7 @@ fn create_global_menu(handler: &NativeMenuHandler) {
             mtm,
             menu,
             "Settings",
-            sel!(openPageSettings:),
+            sel!(openSettings:),
             ",",
             NSEventModifierFlags::Command,
             handler,

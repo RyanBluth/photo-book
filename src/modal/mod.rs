@@ -10,6 +10,7 @@ pub mod page_settings;
 pub mod photo_filter;
 pub mod progress;
 pub mod save_warning;
+pub mod settings;
 pub trait Modal: Send + Any {
     type Response: ModalResponse + 'static;
 

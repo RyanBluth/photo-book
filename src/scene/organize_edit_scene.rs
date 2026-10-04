@@ -23,6 +23,7 @@ use crate::{
         manager::{ModalManager, TypedModalId},
         name_prompt::{NamePromptModal, NamePromptResponse},
         page_settings::PageSettingsModal,
+        settings::SettingsModal,
     },
     photo_manager::PhotoManager,
     project::ProjectPreferences,
@@ -81,7 +82,7 @@ pub enum MenuCommand {
     ImportFiles,
     Export,
 
-    PageSettings,
+    Settings,
     ToggleQuickLayoutNumbers,
 }
 
@@ -416,8 +417,8 @@ impl OrganizeEditScene {
                 self.export_selected_book(ctx);
             }
 
-            MenuCommand::PageSettings => {
-                self.page_settings_modal_id = Some(ModalManager::push(PageSettingsModal::new()));
+            MenuCommand::Settings => {
+                ModalManager::push(SettingsModal::new());
             }
             MenuCommand::ToggleQuickLayoutNumbers => {
                 dep_mut!(DebugSettings, |debug_settings| {
@@ -673,7 +674,7 @@ impl OrganizeEditScene {
 
                     ui.menu_button("Edit", |ui| {
                         if ui.button("Settings").clicked() {
-                            self.handle_menu_command(MenuCommand::PageSettings, ui.ctx());
+                            self.handle_menu_command(MenuCommand::Settings, ui.ctx());
                         }
                     });
 
