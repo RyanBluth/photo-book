@@ -73,6 +73,7 @@ mod project_settings;
 mod scene;
 mod selection_manager;
 mod session;
+mod setting;
 mod sizing_manager;
 mod string_log;
 mod template;
